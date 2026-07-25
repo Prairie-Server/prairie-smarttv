@@ -1,0 +1,57 @@
+name: Unit Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smarttv-unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and unit tests with coverage
+        run: |
+          npm run build
+          # Vitest thresholds (75% stmts/lines/funcs, 70% branches) apply to
+          # src/api/client.ts, src/api/playback.ts, src/settings/playbackSettings.ts,
+          # and src/player/createPlayer.ts — see vite.config.ts coverage.include.
+          npm run test:coverage
+
+      - name: Packaging stubs (Tizen / webOS)
+        run: |
+          npm run build:tizen
+          npm run build:webos
+          test -f dist-tizen/config.xml
+          test -f dist-webos/appinfo.json
+
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: smarttv-coverage
+          path: coverage
+          if-no-files-found: ignore
