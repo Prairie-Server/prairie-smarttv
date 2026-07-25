@@ -1,0 +1,33 @@
+{
+  "name": "prairie-smarttv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AGPL Prairie client for Samsung Tizen and LG webOS",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:web": "node scripts/build-web.mjs",
+    "build:tizen": "node scripts/build-web.mjs --platform tizen",
+    "build:webos": "node scripts/build-web.mjs --platform webos"
+  },
+  "dependencies": {
+    "@fontsource/fraunces": "^5.2.5",
+    "@fontsource/sora": "^5.2.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.3",
+    "vitest": "^3.1.2"
+  }
+}
