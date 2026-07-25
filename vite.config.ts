@@ -33,6 +33,9 @@ export default defineConfig({
         "src/player/createMediaPlayer.ts",
         "src/player/timeFormat.ts",
         "src/platform/detect.ts",
+        "src/platform/tizen/subtitleOverlay.ts",
+        "src/platform/tizen/downloadSubtitle.ts",
+        "src/platform/tizen/avplayTracks.ts",
       ],
       exclude: ["src/**/*.test.ts"],
       thresholds: {

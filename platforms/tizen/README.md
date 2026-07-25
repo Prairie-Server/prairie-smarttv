@@ -31,7 +31,16 @@ Declared in `config.xml`:
 
 - `http://tizen.org/privilege/internet`
 - `http://tizen.org/privilege/tv.inputdevice`
+- `http://tizen.org/privilege/download` — fetch remote `subtitle_urls` into `wgt-private-tmp`
+- `http://tizen.org/privilege/filesystem.read`
 - `http://developer.samsung.com/privilege/avplay`
+- `http://developer.samsung.com/privilege/tvinfo` — in-app caption control
+
+### AVPlay subtitles
+
+Remote Prairie subtitle URLs are downloaded via the Tizen Download API, attached with
+`setExternalSubtitlePath`, and rendered through `onsubtitlechange` into an HTML overlay so
+Settings → Subtitles styling applies. `setSilentSubtitle(true)` turns captions off.
 
 ## Icons
 

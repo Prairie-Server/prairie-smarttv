@@ -535,6 +535,37 @@ button:focus,
   padding-bottom: 0 !important;
 }
 
+/* AVPlay: cues arrive via onsubtitlechange into this overlay (native surface has no HTML ::cue). */
+.prairie-avplay-subtitle {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: var(--prairie-sub-bottom, 6%);
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+}
+
+.prairie-avplay-subtitle.is-empty,
+.prairie-avplay-subtitle[hidden] {
+  display: none;
+}
+
+.prairie-avplay-subtitle__cue {
+  display: inline-block;
+  max-width: 100%;
+  white-space: pre-line;
+  color: var(--prairie-sub-color, #fff);
+  background: var(--prairie-sub-bg, transparent);
+  font-size: var(--prairie-sub-size, 48px);
+  text-shadow: var(--prairie-sub-shadow, 0 0 2px #000);
+  line-height: 1.25;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
 .subtitle-preview {
   margin-top: 0.75rem;
   padding: 1.25rem 1rem;

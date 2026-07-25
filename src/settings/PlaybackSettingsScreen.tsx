@@ -71,8 +71,8 @@ export function PlaybackSettingsScreen({ onBack }: PlaybackSettingsScreenProps) 
       <div className="settings-block">
         <h2>Subtitles</h2>
         <p className="muted settings-note">
-          Text color, size, and background. Applied to HTML5 / webOS cues (Tizen AVPlay uses the
-          system caption look when available).
+          Text color, size, and background. Applied to HTML5 / webOS <code>::cue</code> and to the
+          Tizen AVPlay subtitle overlay (<code>onsubtitlechange</code>).
         </p>
 
         <p className="eyebrow">Size</p>
