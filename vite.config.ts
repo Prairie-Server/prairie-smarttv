@@ -18,21 +18,23 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.test.ts"],
-    // Gate coverage on unit-tested core modules only. UI/screens and native
-    // player adapters stay out of the threshold until they gain tests.
+    // Gate logic modules at 75% across statements/branches/functions/lines.
+    // UI screens and native AVPlay/Starfish adapters stay excluded.
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: [
-        "src/api/client.ts",
-        "src/api/playback.ts",
-        "src/api/watch.ts",
+        "src/api/**/*.ts",
+        "src/storage/**/*.ts",
         "src/settings/playbackSettings.ts",
         "src/player/createPlayer.ts",
+        "src/player/createMediaPlayer.ts",
+        "src/platform/detect.ts",
       ],
+      exclude: ["src/**/*.test.ts"],
       thresholds: {
         statements: 75,
-        branches: 70,
+        branches: 75,
         functions: 75,
         lines: 75,
       },

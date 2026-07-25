@@ -43,7 +43,7 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 | `npm run dev` | Vite dev server |
 | `npm run build` | Typecheck + production web bundle → `dist/` |
 | `npm test` | Vitest unit tests |
-| `npm run test:coverage` | Vitest + coverage gate (75% on core modules) |
+| `npm run test:coverage` | Vitest + **75%** coverage gate on logic modules |
 | `npm run build:web` | Same as production web build |
 | `npm run build:tizen` | Web build + copy into `dist-tizen/` with `config.xml` |
 | `npm run build:webos` | Web build + copy into `dist-webos/` with `appinfo.json` |
@@ -52,15 +52,16 @@ Packaging into `.wgt` / `.ipk` still needs Tizen Studio / ares-cli — see `plat
 
 ## Coverage CI
 
-GitHub Actions runs `npm run test:coverage`. Vitest thresholds (**75%** statements/lines/functions, **70%** branches) apply to:
+GitHub Actions runs `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on all logic modules:
 
-- `src/api/client.ts`
-- `src/api/playback.ts`
-- `src/api/watch.ts`
+- `src/api/**`
+- `src/storage/**`
 - `src/settings/playbackSettings.ts`
 - `src/player/createPlayer.ts`
+- `src/player/createMediaPlayer.ts`
+- `src/platform/detect.ts`
 
-UI screens and native AVPlay/Starfish adapters are excluded until they have unit tests.
+UI screens and native AVPlay/Starfish adapter implementations stay excluded (thin platform wrappers).
 
 ## Player backends
 
