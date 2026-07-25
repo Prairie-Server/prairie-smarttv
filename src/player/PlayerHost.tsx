@@ -16,6 +16,8 @@ interface PlayerHostProps {
   /** Preferred/selected external subtitle for AVPlay IDLE attach. */
   initialSubtitleUrl?: string | null;
   initialSubtitleLabel?: string;
+  /** Connected Prairie origin — gates Tizen subtitle downloads. */
+  allowedServerUrl?: string | null;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onReady?: (player: MediaPlayer) => void;
@@ -41,6 +43,7 @@ export function PlayerHost({
   subtitleAppearance,
   initialSubtitleUrl,
   initialSubtitleLabel,
+  allowedServerUrl,
   onError,
   onEnded,
   onReady,
@@ -72,6 +75,7 @@ export function PlayerHost({
         mimeType,
         initialSubtitleUrl,
         initialSubtitleLabel,
+        allowedServerUrl,
         onError: (message) => onErrorRef.current?.(message),
         onEnded: () => onEndedRef.current?.(),
         onTimeUpdate: (current, duration) => onTimeUpdateRef.current?.(current, duration),

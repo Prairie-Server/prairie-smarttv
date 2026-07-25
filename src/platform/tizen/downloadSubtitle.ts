@@ -29,6 +29,12 @@ export interface SubtitleDownloadHandle {
   cancel: () => void;
 }
 
+export interface SubtitleDownloadOptions {
+  /** Connected Prairie server — downloads must match this origin. */
+  allowedServerUrl?: string | null;
+  api?: TizenDownloadApi | null;
+}
+
 function getTizenDownload(): TizenDownloadApi | null {
   const tizen = (window as unknown as { tizen?: TizenDownloadApi }).tizen;
   if (!tizen?.DownloadRequest || !tizen.download?.start) return null;
@@ -55,6 +61,78 @@ export function subtitleLocalFileName(url: string, label?: string): string {
   return `${safe}_${stamp}${ext}`;
 }
 
+/** Reject non-http(s) and cross-origin subtitle URLs before Tizen Download starts. */
+export function assertAllowedSubtitleDownloadUrl(
+  url: string,
+  allowedServerUrl?: string | null,
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Subtitle URL is not a valid absolute URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Subtitle URL must use http or https");
+  }
+  if (!allowedServerUrl) {
+    throw new Error("Subtitle download requires a connected server origin");
+  }
+  let server: URL;
+  try {
+    server = new URL(allowedServerUrl);
+  } catch {
+    throw new Error("Connected server URL is invalid");
+  }
+  if (parsed.protocol !== server.protocol || parsed.host !== server.host) {
+    throw new Error("Subtitle URL must be same-origin with the Prairie server");
+  }
+}
+
+type TizenFsDir = {
+  deleteFile?: (name: string, ok?: () => void, err?: () => void) => void;
+};
+
+type TizenFilesystem = {
+  resolve?: (
+    path: string,
+    onsuccess: (file: TizenFsDir) => void,
+    onerror?: () => void,
+    mode?: string,
+  ) => void;
+};
+
+/** Best-effort delete of a file previously downloaded into wgt-private-tmp. */
+export function deleteLocalSubtitleFile(fullPath: string): void {
+  if (!fullPath) return;
+  try {
+    const fs = (window as unknown as { tizen?: { filesystem?: TizenFilesystem } }).tizen
+      ?.filesystem;
+    if (!fs?.resolve) return;
+
+    const slash = fullPath.lastIndexOf("/");
+    if (slash <= 0) return;
+    const dirPath = fullPath.slice(0, slash);
+    const fileName = fullPath.slice(slash + 1);
+    if (!fileName) return;
+
+    fs.resolve(
+      dirPath,
+      (dir) => {
+        try {
+          dir.deleteFile?.(fileName);
+        } catch {
+          /* ignore */
+        }
+      },
+      () => undefined,
+      "rw",
+    );
+  } catch {
+    /* ignore — cleanup is best-effort on Tizen */
+  }
+}
+
 /**
  * Download `url` into `wgt-private-tmp` and resolve with the absolute local path.
  * Call `cancel()` to abort a superseded download when the Tizen API supports it.
@@ -62,8 +140,27 @@ export function subtitleLocalFileName(url: string, label?: string): string {
 export function downloadSubtitleToLocalPath(
   url: string,
   label?: string,
-  api: TizenDownloadApi | null = getTizenDownload(),
+  options: SubtitleDownloadOptions | TizenDownloadApi | null = {},
 ): SubtitleDownloadHandle {
+  // Back-compat: older call sites passed the API as the third argument.
+  const normalized: SubtitleDownloadOptions =
+    options == null
+      ? { api: null }
+      : typeof (options as TizenDownloadApi).DownloadRequest === "function"
+        ? { api: options as TizenDownloadApi }
+        : (options as SubtitleDownloadOptions);
+
+  const api = normalized.api === undefined ? getTizenDownload() : normalized.api;
+
+  try {
+    assertAllowedSubtitleDownloadUrl(url, normalized.allowedServerUrl);
+  } catch (err) {
+    return {
+      promise: Promise.reject(err instanceof Error ? err : new Error(String(err))),
+      cancel: () => undefined,
+    };
+  }
+
   if (!api) {
     return {
       promise: Promise.reject(new Error("Tizen Download API is not available")),
@@ -117,7 +214,7 @@ export function downloadSubtitleToLocalPath(
 export function downloadSubtitlePath(
   url: string,
   label?: string,
-  api: TizenDownloadApi | null = getTizenDownload(),
+  options: SubtitleDownloadOptions | TizenDownloadApi | null = {},
 ): Promise<string> {
-  return downloadSubtitleToLocalPath(url, label, api).promise;
+  return downloadSubtitleToLocalPath(url, label, options).promise;
 }

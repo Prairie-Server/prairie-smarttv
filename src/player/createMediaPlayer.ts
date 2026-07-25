@@ -11,6 +11,7 @@ export function createMediaPlayer(options: CreateMediaPlayerOptions): MediaPlaye
       autoplay: options.autoplay,
       initialSubtitleUrl: options.initialSubtitleUrl,
       initialSubtitleLabel: options.initialSubtitleLabel,
+      allowedServerUrl: options.allowedServerUrl,
       onError: options.onError,
       onEnded: options.onEnded,
       onTimeUpdate: options.onTimeUpdate,

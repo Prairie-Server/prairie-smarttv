@@ -25,6 +25,8 @@ export interface CreateMediaPlayerOptions {
   /** AVPlay: attach this external subtitle in IDLE before prepare. */
   initialSubtitleUrl?: string | null;
   initialSubtitleLabel?: string;
+  /** Connected Prairie origin — gates Tizen subtitle downloads. */
+  allowedServerUrl?: string | null;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;

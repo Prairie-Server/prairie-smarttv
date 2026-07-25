@@ -337,6 +337,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           subtitleAppearance={settings.subtitleAppearance}
           initialSubtitleUrl={streamSubtitleSeed.url}
           initialSubtitleLabel={streamSubtitleSeed.label}
+          allowedServerUrl={session.serverUrl}
           onError={setError}
           onReady={(player) => {
             playerRef.current = player;

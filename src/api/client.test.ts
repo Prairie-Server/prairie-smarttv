@@ -8,10 +8,16 @@ describe("buildStreamUrl", () => {
     );
   });
 
-  it("preserves existing query params", () => {
+  it("appends token to same-origin absolute URLs with existing query params", () => {
+    expect(
+      buildStreamUrl("https://prairie.example", "https://prairie.example/s?st=1", "tok"),
+    ).toBe("https://prairie.example/s?st=1&token=tok");
+  });
+
+  it("does not attach the session token to cross-origin absolute URLs", () => {
     expect(
       buildStreamUrl("https://prairie.example", "https://cdn.example/s?st=1", "tok"),
-    ).toBe("https://cdn.example/s?st=1&token=tok");
+    ).toBe("https://cdn.example/s?st=1");
   });
 });
 

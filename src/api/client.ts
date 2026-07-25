@@ -113,8 +113,21 @@ export async function apiRequest<T>(
   return (await response.json()) as T;
 }
 
+/** True when `candidate` shares origin with the connected Prairie server. */
+export function isSameServerOrigin(serverUrl: string, candidate: string): boolean {
+  try {
+    const server = new URL(serverUrl);
+    const target = new URL(candidate, server);
+    return target.protocol === server.protocol && target.host === server.host;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Resolve a stream_url from Prairie against the server base and attach token.
+ * Resolve a stream_url from Prairie against the server base and attach token
+ * only when the resolved URL is same-origin with `serverUrl`. Cross-origin
+ * absolute URLs (CDN, tuner, etc.) must not receive the session bearer.
  */
 export function buildStreamUrl(
   serverUrl: string,
@@ -126,7 +139,7 @@ export function buildStreamUrl(
       ? streamPath
       : joinUrl(serverUrl, streamPath);
 
-  if (!token) return base;
+  if (!token || !isSameServerOrigin(serverUrl, base)) return base;
 
   const params = new URLSearchParams();
   params.set("token", token);

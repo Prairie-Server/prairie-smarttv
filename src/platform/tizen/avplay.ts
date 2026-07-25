@@ -1,4 +1,7 @@
-import { downloadSubtitleToLocalPath } from "./downloadSubtitle";
+import {
+  deleteLocalSubtitleFile,
+  downloadSubtitleToLocalPath,
+} from "./downloadSubtitle";
 import {
   clearSubtitleOverlay,
   createSubtitleOverlay,
@@ -71,6 +74,8 @@ export interface AvPlayPlayerOptions {
   /** Preferred subtitle URL known at create time — attached in IDLE before prepare. */
   initialSubtitleUrl?: string | null;
   initialSubtitleLabel?: string;
+  /** Connected Prairie origin — required for Tizen subtitle downloads. */
+  allowedServerUrl?: string | null;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
@@ -126,7 +131,16 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       ? { url: options.initialSubtitleUrl, label: options.initialSubtitleLabel }
       : null;
   let activeDownloadCancel: (() => void) | null = null;
+  let activeLocalSubtitlePath: string | null = null;
   let prepareTimer: number | null = null;
+  const allowedServerUrl = options.allowedServerUrl ?? null;
+
+  const forgetLocalSubtitle = () => {
+    if (activeLocalSubtitlePath) {
+      deleteLocalSubtitleFile(activeLocalSubtitlePath);
+      activeLocalSubtitlePath = null;
+    }
+  };
 
   claimInAppCaptions();
 
@@ -215,11 +229,16 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   const downloadAndApply = async (url: string, label?: string): Promise<void> => {
     const generation = ++trackGeneration;
     cancelActiveDownload();
-    const handle = downloadSubtitleToLocalPath(url, label);
+    forgetLocalSubtitle();
+    const handle = downloadSubtitleToLocalPath(url, label, { allowedServerUrl });
     activeDownloadCancel = handle.cancel;
     const localPath = await handle.promise;
-    if (destroyed || generation !== trackGeneration) return;
+    if (destroyed || generation !== trackGeneration) {
+      deleteLocalSubtitleFile(localPath);
+      return;
+    }
     activeDownloadCancel = null;
+    activeLocalSubtitlePath = localPath;
     applyExternalSubtitlePath(localPath);
   };
 
@@ -313,6 +332,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       if (!url) {
         pendingSubtitle = null;
         overlayEnabled = false;
+        forgetLocalSubtitle();
         clearSubtitleOverlay(overlay);
         try {
           avplay.setSilentSubtitle?.(true);
@@ -345,6 +365,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       overlayEnabled = false;
       trackGeneration += 1;
       cancelActiveDownload();
+      forgetLocalSubtitle();
       if (prepareTimer != null) {
         window.clearTimeout(prepareTimer);
         prepareTimer = null;
