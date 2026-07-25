@@ -22,10 +22,18 @@ export interface Profile {
   name: string;
   is_primary: boolean;
   is_child: boolean;
+  has_pin?: boolean;
+  avatar_url?: string | null;
 }
 
 export interface ProfileListResponse {
   profiles: Profile[];
+}
+
+export interface VerifyPinResponse {
+  valid: boolean;
+  profile_token?: string;
+  expires_at?: string;
 }
 
 export async function login(
@@ -53,6 +61,23 @@ export async function listProfiles(
     "/api/v1/profiles",
   );
   return data.profiles ?? [];
+}
+
+export async function verifyProfilePin(
+  serverUrl: string,
+  accessToken: string,
+  profileId: string,
+  pin: string,
+  fetchImpl?: typeof fetch,
+): Promise<VerifyPinResponse> {
+  return apiRequest<VerifyPinResponse>(
+    { serverUrl, accessToken, fetchImpl },
+    `/api/v1/profiles/${encodeURIComponent(profileId)}/verify-pin`,
+    {
+      method: "POST",
+      body: JSON.stringify({ pin }),
+    },
+  );
 }
 
 export function pickDefaultProfile(profiles: Profile[]): Profile | null {

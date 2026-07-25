@@ -1,15 +1,54 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { CollectionCard } from "./api/collections";
+import type { Library } from "./api/libraries";
+import { ShellNav, type ShellTab } from "./components/ShellNav";
+import { CollectionBrowseScreen } from "./screens/CollectionBrowseScreen";
+import { CollectionsScreen } from "./screens/CollectionsScreen";
 import { ConnectScreen } from "./screens/ConnectScreen";
-import { HomeScreen } from "./screens/HomeScreen";
+import { HomeBrowseScreen } from "./screens/HomeBrowseScreen";
+import { ItemDetailScreen } from "./screens/ItemDetailScreen";
+import { LibrariesScreen } from "./screens/LibrariesScreen";
+import { LibraryBrowseScreen } from "./screens/LibraryBrowseScreen";
 import { PlayerScreen } from "./screens/PlayerScreen";
+import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
+import { SearchScreen } from "./screens/SearchScreen";
 import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
-import { clearSession, loadSession, type PrairieSession } from "./storage/session";
+import {
+  clearSession,
+  loadSession,
+  type AuthTokens,
+  type PrairieSession,
+} from "./storage/session";
 
 type Route =
   | { name: "connect" }
+  | { name: "profiles"; auth: AuthTokens }
   | { name: "home" }
-  | { name: "settings" }
-  | { name: "player"; fileId: number };
+  | { name: "libraries" }
+  | { name: "library"; library: Library }
+  | { name: "collections" }
+  | { name: "collection"; collection: CollectionCard }
+  | { name: "search" }
+  | { name: "detail"; contentId: string; back: Route }
+  | { name: "settings"; back: Route }
+  | { name: "player"; fileId: number; title?: string; back: Route };
+
+function shellTabFor(route: Route): ShellTab | null {
+  switch (route.name) {
+    case "home":
+      return "home";
+    case "libraries":
+    case "library":
+      return "libraries";
+    case "collections":
+    case "collection":
+      return "collections";
+    case "search":
+      return "search";
+    default:
+      return null;
+  }
+}
 
 export function App() {
   const [session, setSession] = useState<PrairieSession | null>(() => loadSession());
@@ -24,7 +63,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    // Simple spatial-ish focus: keep Tab/arrow movement on focusable controls.
     function onKeyDown(event: KeyboardEvent) {
       if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         return;
@@ -52,20 +90,46 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [route.name]);
 
-  if (!session || route.name === "connect") {
+  if (route.name === "connect" || (!session && route.name !== "profiles")) {
     return (
       <ConnectScreen
         initialServerUrl={session?.serverUrl ?? import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""}
-        onConnected={(next) => {
-          setSession(next);
-          setRoute({ name: "home" });
+        onAuthenticated={(auth) => {
+          setSession(null);
+          setRoute({ name: "profiles", auth });
         }}
       />
     );
   }
 
+  if (route.name === "profiles") {
+    return (
+      <ProfileSelectScreen
+        auth={route.auth}
+        onSelected={(next) => {
+          setSession(next);
+          setRoute({ name: "home" });
+        }}
+        onCancel={() => {
+          clearSession();
+          setSession(null);
+          setRoute({ name: "connect" });
+        }}
+      />
+    );
+  }
+
+  if (!session) {
+    return (
+      <ConnectScreen
+        initialServerUrl={import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""}
+        onAuthenticated={(auth) => setRoute({ name: "profiles", auth })}
+      />
+    );
+  }
+
   if (route.name === "settings") {
-    return <PlaybackSettingsScreen onBack={() => setRoute({ name: "home" })} />;
+    return <PlaybackSettingsScreen onBack={() => setRoute(route.back)} />;
   }
 
   if (route.name === "player") {
@@ -73,17 +137,107 @@ export function App() {
       <PlayerScreen
         session={session}
         fileId={route.fileId}
-        onExit={() => setRoute({ name: "home" })}
+        title={route.title}
+        onExit={() => setRoute(route.back)}
       />
     );
   }
 
+  if (route.name === "detail") {
+    return (
+      <ItemDetailScreen
+        session={session}
+        contentId={route.contentId}
+        onBack={() => setRoute(route.back)}
+        onPlay={(fileId, title) =>
+          setRoute({ name: "player", fileId, title, back: route })
+        }
+      />
+    );
+  }
+
+  const tab = shellTabFor(route) ?? "home";
+  const openItem = (contentId: string) =>
+    setRoute({ name: "detail", contentId, back: route });
+
+  let body: ReactNode = null;
+  if (route.name === "home") {
+    body = <HomeBrowseScreen session={session} onOpenItem={openItem} />;
+  } else if (route.name === "libraries") {
+    body = (
+      <LibrariesScreen
+        session={session}
+        onOpenLibrary={(library) => setRoute({ name: "library", library })}
+      />
+    );
+  } else if (route.name === "library") {
+    body = (
+      <LibraryBrowseScreen
+        session={session}
+        libraryId={route.library.id}
+        libraryName={route.library.name}
+        onBack={() => setRoute({ name: "libraries" })}
+        onOpenItem={openItem}
+      />
+    );
+  } else if (route.name === "collections") {
+    body = (
+      <CollectionsScreen
+        session={session}
+        onOpenCollection={(collection) => setRoute({ name: "collection", collection })}
+      />
+    );
+  } else if (route.name === "collection") {
+    body = (
+      <CollectionBrowseScreen
+        session={session}
+        title={route.collection.title ?? route.collection.name ?? "Collection"}
+        collectionId={route.collection.id}
+        libraryId={route.collection.library_id}
+        onBack={() => setRoute({ name: "collections" })}
+        onOpenItem={openItem}
+      />
+    );
+  } else if (route.name === "search") {
+    body = <SearchScreen session={session} onOpenItem={openItem} />;
+  }
+
   return (
-    <HomeScreen
-      session={session}
-      onPlay={(fileId) => setRoute({ name: "player", fileId })}
-      onOpenSettings={() => setRoute({ name: "settings" })}
-      onDisconnect={disconnect}
-    />
+    <div className="shell">
+      <ShellNav
+        active={tab}
+        profileName={session.profileName}
+        onNavigate={(next) => {
+          switch (next) {
+            case "home":
+              setRoute({ name: "home" });
+              break;
+            case "libraries":
+              setRoute({ name: "libraries" });
+              break;
+            case "collections":
+              setRoute({ name: "collections" });
+              break;
+            case "search":
+              setRoute({ name: "search" });
+              break;
+          }
+        }}
+        onProfiles={() =>
+          setRoute({
+            name: "profiles",
+            auth: {
+              serverUrl: session.serverUrl,
+              accessToken: session.accessToken,
+              refreshToken: session.refreshToken,
+              username: session.username,
+            },
+          })
+        }
+        onSettings={() => setRoute({ name: "settings", back: route })}
+        onDisconnect={disconnect}
+      />
+      <main className="shell__main">{body}</main>
+    </div>
   );
 }

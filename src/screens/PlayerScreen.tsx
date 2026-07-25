@@ -14,10 +14,11 @@ import { FocusButton } from "../components/FocusButton";
 interface PlayerScreenProps {
   session: PrairieSession;
   fileId: number;
+  title?: string;
   onExit: () => void;
 }
 
-export function PlayerScreen({ session, fileId, onExit }: PlayerScreenProps) {
+export function PlayerScreen({ session, fileId, title, onExit }: PlayerScreenProps) {
   const settings = useMemo(() => loadPlaybackSettings(), []);
   const platform = useMemo(() => detectPlatform(), []);
   const backend = useMemo(
@@ -106,11 +107,12 @@ export function PlayerScreen({ session, fileId, onExit }: PlayerScreenProps) {
       <div className="player-chrome">
         <div className="player-meta">
           <p className="eyebrow">Now playing</p>
-          <h1>File {fileId}</h1>
+          <h1>{title?.trim() || `File ${fileId}`}</h1>
           <p className="muted">
             Backend: {backend}
             {playMethod ? ` · ${playMethod}` : ""}
             {loading ? " · starting…" : ""}
+            {title ? ` · file ${fileId}` : ""}
           </p>
         </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}

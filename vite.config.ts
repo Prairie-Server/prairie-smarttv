@@ -26,6 +26,7 @@ export default defineConfig({
       include: [
         "src/api/client.ts",
         "src/api/playback.ts",
+        "src/api/watch.ts",
         "src/settings/playbackSettings.ts",
         "src/player/createPlayer.ts",
       ],

@@ -4,6 +4,18 @@ AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first
 
 Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`, Sora + Fraunces.
 
+## What’s included
+
+- Connect to a Prairie server (username / password)
+- **Profile picker** (PIN unlock when required)
+- **Home** rails from `/api/v1/home/sections` (continue watching, recently added, …)
+- **Libraries** browse with pagination (`/api/v1/user/libraries` + `/api/v1/catalog`)
+- **Collections** (library + personal) → catalog items
+- **Search** across the catalog
+- **Item detail** → seasons/episodes for series → Play via `/api/v1/watch/{id}` + `/playback/start`
+- Playback backends: HTML5 / Tizen AVPlay / webOS Starfish-style
+- Troubleshooting settings: force direct / force transcode, backend preference
+
 ## Requirements
 
 - Node.js 20+ (22 recommended)
@@ -36,14 +48,15 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 | `npm run build:tizen` | Web build + copy into `dist-tizen/` with `config.xml` |
 | `npm run build:webos` | Web build + copy into `dist-webos/` with `appinfo.json` |
 
-Packaging into `.wgt` / `.ipk` still needs Tizen Studio / ares-cli and icons — see `platforms/tizen/` and `platforms/webos/`.
+Packaging into `.wgt` / `.ipk` still needs Tizen Studio / ares-cli — see `platforms/tizen/` and `platforms/webos/`.
 
 ## Coverage CI
 
-GitHub Actions runs `npm run test:coverage`. Vitest thresholds (**75%** statements/lines/functions, **70%** branches) apply only to:
+GitHub Actions runs `npm run test:coverage`. Vitest thresholds (**75%** statements/lines/functions, **70%** branches) apply to:
 
 - `src/api/client.ts`
 - `src/api/playback.ts`
+- `src/api/watch.ts`
 - `src/settings/playbackSettings.ts`
 - `src/player/createPlayer.ts`
 
@@ -57,44 +70,36 @@ UI screens and native AVPlay/Starfish adapters are excluded until they have unit
 | **AVPlay** | Samsung Tizen native (`webapis.avplay`) |
 | **Starfish-style** | LG webOS HTML5 `<video>` with `mediaOption` / `mediaPreferred` hints |
 
-Selection is controlled in **Playback settings**:
-
-- **Auto** — native on Tizen/webOS, HTML5 elsewhere
-- **HTML5** — force the browser video element
-- **Native** — AVPlay / Starfish-style (falls back to HTML5 if unavailable)
-
 On the player screen: **OK / Enter** toggles play-pause; **Back / Escape** exits and destroys the native player instance.
 
-## Troubleshooting playback settings
+## API surface
 
-Stored in `localStorage` under `prairie.playbackSettings` (preferred over cookies on TV webviews):
+1. `POST /api/v1/auth/login`
+2. `GET /api/v1/profiles` (+ `POST …/verify-pin` when needed)
+3. `GET /api/v1/home/sections`
+4. `GET /api/v1/user/libraries` · `GET /api/v1/catalog`
+5. `GET /api/v1/library/{id}/collections` · `GET /api/v1/collections`
+6. `GET /api/v1/catalog/items/{id}` · seasons/episodes · `GET /api/v1/watch/{id}`
+7. `POST /api/v1/playback/start` → play `stream_url`
 
-- **Force Direct Play** → `play_method: "direct"` on `POST /api/v1/playback/start`
-- **Force Transcode** → `play_method: "transcode"`
-- Neither → omit `play_method` so Prairie can prefer remux / auto
-
-Session auth is also in `localStorage` (`prairie.session`): server URL, access token, profile id.
-
-## API surface (foundation)
-
-1. `POST /api/v1/auth/login` → `access_token`
-2. `GET /api/v1/profiles` → pick primary (or first) profile
-3. `POST /api/v1/playback/start` with `file_id`, `profile_id`, `codecs_*`, optional forced `play_method`
-4. Play `stream_url` (token appended as query when needed)
-
-The home screen is a **file ID debug launcher** for this foundation slice; library browse is follow-up work.
+Session auth is in `localStorage` (`prairie.session`): server URL, tokens, active profile id / PIN token.
 
 ## Layout
 
 ```text
 src/
-  api/           Prairie /api/v1 client, auth, playback request builder
+  api/           Prairie /api/v1 client, auth, catalog, home, watch, playback
   platform/      detect + tizen/avplay + webos/starfish adapters
   player/        backend selection, HTML5 host, PlayerHost
   settings/      playback troubleshooting settings + screen
-  screens/       Connect, Home, Player
+  screens/       Connect, profiles, home/libraries/collections/search/detail/player
+  components/    Shell nav, poster cards, media rows
 platforms/       Tizen config.xml + webOS appinfo.json stubs
 ```
+
+## Still follow-up
+
+Richer player chrome (seek, audio/subs), Live TV, For You recommendations polish, spatial focus engine, and signed store packages.
 
 ## License
 

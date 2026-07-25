@@ -15,6 +15,10 @@ export class ApiError extends Error {
 export interface ApiClientOptions {
   serverUrl: string;
   accessToken?: string | null;
+  /** Active household profile — required by most /api/v1 browse routes. */
+  profileId?: string | null;
+  /** PIN-verified profile token when the profile has a PIN. */
+  profileToken?: string | null;
   fetchImpl?: typeof fetch;
   /** Request timeout in milliseconds. Defaults to 30s. */
   timeoutMs?: number;
@@ -40,6 +44,12 @@ export async function apiRequest<T>(
   }
   if (options.accessToken) {
     headers.set("Authorization", `Bearer ${options.accessToken}`);
+  }
+  if (options.profileId) {
+    headers.set("X-Profile-Id", options.profileId);
+  }
+  if (options.profileToken) {
+    headers.set("X-Profile-Token", options.profileToken);
   }
   headers.set("X-Prairie-Device-Platform", "smarttv");
   headers.set("X-Prairie-Device-Name", "Prairie Smart TV");

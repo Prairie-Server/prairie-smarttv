@@ -1,12 +1,18 @@
 const SESSION_KEY = "prairie.session";
 
-export interface PrairieSession {
+/** Tokens after login, before a household profile is chosen. */
+export interface AuthTokens {
   serverUrl: string;
   accessToken: string;
   refreshToken?: string;
   username: string;
+}
+
+/** Fully authenticated browse session with an active profile. */
+export interface PrairieSession extends AuthTokens {
   profileId: string;
   profileName?: string;
+  profileToken?: string;
 }
 
 function normalizeServerUrl(url: string): string {
@@ -28,6 +34,7 @@ export function loadSession(storage: Pick<Storage, "getItem"> = localStorage): P
       username: parsed.username,
       profileId: parsed.profileId,
       profileName: parsed.profileName,
+      profileToken: parsed.profileToken,
     };
   } catch {
     return null;
