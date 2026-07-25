@@ -72,7 +72,6 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const playbackRef = useRef<PlaybackSessionResponse | null>(null);
   const lastProgressAt = useRef(0);
   const hideTimer = useRef<number | null>(null);
-  const audioResumeTimer = useRef<number | null>(null);
   const pendingResumeRef = useRef<number | null>(launch.startPositionSeconds ?? null);
   const activeSubtitleIndexRef = useRef(-1);
   const exitedRef = useRef(false);
@@ -113,7 +112,6 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   useEffect(() => {
     return () => {
       if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
-      if (audioResumeTimer.current != null) window.clearTimeout(audioResumeTimer.current);
     };
   }, []);
 
