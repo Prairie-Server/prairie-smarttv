@@ -15,9 +15,5 @@
   <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
   <tizen:privilege name="http://developer.samsung.com/privilege/avplay"/>
   <access origin="*" subdomains="true"/>
-  <!--
-    Icon placeholder: drop a 512x512 PNG at platforms/tizen/icon.png before packaging.
-    Build with: npm run build:tizen
-    Then package the dist-tizen/ folder with Tizen Studio / tizen CLI (wgt).
-  -->
+  <!-- Build with: npm run build:tizen → package dist-tizen/ via Tizen Studio / tizen CLI. -->
 </widget>

@@ -69,4 +69,30 @@ describe("apiRequest", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await expectation;
   });
+
+  it("preserves caller AbortError instead of reporting a timeout", async () => {
+    const caller = new AbortController();
+    const fetchImpl = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const err = new Error("Aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }),
+    );
+
+    const pending = apiRequest(
+      { serverUrl: "https://prairie.example", fetchImpl, timeoutMs: 30_000 },
+      "/api/v1/profiles",
+      { signal: caller.signal },
+    );
+
+    const expectation = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    caller.abort();
+    await expectation;
+  });
 });

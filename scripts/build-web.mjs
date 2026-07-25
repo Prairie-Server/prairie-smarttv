@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -61,30 +61,24 @@ cpSync(dist, outDir, { recursive: true });
 if (platform === "tizen") {
   cpSync(join(root, "platforms/tizen/config.xml"), join(outDir, "config.xml"));
   const iconSrc = join(root, "platforms/tizen/icon.png");
-  if (existsSync(iconSrc)) {
-    cpSync(iconSrc, join(outDir, "icon.png"));
-  } else {
-    writeFileSync(
-      join(outDir, "ICON_PLACEHOLDER.txt"),
-      "Add platforms/tizen/icon.png (512x512) before packaging.\n",
+  if (!existsSync(iconSrc)) {
+    console.error(
+      "Missing platforms/tizen/icon.png (required by config.xml). Add a 512x512 PNG before packaging.",
     );
+    process.exit(1);
   }
+  cpSync(iconSrc, join(outDir, "icon.png"));
 } else {
   cpSync(join(root, "platforms/webos/appinfo.json"), join(outDir, "appinfo.json"));
-  const missing = [];
   for (const name of ["icon.png", "largeIcon.png"]) {
     const src = join(root, "platforms/webos", name);
-    if (existsSync(src)) {
-      cpSync(src, join(outDir, name));
-    } else {
-      missing.push(name);
+    if (!existsSync(src)) {
+      console.error(
+        `Missing platforms/webos/${name} (required by appinfo.json). Add the asset before packaging.`,
+      );
+      process.exit(1);
     }
-  }
-  if (missing.length > 0) {
-    writeFileSync(
-      join(outDir, "ICON_PLACEHOLDER.txt"),
-      `Add platforms/webos/${missing.join(" and ")} before packaging.\n`,
-    );
+    cpSync(src, join(outDir, name));
   }
 }
 

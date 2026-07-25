@@ -1,7 +1,7 @@
 # webOS packaging notes
 
-1. Run `npm run build:webos` — copies Vite `dist/` into `dist-webos/` with `appinfo.json`.
-2. Add icon placeholders (`icon.png`, `largeIcon.png`) under `platforms/webos/` before packaging.
+1. Run `npm run build:webos` — copies Vite `dist/` into `dist-webos/` with `appinfo.json` and icons.
+2. Replace `icon.png` / `largeIcon.png` amber placeholders with final brand marks before store packaging. The build **fails** if either icon is missing.
 3. Package with ares-cli:
 
 ```bash

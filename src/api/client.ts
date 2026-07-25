@@ -46,7 +46,11 @@ export async function apiRequest<T>(
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   const onCallerAbort = () => controller.abort();
   if (init.signal) {
@@ -65,7 +69,7 @@ export async function apiRequest<T>(
       signal: controller.signal,
     });
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (timedOut && err instanceof Error && err.name === "AbortError") {
       throw new ApiError("Request timed out", 408, "timeout");
     }
     throw err;
