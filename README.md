@@ -1,3 +1,11 @@
+<p align="center">
+  <img src="docs/brand/readme-banner.png" alt="Prairie" width="480" />
+</p>
+
+<p align="center"><strong>prairie-smarttv</strong><br/>Tizen and webOS client for Prairie (Phase 4)</p>
+
+---
+
 # prairie-smarttv
 
 Prairie client for Samsung Tizen and LG webOS televisions.
