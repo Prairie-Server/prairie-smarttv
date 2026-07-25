@@ -31,11 +31,23 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 | `npm run dev` | Vite dev server |
 | `npm run build` | Typecheck + production web bundle → `dist/` |
 | `npm test` | Vitest unit tests |
+| `npm run test:coverage` | Vitest + coverage gate (75% on core modules) |
 | `npm run build:web` | Same as production web build |
 | `npm run build:tizen` | Web build + copy into `dist-tizen/` with `config.xml` |
 | `npm run build:webos` | Web build + copy into `dist-webos/` with `appinfo.json` |
 
 Packaging into `.wgt` / `.ipk` still needs Tizen Studio / ares-cli and icons — see `platforms/tizen/` and `platforms/webos/`.
+
+## Coverage CI
+
+GitHub Actions runs `npm run test:coverage`. Vitest thresholds (**75%** statements/lines/functions, **70%** branches) apply only to:
+
+- `src/api/client.ts`
+- `src/api/playback.ts`
+- `src/settings/playbackSettings.ts`
+- `src/player/createPlayer.ts`
+
+UI screens and native AVPlay/Starfish adapters are excluded until they have unit tests.
 
 ## Player backends
 
