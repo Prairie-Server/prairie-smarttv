@@ -4,6 +4,7 @@ import {
   loadPlaybackSettings,
   normalizePlaybackSettings,
   resolveForcedPlayMethod,
+  resolvePreferredSubtitleIndex,
   savePlaybackSettings,
 } from "./playbackSettings";
 
@@ -33,11 +34,34 @@ describe("playbackSettings", () => {
         playerBackend: "native",
         forceDirectPlay: true,
         forceTranscode: false,
+        preferredSubtitleLanguage: "eng",
+        subtitleAppearance: {
+          ...DEFAULT_PLAYBACK_SETTINGS.subtitleAppearance,
+          fontSize: "xlarge",
+          backgroundStyle: "box",
+          backgroundOpacity: 50,
+        },
       },
       storage,
     );
     expect(saved.playerBackend).toBe("native");
+    expect(saved.preferredSubtitleLanguage).toBe("eng");
+    expect(saved.subtitleAppearance.fontSize).toBe("xlarge");
     expect(loadPlaybackSettings(storage)).toEqual(saved);
+  });
+
+  it("upgrades older settings blobs missing subtitle fields", () => {
+    const storage = memoryStorage({
+      "prairie.playbackSettings": JSON.stringify({
+        playerBackend: "html5",
+        forceDirectPlay: false,
+        forceTranscode: false,
+      }),
+    });
+    const loaded = loadPlaybackSettings(storage);
+    expect(loaded.playerBackend).toBe("html5");
+    expect(loaded.subtitleAppearance.fontSize).toBe("large");
+    expect(loaded.preferredSubtitleLanguage).toBe("");
   });
 
   it("prefers force direct over force transcode when both set", () => {
@@ -53,6 +77,7 @@ describe("playbackSettings", () => {
   it("returns transcode when only forceTranscode is enabled", () => {
     expect(
       resolveForcedPlayMethod({
+        ...DEFAULT_PLAYBACK_SETTINGS,
         playerBackend: "html5",
         forceDirectPlay: false,
         forceTranscode: true,
@@ -75,5 +100,13 @@ describe("playbackSettings", () => {
     expect(normalized.forceDirectPlay).toBe(false);
     expect(normalized.forceTranscode).toBe(false);
     expect(resolveForcedPlayMethod(normalized)).toBeNull();
+  });
+
+  it("resolves preferred subtitle language index", () => {
+    const tracks = [{ language: "spa" }, { language: "eng" }, { language: "eng-US" }];
+    expect(resolvePreferredSubtitleIndex(tracks, "")).toBe(-1);
+    expect(resolvePreferredSubtitleIndex(tracks, "eng")).toBe(1);
+    expect(resolvePreferredSubtitleIndex(tracks, "eng-us")).toBe(2);
+    expect(resolvePreferredSubtitleIndex(tracks, "deu")).toBe(-1);
   });
 });

@@ -52,7 +52,7 @@ describe("session persistence", () => {
     expect(loadSession(memoryStorage({ "prairie.session": "{not-json" }))).toBeNull();
   });
 
-  it("clears the session key", () => {
+  it("clears the session key but keeps last server URL for reconnect", () => {
     const storage = memoryStorage();
     saveSession(
       {
@@ -65,5 +65,6 @@ describe("session persistence", () => {
     );
     clearSession(storage);
     expect(loadSession(storage)).toBeNull();
+    expect(storage.getItem("prairie.lastServerUrl")).toBe("https://prairie.example");
   });
 });

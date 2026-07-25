@@ -1,6 +1,12 @@
 import type { ForcedPlayMethod, PlayerBackendPreference, PlayMethod } from "../platform/types";
+import { PLAYBACK_SETTINGS_KEY } from "../storage/persist";
+import {
+  DEFAULT_SUBTITLE_APPEARANCE,
+  normalizeSubtitleAppearance,
+  type SubtitleAppearance,
+} from "./subtitleAppearance";
 
-export const PLAYBACK_SETTINGS_KEY = "prairie.playbackSettings";
+export { PLAYBACK_SETTINGS_KEY };
 
 export interface PlaybackSettings {
   /** Auto picks native on Tizen/webOS, HTML5 elsewhere. */
@@ -9,12 +15,18 @@ export interface PlaybackSettings {
   forceDirectPlay: boolean;
   /** Send play_method: "transcode" to Prairie. */
   forceTranscode: boolean;
+  /** On-screen subtitle look (text / background). */
+  subtitleAppearance: SubtitleAppearance;
+  /** Preferred subtitle language code when available (e.g. "eng"). Empty = Off preference. */
+  preferredSubtitleLanguage: string;
 }
 
 export const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = {
   playerBackend: "auto",
   forceDirectPlay: false,
   forceTranscode: false,
+  subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE },
+  preferredSubtitleLanguage: "",
 };
 
 function isPlayerBackend(value: unknown): value is PlayerBackendPreference {
@@ -27,6 +39,9 @@ export function normalizePlaybackSettings(
   const next: PlaybackSettings = {
     ...DEFAULT_PLAYBACK_SETTINGS,
     ...(input ?? {}),
+    subtitleAppearance: normalizeSubtitleAppearance(
+      (input as Partial<PlaybackSettings> | null | undefined)?.subtitleAppearance,
+    ),
   };
 
   if (!isPlayerBackend(next.playerBackend)) {
@@ -35,6 +50,10 @@ export function normalizePlaybackSettings(
 
   next.forceDirectPlay = next.forceDirectPlay === true;
   next.forceTranscode = next.forceTranscode === true;
+  next.preferredSubtitleLanguage =
+    typeof next.preferredSubtitleLanguage === "string"
+      ? next.preferredSubtitleLanguage.trim().toLowerCase()
+      : "";
 
   // Direct wins when both are somehow set (UI should prevent this).
   if (next.forceDirectPlay && next.forceTranscode) {
@@ -49,10 +68,10 @@ export function loadPlaybackSettings(
 ): PlaybackSettings {
   try {
     const raw = storage.getItem(PLAYBACK_SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_PLAYBACK_SETTINGS };
+    if (!raw) return { ...DEFAULT_PLAYBACK_SETTINGS, subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE } };
     return normalizePlaybackSettings(JSON.parse(raw) as Partial<PlaybackSettings>);
   } catch {
-    return { ...DEFAULT_PLAYBACK_SETTINGS };
+    return { ...DEFAULT_PLAYBACK_SETTINGS, subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE } };
   }
 }
 
@@ -78,4 +97,17 @@ export function resolveForcedPlayMethod(settings: PlaybackSettings): ForcedPlayM
 
 export function describePlayMethodPreference(settings: PlaybackSettings): PlayMethod | "auto" {
   return resolveForcedPlayMethod(settings) ?? "auto";
+}
+
+/** Pick a subtitle index from session tracks using language preference. -1 = Off. */
+export function resolvePreferredSubtitleIndex(
+  tracks: Array<{ language?: string; index?: number }>,
+  preferredLanguage: string,
+): number {
+  const pref = preferredLanguage.trim().toLowerCase();
+  if (!pref || !tracks.length) return -1;
+  const exact = tracks.findIndex((t) => (t.language ?? "").toLowerCase() === pref);
+  if (exact >= 0) return exact;
+  const prefix = tracks.findIndex((t) => (t.language ?? "").toLowerCase().startsWith(pref));
+  return prefix;
 }

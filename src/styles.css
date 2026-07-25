@@ -514,6 +514,43 @@ button:focus,
   height: 100%;
 }
 
+/* Subtitle cue styling (HTML5 / webOS). Vars set by PlayerHost from settings. */
+.player-host {
+  --prairie-sub-color: #ffffff;
+  --prairie-sub-bg: transparent;
+  --prairie-sub-size: 48px;
+  --prairie-sub-shadow: 0 0 2px #000, 0 0 4px #000;
+  --prairie-sub-bottom: 6%;
+}
+
+.player-host video::cue {
+  color: var(--prairie-sub-color);
+  background-color: var(--prairie-sub-bg);
+  font-size: var(--prairie-sub-size);
+  text-shadow: var(--prairie-sub-shadow);
+}
+
+.player-host video::-webkit-media-text-track-display {
+  bottom: var(--prairie-sub-bottom) !important;
+  padding-bottom: 0 !important;
+}
+
+.subtitle-preview {
+  margin-top: 0.75rem;
+  padding: 1.25rem 1rem;
+  border-radius: var(--radius);
+  background: #0a0c10;
+  text-align: center;
+}
+
+.subtitle-preview__cue {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.2em 0.45em;
+  border-radius: 4px;
+  line-height: 1.25;
+}
+
 @keyframes brand-in {
   from {
     opacity: 0;

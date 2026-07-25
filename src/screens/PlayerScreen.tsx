@@ -22,6 +22,8 @@ import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../
 import {
   loadPlaybackSettings,
   resolveForcedPlayMethod,
+  resolvePreferredSubtitleIndex,
+  savePlaybackSettings,
 } from "../settings/playbackSettings";
 import type { PrairieSession } from "../storage/session";
 import { buildStreamUrl } from "../api/client";
@@ -81,6 +83,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const [duration, setDuration] = useState(0);
   const [menu, setMenu] = useState<MenuMode>("none");
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState(-1);
+  const [subsAutoApplied, setSubsAutoApplied] = useState(false);
   const [busyAudio, setBusyAudio] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [resumeApplied, setResumeApplied] = useState(false);
@@ -274,21 +277,31 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     }
   }
 
-  function chooseSubtitle(index: number) {
+  function applySubtitleIndex(index: number) {
     setActiveSubtitleIndex(index);
     const player = playerRef.current;
     if (!player) return;
     if (index < 0) {
       void player.setTextTrack(null);
-    } else {
-      const track = subtitleTracks[index];
-      if (track) {
-        void player.setTextTrack(
-          resolveSubtitleUrl(session.serverUrl, session.accessToken, track),
-          formatSubtitleLabel(track),
-        );
-      }
+      return;
     }
+    const track = subtitleTracks[index];
+    if (track) {
+      void player.setTextTrack(
+        resolveSubtitleUrl(session.serverUrl, session.accessToken, track),
+        formatSubtitleLabel(track),
+      );
+    }
+  }
+
+  function chooseSubtitle(index: number) {
+    applySubtitleIndex(index);
+    const language =
+      index < 0 ? "" : (subtitleTracks[index]?.language ?? "").toLowerCase();
+    savePlaybackSettings({
+      ...settings,
+      preferredSubtitleLanguage: language,
+    });
     setMenu("none");
     bumpControls();
   }
@@ -303,6 +316,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           url={streamUrl}
           backend={backend}
           playing={playing}
+          subtitleAppearance={settings.subtitleAppearance}
           onError={setError}
           onReady={(player) => {
             playerRef.current = player;
@@ -311,6 +325,21 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
               void player.seekTo(resume);
               setCurrentTime(resume);
               setResumeApplied(true);
+            }
+            if (!subsAutoApplied && subtitleTracks.length) {
+              const preferred = resolvePreferredSubtitleIndex(
+                subtitleTracks,
+                settings.preferredSubtitleLanguage,
+              );
+              if (preferred >= 0) {
+                const track = subtitleTracks[preferred]!;
+                void player.setTextTrack(
+                  resolveSubtitleUrl(session.serverUrl, session.accessToken, track),
+                  formatSubtitleLabel(track),
+                );
+                setActiveSubtitleIndex(preferred);
+              }
+              setSubsAutoApplied(true);
             }
           }}
           onTimeUpdate={(time, dur) => {

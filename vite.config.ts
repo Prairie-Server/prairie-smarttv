@@ -28,6 +28,7 @@ export default defineConfig({
         "src/storage/**/*.ts",
         "src/focus/**/*.ts",
         "src/settings/playbackSettings.ts",
+        "src/settings/subtitleAppearance.ts",
         "src/player/createPlayer.ts",
         "src/player/createMediaPlayer.ts",
         "src/player/timeFormat.ts",

@@ -17,6 +17,7 @@ import { PlayerScreen, type PlayerLaunch } from "./screens/PlayerScreen";
 import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
+import { loadLastServerUrl } from "./storage/persist";
 import {
   clearSession,
   loadSession,
@@ -102,7 +103,12 @@ export function App() {
   if (route.name === "connect" || (!session && route.name !== "profiles")) {
     return (
       <ConnectScreen
-        initialServerUrl={session?.serverUrl ?? import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""}
+        initialServerUrl={
+          session?.serverUrl ||
+          loadLastServerUrl() ||
+          import.meta.env.VITE_DEFAULT_SERVER_URL ||
+          ""
+        }
         onAuthenticated={(auth) => {
           setSession(null);
           setRoute({ name: "profiles", auth });
@@ -131,7 +137,9 @@ export function App() {
   if (!session) {
     return (
       <ConnectScreen
-        initialServerUrl={import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""}
+        initialServerUrl={
+          loadLastServerUrl() || import.meta.env.VITE_DEFAULT_SERVER_URL || ""
+        }
         onAuthenticated={(auth) => setRoute({ name: "profiles", auth })}
       />
     );

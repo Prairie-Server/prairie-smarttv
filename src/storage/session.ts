@@ -1,4 +1,10 @@
-const SESSION_KEY = "prairie.session";
+import {
+  SESSION_KEY,
+  normalizeServerUrl,
+  saveLastServerUrl,
+} from "./persist";
+
+export { SESSION_KEY, normalizeServerUrl };
 
 /** Tokens after login, before a household profile is chosen. */
 export interface AuthTokens {
@@ -13,10 +19,6 @@ export interface PrairieSession extends AuthTokens {
   profileId: string;
   profileName?: string;
   profileToken?: string;
-}
-
-function normalizeServerUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
 }
 
 export function loadSession(storage: Pick<Storage, "getItem"> = localStorage): PrairieSession | null {
@@ -50,11 +52,15 @@ export function saveSession(
     serverUrl: normalizeServerUrl(session.serverUrl),
   };
   storage.setItem(SESSION_KEY, JSON.stringify(normalized));
+  // Keep last server URL even if the user later disconnects (pre-fill Connect).
+  saveLastServerUrl(normalized.serverUrl, storage);
   return normalized;
 }
 
+/**
+ * Clears the active session tokens. Does NOT remove lastServerUrl or playback
+ * settings — those must survive logout and app upgrades.
+ */
 export function clearSession(storage: Pick<Storage, "removeItem"> = localStorage): void {
   storage.removeItem(SESSION_KEY);
 }
-
-export { normalizeServerUrl };
