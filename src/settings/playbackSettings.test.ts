@@ -64,4 +64,16 @@ describe("playbackSettings", () => {
     const storage = memoryStorage({ "prairie.playbackSettings": "{not-json" });
     expect(loadPlaybackSettings(storage)).toEqual(DEFAULT_PLAYBACK_SETTINGS);
   });
+
+  it("rejects malformed persisted booleans instead of coercing truthy strings", () => {
+    const normalized = normalizePlaybackSettings({
+      // @ts-expect-error intentional malformed persisted values
+      forceDirectPlay: "false",
+      // @ts-expect-error intentional malformed persisted values
+      forceTranscode: "true",
+    });
+    expect(normalized.forceDirectPlay).toBe(false);
+    expect(normalized.forceTranscode).toBe(false);
+    expect(resolveForcedPlayMethod(normalized)).toBeNull();
+  });
 });

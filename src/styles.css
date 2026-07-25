@@ -38,7 +38,7 @@ body {
     linear-gradient(165deg, #10151c 0%, var(--prairie-bg) 42%, #0f1319 100%);
   color: var(--prairie-ink);
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 button,

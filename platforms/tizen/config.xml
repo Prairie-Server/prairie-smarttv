@@ -6,7 +6,7 @@
         viewmodes="maximized">
   <tizen:application id="prairie.PrairieSmartTV" package="prairie" required_version="6.0"/>
   <content src="index.html"/>
-  <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
+  <feature name="http://tizen.org/feature/screen.size.normal.1920.1080"/>
   <icon src="icon.png"/>
   <name>Prairie</name>
   <description>Prairie media client for Samsung Tizen</description>

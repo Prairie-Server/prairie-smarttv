@@ -9,11 +9,12 @@ export function FocusButton({
   children,
   variant = "primary",
   className = "",
+  type = "button",
   ...rest
 }: FocusButtonProps) {
   return (
     <button
-      type="button"
+      type={type}
       className={`focus-btn focus-btn--${variant} ${className}`.trim()}
       {...rest}
     >

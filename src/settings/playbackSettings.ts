@@ -33,8 +33,8 @@ export function normalizePlaybackSettings(
     next.playerBackend = DEFAULT_PLAYBACK_SETTINGS.playerBackend;
   }
 
-  next.forceDirectPlay = Boolean(next.forceDirectPlay);
-  next.forceTranscode = Boolean(next.forceTranscode);
+  next.forceDirectPlay = next.forceDirectPlay === true;
+  next.forceTranscode = next.forceTranscode === true;
 
   // Direct wins when both are somehow set (UI should prevent this).
   if (next.forceDirectPlay && next.forceTranscode) {

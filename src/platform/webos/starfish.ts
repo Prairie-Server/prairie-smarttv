@@ -59,12 +59,14 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
   const mediaOption = buildMediaOption(preferNative);
   const source = document.createElement("source");
   source.src = options.url;
-  if (options.mimeType) source.type = options.mimeType;
   if (mediaOption) {
-    source.setAttribute("type", options.mimeType ?? "video/mp4;mediaOption=" + encodeURIComponent(mediaOption));
+    const baseType = options.mimeType ?? "video/mp4";
+    source.setAttribute("type", `${baseType};mediaOption=${encodeURIComponent(mediaOption)}`);
     // Dual-signal: some webOS builds read attributes; others read dataset.
     source.setAttribute("mediaOption", mediaOption);
     video.setAttribute("mediaPreferred", "true");
+  } else if (options.mimeType) {
+    source.type = options.mimeType;
   }
 
   video.appendChild(source);

@@ -70,6 +70,26 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   });
 
   let destroyed = false;
+  let ready = false;
+  let playWhenReady = options.autoplay !== false;
+
+  const safePlay = () => {
+    if (destroyed) return;
+    try {
+      avplay.play();
+    } catch (err) {
+      options.onError?.(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const safePause = () => {
+    if (destroyed) return;
+    try {
+      avplay.pause();
+    } catch (err) {
+      options.onError?.(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const prepareAndPlay = () => {
     if (destroyed) return;
@@ -77,13 +97,16 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       if (typeof avplay.prepareAsync === "function") {
         avplay.prepareAsync(
           () => {
-            if (!destroyed && options.autoplay !== false) avplay.play();
+            if (destroyed) return;
+            ready = true;
+            if (playWhenReady) safePlay();
           },
           (err) => options.onError?.(String(err)),
         );
       } else {
         avplay.prepare();
-        if (options.autoplay !== false) avplay.play();
+        ready = true;
+        if (playWhenReady) safePlay();
       }
     } catch (err) {
       options.onError?.(err instanceof Error ? err.message : String(err));
@@ -94,14 +117,24 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
 
   return {
     play: () => {
-      if (!destroyed) avplay.play();
+      if (destroyed) return;
+      if (!ready) {
+        playWhenReady = true;
+        return;
+      }
+      safePlay();
     },
     pause: () => {
-      if (!destroyed) avplay.pause();
+      if (destroyed) return;
+      playWhenReady = false;
+      if (!ready) return;
+      safePause();
     },
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      ready = false;
+      playWhenReady = false;
       try {
         avplay.stop();
       } catch {

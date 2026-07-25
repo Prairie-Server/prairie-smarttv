@@ -1,15 +1,8 @@
 import type { PlatformKind } from "./types";
+import { isStarfishEnvironment } from "./webos/starfish";
 
 function hasAvPlay(): boolean {
   return typeof window !== "undefined" && Boolean(window.webapis?.avplay);
-}
-
-function hasWebOsSignals(): boolean {
-  if (typeof window === "undefined") return false;
-  if (window.webOS?.platform?.tv) return true;
-  if (typeof window.PalmSystem !== "undefined") return true;
-  const ua = navigator.userAgent;
-  return /Web0S|webOS|LG Browser/i.test(ua);
 }
 
 function hasTizenSignals(): boolean {
@@ -22,7 +15,7 @@ function hasTizenSignals(): boolean {
 /** Detect the runtime host for player selection. */
 export function detectPlatform(): PlatformKind {
   if (hasAvPlay() || hasTizenSignals()) return "tizen";
-  if (hasWebOsSignals()) return "webos";
+  if (isStarfishEnvironment()) return "webos";
   return "browser";
 }
 

@@ -74,7 +74,7 @@ The home screen is a **file ID debug launcher** for this foundation slice; libra
 
 ## Layout
 
-```
+```text
 src/
   api/           Prairie /api/v1 client, auth, playback request builder
   platform/      detect + tizen/avplay + webos/starfish adapters

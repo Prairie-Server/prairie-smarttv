@@ -16,7 +16,11 @@ export interface ApiClientOptions {
   serverUrl: string;
   accessToken?: string | null;
   fetchImpl?: typeof fetch;
+  /** Request timeout in milliseconds. Defaults to 30s. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.replace(/\/+$/, "");
@@ -40,10 +44,35 @@ export async function apiRequest<T>(
   headers.set("X-Prairie-Device-Platform", "smarttv");
   headers.set("X-Prairie-Device-Name", "Prairie Smart TV");
 
-  const response = await fetchImpl(joinUrl(options.serverUrl, path), {
-    ...init,
-    headers,
-  });
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const onCallerAbort = () => controller.abort();
+  if (init.signal) {
+    if (init.signal.aborted) {
+      controller.abort();
+    } else {
+      init.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+  }
+
+  let response: Response;
+  try {
+    response = await fetchImpl(joinUrl(options.serverUrl, path), {
+      ...init,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ApiError("Request timed out", 408, "timeout");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+    init.signal?.removeEventListener("abort", onCallerAbort);
+  }
 
   if (!response.ok) {
     let body: unknown;

@@ -102,7 +102,7 @@ export function ConnectScreen({ onConnected, initialServerUrl = "" }: ConnectScr
 
           {error ? <p className="form-error" role="alert">{error}</p> : null}
 
-          <FocusButton className="connect-submit" disabled={busy}>
+          <FocusButton type="submit" className="connect-submit" disabled={busy}>
             {busy ? "Connecting…" : "Connect"}
           </FocusButton>
         </form>

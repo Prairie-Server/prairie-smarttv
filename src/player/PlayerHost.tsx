@@ -22,6 +22,8 @@ export function PlayerHost({
 }: PlayerHostProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<MediaPlayer | null>(null);
+  // Creation already honors `playing` via autoplay — skip the first sync tick.
+  const skipPlaySyncRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -43,6 +45,7 @@ export function PlayerHost({
     }
 
     playerRef.current = player;
+    skipPlaySyncRef.current = true;
     onReady?.(player);
 
     return () => {
@@ -55,6 +58,10 @@ export function PlayerHost({
   useEffect(() => {
     const player = playerRef.current;
     if (!player) return;
+    if (skipPlaySyncRef.current) {
+      skipPlaySyncRef.current = false;
+      return;
+    }
     if (playing) {
       void player.play();
     } else {

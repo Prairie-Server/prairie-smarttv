@@ -71,7 +71,7 @@ export function HomeScreen({
             />
           </label>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
-          <FocusButton>Play</FocusButton>
+          <FocusButton type="submit">Play</FocusButton>
         </form>
         <p className="hint muted">Server: {session.serverUrl}</p>
       </div>
