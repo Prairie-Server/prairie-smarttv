@@ -1,7 +1,7 @@
 # webOS packaging notes
 
 1. Run `npm run build:webos` — copies Vite `dist/` into `dist-webos/` with `appinfo.json` and icons.
-2. Replace `icon.png` / `largeIcon.png` amber placeholders with final brand marks before store packaging. The build **fails** if either icon is missing.
+2. `icon.png` (80×80) and `largeIcon.png` (130×130) are the Prairie app icon, resized from the brand 1024 master. The build **fails** if either icon is missing.
 3. Package with ares-cli:
 
 ```bash
