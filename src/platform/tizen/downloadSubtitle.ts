@@ -24,46 +24,63 @@ export interface TizenDownloadApi {
   download: TizenDownloadManager;
 }
 
+export interface SubtitleDownloadHandle {
+  promise: Promise<string>;
+  cancel: () => void;
+}
+
 function getTizenDownload(): TizenDownloadApi | null {
   const tizen = (window as unknown as { tizen?: TizenDownloadApi }).tizen;
   if (!tizen?.DownloadRequest || !tizen.download?.start) return null;
   return tizen;
 }
 
-/** Guess a local filename so AVPlay sees a recognizable subtitle extension. */
-export function subtitleLocalFileName(url: string, label?: string): string {
+function extensionFromUrl(url: string): string {
   try {
     const path = new URL(url, "https://local.invalid").pathname;
     const base = path.split("/").pop() || "";
-    if (/\.(smi|sami|srt|vtt|ttml|dfxp|xml)$/i.test(base)) {
-      return base.replace(/[^\w.-]+/g, "_");
-    }
+    const match = base.match(/\.(smi|sami|srt|vtt|ttml|dfxp)$/i);
+    if (match) return match[0]!.toLowerCase();
   } catch {
     /* fall through */
   }
-  const safe = (label || "subtitle").replace(/[^\w.-]+/g, "_").slice(0, 40);
-  return `${safe || "subtitle"}.smi`;
+  return ".smi";
+}
+
+/** Unique local filename so concurrent downloads cannot overwrite each other. */
+export function subtitleLocalFileName(url: string, label?: string): string {
+  const ext = extensionFromUrl(url);
+  const safe = (label || "subtitle").replace(/[^\w.-]+/g, "_").slice(0, 24) || "subtitle";
+  const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return `${safe}_${stamp}${ext}`;
 }
 
 /**
  * Download `url` into `wgt-private-tmp` and resolve with the absolute local path.
- * Rejects when the Tizen Download API is unavailable or the download fails.
+ * Call `cancel()` to abort a superseded download when the Tizen API supports it.
  */
 export function downloadSubtitleToLocalPath(
   url: string,
   label?: string,
   api: TizenDownloadApi | null = getTizenDownload(),
-): Promise<string> {
+): SubtitleDownloadHandle {
   if (!api) {
-    return Promise.reject(new Error("Tizen Download API is not available"));
+    return {
+      promise: Promise.reject(new Error("Tizen Download API is not available")),
+      cancel: () => undefined,
+    };
   }
+
   const fileName = subtitleLocalFileName(url, label);
   const request = new api.DownloadRequest(url, "wgt-private-tmp", fileName);
+  let downloadId: number | null = null;
+  let settled = false;
 
-  return new Promise((resolve, reject) => {
+  const promise = new Promise<string>((resolve, reject) => {
     try {
-      api.download.start(request, {
+      downloadId = api.download.start(request, {
         oncompleted: (_id, fullPath) => {
+          settled = true;
           if (!fullPath) {
             reject(new Error("Subtitle download completed without a path"));
             return;
@@ -71,13 +88,36 @@ export function downloadSubtitleToLocalPath(
           resolve(fullPath);
         },
         onfailed: (_id, error) => {
+          settled = true;
           const message =
             typeof error === "string" ? error : error?.message || "Subtitle download failed";
           reject(new Error(message));
         },
       });
     } catch (err) {
+      settled = true;
       reject(err instanceof Error ? err : new Error(String(err)));
     }
   });
+
+  return {
+    promise,
+    cancel: () => {
+      if (settled || downloadId == null) return;
+      try {
+        api.download.cancel?.(downloadId);
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
+/** Convenience for callers that only need the path promise. */
+export function downloadSubtitlePath(
+  url: string,
+  label?: string,
+  api: TizenDownloadApi | null = getTizenDownload(),
+): Promise<string> {
+  return downloadSubtitleToLocalPath(url, label, api).promise;
 }

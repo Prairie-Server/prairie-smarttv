@@ -88,10 +88,7 @@ export function ensureStorageSchema(
     return STORAGE_SCHEMA_VERSION;
   }
 
-  if (current < STORAGE_SCHEMA_VERSION) {
-    storage.setItem(STORAGE_SCHEMA_KEY, String(STORAGE_SCHEMA_VERSION));
-    return STORAGE_SCHEMA_VERSION;
-  }
-
+  // Future additive migrations land here as `if (current < N) { … }` blocks.
+  // Never delete PRESERVED_STORAGE_KEYS.
   return current;
 }

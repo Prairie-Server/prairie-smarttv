@@ -13,6 +13,9 @@ interface PlayerHostProps {
   playing: boolean;
   mimeType?: string;
   subtitleAppearance?: SubtitleAppearance;
+  /** Preferred/selected external subtitle for AVPlay IDLE attach. */
+  initialSubtitleUrl?: string | null;
+  initialSubtitleLabel?: string;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onReady?: (player: MediaPlayer) => void;
@@ -36,6 +39,8 @@ export function PlayerHost({
   playing,
   mimeType,
   subtitleAppearance,
+  initialSubtitleUrl,
+  initialSubtitleLabel,
   onError,
   onEnded,
   onReady,
@@ -45,7 +50,13 @@ export function PlayerHost({
   const playerRef = useRef<MediaPlayer | null>(null);
   const skipPlaySyncRef = useRef(false);
   const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onErrorRef = useRef(onError);
+  const onEndedRef = useRef(onEnded);
+  const onReadyRef = useRef(onReady);
   onTimeUpdateRef.current = onTimeUpdate;
+  onErrorRef.current = onError;
+  onEndedRef.current = onEnded;
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -59,25 +70,30 @@ export function PlayerHost({
         backend,
         autoplay: playing,
         mimeType,
-        onError,
-        onEnded,
+        initialSubtitleUrl,
+        initialSubtitleLabel,
+        onError: (message) => onErrorRef.current?.(message),
+        onEnded: () => onEndedRef.current?.(),
         onTimeUpdate: (current, duration) => onTimeUpdateRef.current?.(current, duration),
       });
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : String(err));
+      onErrorRef.current?.(err instanceof Error ? err.message : String(err));
       return;
     }
 
     playerRef.current = player;
     skipPlaySyncRef.current = true;
     applySubtitleVars(container, subtitleAppearance);
-    onReady?.(player);
+    onReadyRef.current?.(player);
 
     return () => {
       player.destroy();
       playerRef.current = null;
       container.replaceChildren();
     };
+    // Recreate only when the stream identity changes. Subtitle selection mid-play
+    // uses setTextTrack; initialSubtitle* is consumed at create for AVPlay IDLE attach.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional create-once-per-stream
   }, [url, backend, mimeType]);
 
   useEffect(() => {

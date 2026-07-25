@@ -32,6 +32,7 @@ export default defineConfig({
         "src/player/createPlayer.ts",
         "src/player/createMediaPlayer.ts",
         "src/player/timeFormat.ts",
+        "src/player/subtitleFormats.ts",
         "src/platform/detect.ts",
         "src/platform/tizen/subtitleOverlay.ts",
         "src/platform/tizen/downloadSubtitle.ts",

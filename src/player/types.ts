@@ -22,6 +22,9 @@ export interface CreateMediaPlayerOptions {
   backend: ResolvedPlayerBackend;
   autoplay?: boolean;
   mimeType?: string;
+  /** AVPlay: attach this external subtitle in IDLE before prepare. */
+  initialSubtitleUrl?: string | null;
+  initialSubtitleLabel?: string;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;

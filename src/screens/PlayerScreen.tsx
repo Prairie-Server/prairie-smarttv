@@ -17,6 +17,7 @@ import { FocusButton } from "../components/FocusButton";
 import { detectPlatform } from "../platform/detect";
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
+import { filterClientRenderableSubtitles } from "../player/subtitleFormats";
 import { formatPlaybackClock } from "../player/timeFormat";
 import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../player/types";
 import {
@@ -71,6 +72,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const playbackRef = useRef<PlaybackSessionResponse | null>(null);
   const lastProgressAt = useRef(0);
   const hideTimer = useRef<number | null>(null);
+  const audioResumeTimer = useRef<number | null>(null);
+  const pendingResumeRef = useRef<number | null>(launch.startPositionSeconds ?? null);
+  const activeSubtitleIndexRef = useRef(-1);
   const exitedRef = useRef(false);
 
   const [playback, setPlayback] = useState<PlaybackSessionResponse | null>(null);
@@ -83,10 +87,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const [duration, setDuration] = useState(0);
   const [menu, setMenu] = useState<MenuMode>("none");
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState(-1);
-  const [subsAutoApplied, setSubsAutoApplied] = useState(false);
   const [busyAudio, setBusyAudio] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [resumeApplied, setResumeApplied] = useState(false);
 
   const audioTracks = useMemo(() => {
     if (!watch || !playback) return [];
@@ -95,18 +97,32 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     return version?.audio_tracks ?? [];
   }, [watch, playback]);
 
-  const subtitleTracks = playback?.subtitle_urls ?? [];
+  const subtitleTracks = useMemo(
+    () => filterClientRenderableSubtitles(playback?.subtitle_urls ?? []),
+    [playback?.subtitle_urls],
+  );
 
   useEffect(() => {
     playbackRef.current = playback;
   }, [playback]);
 
   useEffect(() => {
+    activeSubtitleIndexRef.current = activeSubtitleIndex;
+  }, [activeSubtitleIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
+      if (audioResumeTimer.current != null) window.clearTimeout(audioResumeTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
-      setResumeApplied(false);
+      pendingResumeRef.current = launch.startPositionSeconds ?? null;
       try {
         if (!launch.watch && launch.contentId) {
           const detail = await fetchWatchDetail(session, launch.contentId);
@@ -231,45 +247,27 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   async function chooseAudio(index: number) {
     const sid = playbackRef.current?.session_id;
-    if (!sid || busyAudio) return;
+    const current = playbackRef.current;
+    if (!sid || !current || busyAudio) return;
     setBusyAudio(true);
     setError(null);
     try {
       const position = playerRef.current?.getCurrentTime() ?? currentTime;
       const updated = await switchPlaybackAudio(session, sid, index, position);
-      setPlayback((prev) =>
-        prev
-          ? {
-              ...prev,
-              stream_url: updated.stream_url,
-              play_method: updated.play_method,
-              audio_track_index: updated.audio_track_index,
-              position,
-            }
-          : prev,
-      );
+      const nextSession: PlaybackSessionResponse = {
+        ...current,
+        stream_url: updated.stream_url,
+        play_method: updated.play_method,
+        audio_track_index: updated.audio_track_index,
+        position,
+      };
+      setPlayback(nextSession);
+      pendingResumeRef.current = updated.player_start_seconds ?? position;
       setStreamUrl(
-        resolvePlaybackStreamUrl(
-          session.serverUrl,
-          {
-            ...(playbackRef.current as PlaybackSessionResponse),
-            stream_url: updated.stream_url,
-            play_method: updated.play_method,
-            audio_track_index: updated.audio_track_index,
-          },
-          session.accessToken,
-        ),
+        resolvePlaybackStreamUrl(session.serverUrl, nextSession, session.accessToken),
       );
-      setResumeApplied(false);
       setMenu("none");
       bumpControls();
-      // Resume near the same position after stream reload.
-      window.setTimeout(() => {
-        const target = updated.player_start_seconds ?? position;
-        void playerRef.current?.seekTo(target);
-        setCurrentTime(target);
-        setResumeApplied(true);
-      }, 450);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not switch audio");
     } finally {
@@ -277,9 +275,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     }
   }
 
-  function applySubtitleIndex(index: number) {
+  function applySubtitleIndex(index: number, player: MediaPlayer | null = playerRef.current) {
     setActiveSubtitleIndex(index);
-    const player = playerRef.current;
+    activeSubtitleIndexRef.current = index;
     if (!player) return;
     if (index < 0) {
       void player.setTextTrack(null);
@@ -299,12 +297,33 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     const language =
       index < 0 ? "" : (subtitleTracks[index]?.language ?? "").toLowerCase();
     savePlaybackSettings({
-      ...settings,
+      ...loadPlaybackSettings(),
       preferredSubtitleLanguage: language,
     });
     setMenu("none");
     bumpControls();
   }
+
+  // Seed for AVPlay IDLE attach — only recomputed when the stream changes, not on
+  // every mid-play Subs menu pick (those use setTextTrack).
+  const streamSubtitleSeed = useMemo(() => {
+    const preferred = resolvePreferredSubtitleIndex(
+      subtitleTracks,
+      settings.preferredSubtitleLanguage,
+    );
+    const index = activeSubtitleIndexRef.current >= 0 ? activeSubtitleIndexRef.current : preferred;
+    if (index < 0) {
+      return { url: null as string | null, label: undefined as string | undefined, index: -1 };
+    }
+    const track = subtitleTracks[index];
+    if (!track) return { url: null, label: undefined, index: -1 };
+    return {
+      url: resolveSubtitleUrl(session.serverUrl, session.accessToken, track),
+      label: formatSubtitleLabel(track),
+      index,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed tied to stream identity
+  }, [streamUrl, subtitleTracks, settings.preferredSubtitleLanguage, session.serverUrl, session.accessToken]);
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const title = launch.title?.trim() || watch?.title || `File ${launch.fileId}`;
@@ -313,33 +332,31 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     <section className="screen player-screen">
       {streamUrl && !error ? (
         <PlayerHost
+          key={streamUrl}
           url={streamUrl}
           backend={backend}
           playing={playing}
           subtitleAppearance={settings.subtitleAppearance}
+          initialSubtitleUrl={streamSubtitleSeed.url}
+          initialSubtitleLabel={streamSubtitleSeed.label}
           onError={setError}
           onReady={(player) => {
             playerRef.current = player;
-            const resume = launch.startPositionSeconds ?? 0;
-            if (!resumeApplied && resume > 0) {
+            const resume = pendingResumeRef.current;
+            if (resume != null && resume > 0) {
               void player.seekTo(resume);
               setCurrentTime(resume);
-              setResumeApplied(true);
+              pendingResumeRef.current = null;
             }
-            if (!subsAutoApplied && subtitleTracks.length) {
-              const preferred = resolvePreferredSubtitleIndex(
-                subtitleTracks,
-                settings.preferredSubtitleLanguage,
-              );
-              if (preferred >= 0) {
-                const track = subtitleTracks[preferred]!;
-                void player.setTextTrack(
-                  resolveSubtitleUrl(session.serverUrl, session.accessToken, track),
-                  formatSubtitleLabel(track),
-                );
-                setActiveSubtitleIndex(preferred);
-              }
-              setSubsAutoApplied(true);
+            // Re-sync selection after every player recreate (e.g. audio switch).
+            const index =
+              activeSubtitleIndexRef.current >= 0
+                ? activeSubtitleIndexRef.current
+                : streamSubtitleSeed.index;
+            if (index >= 0) {
+              applySubtitleIndex(index, player);
+            } else {
+              void player.setTextTrack(null);
             }
           }}
           onTimeUpdate={(time, dur) => {

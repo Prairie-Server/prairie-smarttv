@@ -68,6 +68,9 @@ export interface AvPlayPlayerOptions {
   url: string;
   container: HTMLElement;
   autoplay?: boolean;
+  /** Preferred subtitle URL known at create time — attached in IDLE before prepare. */
+  initialSubtitleUrl?: string | null;
+  initialSubtitleLabel?: string;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
@@ -89,7 +92,8 @@ function claimInAppCaptions(): void {
   const tvinfo = getTvInfo();
   try {
     tvinfo?.registerInAppCaptionControl?.(true);
-    tvinfo?.showCaption?.(true);
+    // Keep the system caption surface off — we render via onsubtitlechange overlay.
+    tvinfo?.showCaption?.(false);
   } catch {
     /* older firmwares */
   }
@@ -97,17 +101,32 @@ function claimInAppCaptions(): void {
 
 /**
  * Thin wrapper around Samsung AVPlay with full external-subtitle support:
- * download remote VTT/SRT/SMI → setExternalSubtitlePath → onsubtitlechange
- * rendered in an HTML overlay (so Prairie subtitle styling applies).
+ * download remote VTT/SRT/SMI → setExternalSubtitlePath (IDLE before prepare when
+ * possible) → onsubtitlechange rendered in an HTML overlay so Prairie styling applies.
  *
- * Destroy (stop+close) must be called on Back so the native surface does not
- * linger over the React UI.
+ * Native AVPlay subtitle drawing stays silenced (`setSilentSubtitle(true)`); the
+ * HTML overlay is the sole renderer so text/background settings work.
  */
 export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHandle {
   const avplay = getAvPlay();
   if (!avplay) {
     throw new Error("AVPlay is not available on this platform");
   }
+
+  // Lifecycle state must exist before setListener — some bridges fire sync callbacks.
+  let destroyed = false;
+  let ready = false;
+  let prepareStarted = false;
+  let playWhenReady = options.autoplay !== false;
+  /** Whether Prairie should show the HTML overlay (independent of AVPlay native silence). */
+  let overlayEnabled = false;
+  let trackGeneration = 0;
+  let pendingSubtitle: { url: string; label?: string } | null =
+    options.initialSubtitleUrl
+      ? { url: options.initialSubtitleUrl, label: options.initialSubtitleLabel }
+      : null;
+  let activeDownloadCancel: (() => void) | null = null;
+  let prepareTimer: number | null = null;
 
   claimInAppCaptions();
 
@@ -132,7 +151,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       options.onTimeUpdate?.(currentTimeMs / 1000, durationMs / 1000);
     },
     onsubtitlechange: (_duration, text) => {
-      if (destroyed || silent) {
+      if (destroyed || !overlayEnabled) {
         clearSubtitleOverlay(overlay);
         return;
       }
@@ -140,12 +159,12 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     },
   });
 
-  let destroyed = false;
-  let ready = false;
-  let playWhenReady = options.autoplay !== false;
-  let silent = true;
-  let trackGeneration = 0;
-  let pendingSubtitle: { url: string; label?: string } | null = null;
+  // Always silence AVPlay's built-in caption renderer; we draw via the overlay.
+  try {
+    avplay.setSilentSubtitle?.(true);
+  } catch {
+    /* ignore */
+  }
 
   const safePlay = () => {
     if (destroyed) return;
@@ -165,17 +184,23 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     }
   };
 
-  const applyExternalSubtitle = (localPath: string) => {
+  const cancelActiveDownload = () => {
+    activeDownloadCancel?.();
+    activeDownloadCancel = null;
+  };
+
+  const applyExternalSubtitlePath = (localPath: string) => {
     if (!avplay.setExternalSubtitlePath) {
       throw new Error("AVPlay setExternalSubtitlePath is unavailable on this firmware");
     }
     avplay.setExternalSubtitlePath(localPath);
+    // Keep native drawing silenced — overlay handles presentation + styling.
     try {
-      avplay.setSilentSubtitle?.(false);
+      avplay.setSilentSubtitle?.(true);
     } catch {
       /* ignore */
     }
-    silent = false;
+    overlayEnabled = true;
     try {
       const tracks = avplay.getTotalTrackInfo?.() ?? [];
       const index = pickExternalTextTrackIndex(tracks);
@@ -187,28 +212,26 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     }
   };
 
-  const enableSubtitleUrl = async (url: string, label?: string) => {
+  const downloadAndApply = async (url: string, label?: string): Promise<void> => {
     const generation = ++trackGeneration;
-    const localPath = await downloadSubtitleToLocalPath(url, label);
+    cancelActiveDownload();
+    const handle = downloadSubtitleToLocalPath(url, label);
+    activeDownloadCancel = handle.cancel;
+    const localPath = await handle.promise;
     if (destroyed || generation !== trackGeneration) return;
-    applyExternalSubtitle(localPath);
+    activeDownloadCancel = null;
+    applyExternalSubtitlePath(localPath);
   };
 
   const prepareAndPlay = () => {
-    if (destroyed) return;
+    if (destroyed || prepareStarted) return;
+    prepareStarted = true;
     try {
       if (typeof avplay.prepareAsync === "function") {
         avplay.prepareAsync(
           () => {
             if (destroyed) return;
             ready = true;
-            if (pendingSubtitle) {
-              const next = pendingSubtitle;
-              pendingSubtitle = null;
-              void enableSubtitleUrl(next.url, next.label).catch((err) => {
-                options.onError?.(err instanceof Error ? err.message : String(err));
-              });
-            }
             if (playWhenReady) safePlay();
           },
           (err) => options.onError?.(String(err)),
@@ -216,13 +239,6 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       } else {
         avplay.prepare();
         ready = true;
-        if (pendingSubtitle) {
-          const next = pendingSubtitle;
-          pendingSubtitle = null;
-          void enableSubtitleUrl(next.url, next.label).catch((err) => {
-            options.onError?.(err instanceof Error ? err.message : String(err));
-          });
-        }
         if (playWhenReady) safePlay();
       }
     } catch (err) {
@@ -230,14 +246,27 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     }
   };
 
-  // Start silent until the app selects a track (matches HTML5 Off default).
-  try {
-    avplay.setSilentSubtitle?.(true);
-  } catch {
-    /* ignore */
-  }
+  /**
+   * Delay prepare one tick so PlayerHost.onReady → setTextTrack can queue a
+   * pending subtitle, then attach it in IDLE before prepare (Samsung-recommended).
+   */
+  const beginStartup = () => {
+    if (destroyed || prepareStarted) return;
+    void (async () => {
+      if (pendingSubtitle) {
+        const next = pendingSubtitle;
+        pendingSubtitle = null;
+        try {
+          await downloadAndApply(next.url, next.label);
+        } catch (err) {
+          options.onError?.(err instanceof Error ? err.message : String(err));
+        }
+      }
+      if (!destroyed) prepareAndPlay();
+    })();
+  };
 
-  prepareAndPlay();
+  prepareTimer = window.setTimeout(beginStartup, 0);
 
   return {
     play: () => {
@@ -279,9 +308,11 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     setTextTrack: async (url, label) => {
       if (destroyed) return;
       trackGeneration += 1;
+      cancelActiveDownload();
+
       if (!url) {
         pendingSubtitle = null;
-        silent = true;
+        overlayEnabled = false;
         clearSubtitleOverlay(overlay);
         try {
           avplay.setSilentSubtitle?.(true);
@@ -291,14 +322,14 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
         return;
       }
 
-      if (!ready) {
-        // Attach after prepare — setExternalSubtitlePath is most reliable then.
+      if (!prepareStarted && !ready) {
+        // Still in the pre-prepare window — attach in IDLE via beginStartup.
         pendingSubtitle = { url, label };
         return;
       }
 
       try {
-        await enableSubtitleUrl(url, label);
+        await downloadAndApply(url, label);
       } catch (err) {
         options.onError?.(
           err instanceof Error ? err.message : "Could not load AVPlay subtitles",
@@ -311,7 +342,13 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       ready = false;
       playWhenReady = false;
       pendingSubtitle = null;
+      overlayEnabled = false;
       trackGeneration += 1;
+      cancelActiveDownload();
+      if (prepareTimer != null) {
+        window.clearTimeout(prepareTimer);
+        prepareTimer = null;
+      }
       destroySubtitleOverlay(overlay);
       try {
         avplay.stop();

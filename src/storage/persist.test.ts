@@ -104,4 +104,13 @@ describe("persist / upgrade safety", () => {
     expect(ensureStorageSchema(storage)).toBe(1);
     expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://d.example");
   });
+
+  it("leaves a current schema version unchanged", () => {
+    const storage = memoryStorage({
+      [STORAGE_SCHEMA_KEY]: "1",
+      [LAST_SERVER_URL_KEY]: "https://stable.example",
+    });
+    expect(ensureStorageSchema(storage)).toBe(1);
+    expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://stable.example");
+  });
 });
