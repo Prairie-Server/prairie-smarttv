@@ -1,15 +1,18 @@
 import { useState, type FormEvent } from "react";
-import { login, listProfiles, pickDefaultProfile } from "../api/auth";
+import { login } from "../api/auth";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
-import { saveSession, type PrairieSession } from "../storage/session";
+import type { AuthTokens } from "../storage/session";
 
 interface ConnectScreenProps {
-  onConnected: (session: PrairieSession) => void;
+  onAuthenticated: (auth: AuthTokens) => void;
   initialServerUrl?: string;
 }
 
-export function ConnectScreen({ onConnected, initialServerUrl = "" }: ConnectScreenProps) {
+export function ConnectScreen({
+  onAuthenticated,
+  initialServerUrl = "",
+}: ConnectScreenProps) {
   const [serverUrl, setServerUrl] = useState(initialServerUrl);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -26,20 +29,12 @@ export function ConnectScreen({ onConnected, initialServerUrl = "" }: ConnectScr
         throw new Error("Enter your Prairie server URL");
       }
       const auth = await login(trimmedUrl, { username: username.trim(), password });
-      const profiles = await listProfiles(trimmedUrl, auth.access_token);
-      const profile = pickDefaultProfile(profiles);
-      if (!profile) {
-        throw new Error("No household profile found on this account");
-      }
-      const session = saveSession({
+      onAuthenticated({
         serverUrl: trimmedUrl,
         accessToken: auth.access_token,
         refreshToken: auth.refresh_token,
         username: auth.user.username,
-        profileId: profile.id,
-        profileName: profile.name,
       });
-      onConnected(session);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

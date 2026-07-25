@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-tizen/
 dist-webos/
+artifacts/
 *.local
 .DS_Store
 coverage/

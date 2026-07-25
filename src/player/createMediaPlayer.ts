@@ -11,12 +11,17 @@ export function createMediaPlayer(options: CreateMediaPlayerOptions): MediaPlaye
       autoplay: options.autoplay,
       onError: options.onError,
       onEnded: options.onEnded,
+      onTimeUpdate: options.onTimeUpdate,
     });
     return {
       backend: "avplay",
       play: () => handle.play(),
       pause: () => handle.pause(),
       destroy: () => handle.destroy(),
+      seekTo: (seconds) => handle.seekTo(seconds),
+      getCurrentTime: () => handle.getCurrentTime(),
+      getDuration: () => handle.getDuration(),
+      setTextTrack: (url, label) => handle.setTextTrack(url, label),
     };
   }
 
@@ -26,14 +31,20 @@ export function createMediaPlayer(options: CreateMediaPlayerOptions): MediaPlaye
       container: options.container,
       autoplay: options.autoplay,
       preferNative: true,
+      mimeType: options.mimeType,
       onError: options.onError,
       onEnded: options.onEnded,
+      onTimeUpdate: options.onTimeUpdate,
     });
     return {
       backend: "starfish",
       play: () => handle.play(),
       pause: () => handle.pause(),
       destroy: () => handle.destroy(),
+      seekTo: (seconds) => handle.seekTo(seconds),
+      getCurrentTime: () => handle.getCurrentTime(),
+      getDuration: () => handle.getDuration(),
+      setTextTrack: (url, label) => handle.setTextTrack(url, label),
     };
   }
 

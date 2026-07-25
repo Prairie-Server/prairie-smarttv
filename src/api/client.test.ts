@@ -70,6 +70,27 @@ describe("apiRequest", () => {
     await expectation;
   });
 
+  it("sends profile headers when provided", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get("X-Profile-Id")).toBe("profile-1");
+      expect(headers.get("X-Profile-Token")).toBe("pin-token");
+      return new Response("{}", { status: 200 });
+    });
+
+    await apiRequest(
+      {
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        profileId: "profile-1",
+        profileToken: "pin-token",
+        fetchImpl,
+      },
+      "/api/v1/home/sections",
+    );
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
   it("preserves caller AbortError instead of reporting a timeout", async () => {
     const caller = new AbortController();
     const fetchImpl = vi.fn(

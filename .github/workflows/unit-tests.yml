@@ -36,9 +36,9 @@ jobs:
       - name: Typecheck and unit tests with coverage
         run: |
           npm run build
-          # Vitest thresholds (75% stmts/lines/funcs, 70% branches) apply to
-          # src/api/client.ts, src/api/playback.ts, src/settings/playbackSettings.ts,
-          # and src/player/createPlayer.ts — see vite.config.ts coverage.include.
+          # Vitest thresholds: 75% stmts/branches/funcs/lines on logic modules
+          # (src/api/**, src/storage/**, playback settings, player selection,
+          # platform detect). See vite.config.ts coverage.include.
           npm run test:coverage
 
       - name: Packaging stubs (Tizen / webOS)

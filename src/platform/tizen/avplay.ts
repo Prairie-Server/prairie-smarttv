@@ -28,8 +28,10 @@ export interface AvPlayPlayerHandle {
   play(): void;
   pause(): void;
   destroy(): void;
-  getCurrentTimeMs(): number;
-  getDurationMs(): number;
+  seekTo(seconds: number): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  setTextTrack(url: string | null, label?: string): void;
 }
 
 export interface AvPlayPlayerOptions {
@@ -38,6 +40,7 @@ export interface AvPlayPlayerOptions {
   autoplay?: boolean;
   onError?: (message: string) => void;
   onEnded?: () => void;
+  onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
 }
 
 function getAvPlay(): AvPlayApi | null {
@@ -67,6 +70,15 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   avplay.setListener({
     onerror: (eventType) => options.onError?.(String(eventType)),
     onstreamcompleted: () => options.onEnded?.(),
+    oncurrentplaytime: (currentTimeMs) => {
+      let durationMs = 0;
+      try {
+        durationMs = avplay.getDuration();
+      } catch {
+        durationMs = 0;
+      }
+      options.onTimeUpdate?.(currentTimeMs / 1000, durationMs / 1000);
+    },
   });
 
   let destroyed = false;
@@ -130,6 +142,31 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       if (!ready) return;
       safePause();
     },
+    seekTo: (seconds: number) => {
+      if (destroyed || !ready) return;
+      try {
+        avplay.seekTo(Math.max(0, Math.floor(seconds * 1000)));
+      } catch (err) {
+        options.onError?.(err instanceof Error ? err.message : String(err));
+      }
+    },
+    getCurrentTime: () => {
+      try {
+        return avplay.getCurrentTime() / 1000;
+      } catch {
+        return 0;
+      }
+    },
+    getDuration: () => {
+      try {
+        return avplay.getDuration() / 1000;
+      } catch {
+        return 0;
+      }
+    },
+    // AVPlay text-track APIs vary by firmware; Off/On is handled via HTML overlay
+    // when the stream does not expose embedded text. Keep as intentional no-op.
+    setTextTrack: () => undefined,
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
@@ -144,20 +181,6 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
         avplay.close();
       } catch {
         /* ignore */
-      }
-    },
-    getCurrentTimeMs: () => {
-      try {
-        return avplay.getCurrentTime();
-      } catch {
-        return 0;
-      }
-    },
-    getDurationMs: () => {
-      try {
-        return avplay.getDuration();
-      } catch {
-        return 0;
       }
     },
   };
