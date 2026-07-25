@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { CollectionCard } from "./api/collections";
+import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
 import type { Library } from "./api/libraries";
 import { ShellNav, type ShellTab } from "./components/ShellNav";
+import { handleSpatialArrowKey } from "./focus/spatialFocus";
 import { CollectionBrowseScreen } from "./screens/CollectionBrowseScreen";
 import { CollectionsScreen } from "./screens/CollectionsScreen";
 import { ConnectScreen } from "./screens/ConnectScreen";
@@ -9,7 +11,9 @@ import { HomeBrowseScreen } from "./screens/HomeBrowseScreen";
 import { ItemDetailScreen } from "./screens/ItemDetailScreen";
 import { LibrariesScreen } from "./screens/LibrariesScreen";
 import { LibraryBrowseScreen } from "./screens/LibraryBrowseScreen";
-import { PlayerScreen } from "./screens/PlayerScreen";
+import { LiveTvPlayerScreen } from "./screens/LiveTvPlayerScreen";
+import { LiveTvScreen } from "./screens/LiveTvScreen";
+import { PlayerScreen, type PlayerLaunch } from "./screens/PlayerScreen";
 import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
@@ -29,9 +33,11 @@ type Route =
   | { name: "collections" }
   | { name: "collection"; collection: CollectionCard }
   | { name: "search" }
+  | { name: "livetv" }
+  | { name: "livetv-player"; channel: LiveTvChannel; back: Route }
   | { name: "detail"; contentId: string; back: Route }
   | { name: "settings"; back: Route }
-  | { name: "player"; fileId: number; title?: string; back: Route };
+  | { name: "player"; launch: PlayerLaunch; back: Route };
 
 function shellTabFor(route: Route): ShellTab | null {
   switch (route.name) {
@@ -45,6 +51,8 @@ function shellTabFor(route: Route): ShellTab | null {
       return "collections";
     case "search":
       return "search";
+    case "livetv":
+      return "livetv";
     default:
       return null;
   }
@@ -55,36 +63,37 @@ export function App() {
   const [route, setRoute] = useState<Route>(() =>
     loadSession() ? { name: "home" } : { name: "connect" },
   );
+  const [liveTvAvailable, setLiveTvAvailable] = useState(false);
 
   const disconnect = useCallback(() => {
     clearSession();
     setSession(null);
+    setLiveTvAvailable(false);
     setRoute({ name: "connect" });
   }, []);
 
   useEffect(() => {
+    if (!session) {
+      setLiveTvAvailable(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const channels = await fetchLiveTvChannels(session);
+        if (!cancelled) setLiveTvAvailable(channels.length > 0);
+      } catch {
+        if (!cancelled) setLiveTvAvailable(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-        return;
-      }
-      const focusables = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => el.offsetParent !== null);
-      if (focusables.length < 2) return;
-      const active = document.activeElement as HTMLElement | null;
-      const index = active ? focusables.indexOf(active) : -1;
-      if (index < 0) {
-        focusables[0]?.focus();
-        event.preventDefault();
-        return;
-      }
-      const delta =
-        event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
-      const next = focusables[(index + delta + focusables.length) % focusables.length];
-      next?.focus();
-      event.preventDefault();
+      handleSpatialArrowKey(event);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -136,8 +145,17 @@ export function App() {
     return (
       <PlayerScreen
         session={session}
-        fileId={route.fileId}
-        title={route.title}
+        launch={route.launch}
+        onExit={() => setRoute(route.back)}
+      />
+    );
+  }
+
+  if (route.name === "livetv-player") {
+    return (
+      <LiveTvPlayerScreen
+        session={session}
+        channel={route.channel}
         onExit={() => setRoute(route.back)}
       />
     );
@@ -149,9 +167,7 @@ export function App() {
         session={session}
         contentId={route.contentId}
         onBack={() => setRoute(route.back)}
-        onPlay={(fileId, title) =>
-          setRoute({ name: "player", fileId, title, back: route })
-        }
+        onPlay={(launch) => setRoute({ name: "player", launch, back: route })}
       />
     );
   }
@@ -200,6 +216,15 @@ export function App() {
     );
   } else if (route.name === "search") {
     body = <SearchScreen session={session} onOpenItem={openItem} />;
+  } else if (route.name === "livetv") {
+    body = (
+      <LiveTvScreen
+        session={session}
+        onTune={(channel) =>
+          setRoute({ name: "livetv-player", channel, back: { name: "livetv" } })
+        }
+      />
+    );
   }
 
   return (
@@ -207,6 +232,7 @@ export function App() {
       <ShellNav
         active={tab}
         profileName={session.profileName}
+        showLiveTv={liveTvAvailable}
         onNavigate={(next) => {
           switch (next) {
             case "home":
@@ -220,6 +246,9 @@ export function App() {
               break;
             case "search":
               setRoute({ name: "search" });
+              break;
+            case "livetv":
+              setRoute({ name: "livetv" });
               break;
           }
         }}

@@ -1,9 +1,6 @@
 /**
  * webOS "Starfish-style" playback: HTML5 <video> with LG mediaOption /
  * mediaPreferred hints when the platform understands them.
- *
- * This is intentionally not a copy of any third-party player stack — it is a
- * minimal adapter that prefers native decoding paths on LG TV webviews.
  */
 
 export interface StarfishPlayerHandle {
@@ -11,6 +8,10 @@ export interface StarfishPlayerHandle {
   play(): Promise<void>;
   pause(): void;
   destroy(): void;
+  seekTo(seconds: number): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  setTextTrack(url: string | null, label?: string): void;
 }
 
 export interface StarfishPlayerOptions {
@@ -18,16 +19,14 @@ export interface StarfishPlayerOptions {
   container: HTMLElement;
   autoplay?: boolean;
   mimeType?: string;
-  /** Prefer native media pipeline on webOS when supported. */
   preferNative?: boolean;
   onError?: (message: string) => void;
   onEnded?: () => void;
+  onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
 }
 
 function buildMediaOption(preferNative: boolean): string | undefined {
   if (!preferNative) return undefined;
-  // LG documents mediaOption / mediaPreferred as JSON attached to <source>.
-  // Keep the payload minimal and defensive — unknown keys are ignored.
   return JSON.stringify({
     htmlMediaOption: {
       useUMSMediaInfo: true,
@@ -50,6 +49,7 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
   video.setAttribute("webkit-playsinline", "true");
   video.controls = false;
   video.preload = "auto";
+  video.crossOrigin = "anonymous";
   video.style.width = "100%";
   video.style.height = "100%";
   video.style.objectFit = "contain";
@@ -62,7 +62,6 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
   if (mediaOption) {
     const baseType = options.mimeType ?? "video/mp4";
     source.setAttribute("type", `${baseType};mediaOption=${encodeURIComponent(mediaOption)}`);
-    // Dual-signal: some webOS builds read attributes; others read dataset.
     source.setAttribute("mediaOption", mediaOption);
     video.setAttribute("mediaPreferred", "true");
   } else if (options.mimeType) {
@@ -77,8 +76,12 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
     options.onError?.(err ? `Media error ${err.code}` : "Playback failed");
   };
   const onEnded = () => options.onEnded?.();
+  const onTimeUpdate = () => {
+    options.onTimeUpdate?.(video.currentTime || 0, Number.isFinite(video.duration) ? video.duration : 0);
+  };
   video.addEventListener("error", onError);
   video.addEventListener("ended", onEnded);
+  video.addEventListener("timeupdate", onTimeUpdate);
 
   if (options.autoplay !== false) {
     void video.play().catch((err: unknown) => {
@@ -86,13 +89,43 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
     });
   }
 
+  let activeTrack: HTMLTrackElement | null = null;
+
   return {
     element: video,
     play: () => video.play(),
     pause: () => video.pause(),
+    seekTo: (seconds: number) => {
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        video.currentTime = seconds;
+      }
+    },
+    getCurrentTime: () => video.currentTime || 0,
+    getDuration: () => (Number.isFinite(video.duration) ? video.duration : 0),
+    setTextTrack: (url, label) => {
+      if (activeTrack) {
+        activeTrack.remove();
+        activeTrack = null;
+      }
+      for (let i = 0; i < video.textTracks.length; i++) {
+        video.textTracks[i]!.mode = "disabled";
+      }
+      if (!url) return;
+      const track = document.createElement("track");
+      track.kind = "subtitles";
+      track.label = label ?? "Subtitles";
+      track.src = url;
+      track.default = true;
+      video.appendChild(track);
+      activeTrack = track;
+      queueMicrotask(() => {
+        if (track.track) track.track.mode = "showing";
+      });
+    },
     destroy: () => {
       video.removeEventListener("error", onError);
       video.removeEventListener("ended", onEnded);
+      video.removeEventListener("timeupdate", onTimeUpdate);
       video.pause();
       source.removeAttribute("src");
       video.removeAttribute("src");

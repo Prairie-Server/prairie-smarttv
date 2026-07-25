@@ -2,19 +2,23 @@
 
 AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first web app that talks to Prairie over native `/api/v1` (not Jellyfin-primary).
 
-Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`, Sora + Fraunces.
+**Version 1.0.0** — Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`, Sora + Fraunces.
 
 ## What’s included
 
 - Connect to a Prairie server (username / password)
 - **Profile picker** (PIN unlock when required)
-- **Home** rails from `/api/v1/home/sections` (continue watching, recently added, …)
+- **Home** rails from `/api/v1/home/sections`
 - **Libraries** browse with pagination (`/api/v1/user/libraries` + `/api/v1/catalog`)
 - **Collections** (library + personal) → catalog items
 - **Search** across the catalog
-- **Item detail** → seasons/episodes for series → Play via `/api/v1/watch/{id}` + `/playback/start`
+- **Live TV** channel list + guide now/next (tab hidden when the server has no enabled channels)
+- **Item detail** → seasons/episodes → Play via `/api/v1/watch/{id}` + `/playback/start` with resume
+- **Player chrome**: play/pause, ±15s seek, scrub readout, progress reporting, audio track switch, client-side subtitles, session teardown on exit
+- Spatial D-pad focus (geometry-based, not DOM-order)
 - Playback backends: HTML5 / Tizen AVPlay / webOS Starfish-style
 - Troubleshooting settings: force direct / force transcode, backend preference
+- Store packaging scripts for unsigned `.wgt` / `.ipk` staging + signing docs
 
 ## Requirements
 
@@ -47,18 +51,23 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 | `npm run build:web` | Same as production web build |
 | `npm run build:tizen` | Web build + copy into `dist-tizen/` with `config.xml` |
 | `npm run build:webos` | Web build + copy into `dist-webos/` with `appinfo.json` |
+| `npm run package:tizen` | Build + write unsigned `.wgt` under `artifacts/` |
+| `npm run package:webos` | Build + `.ipk` (via ares) or staging zip under `artifacts/` |
+| `npm run package:store` | Both platform packages |
 
-Packaging into `.wgt` / `.ipk` still needs Tizen Studio / ares-cli — see `platforms/tizen/` and `platforms/webos/`.
+Signing steps: `platforms/tizen/README.md` and `platforms/webos/README.md`.
 
 ## Coverage CI
 
-GitHub Actions runs `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on all logic modules:
+GitHub Actions runs `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on logic modules:
 
 - `src/api/**`
 - `src/storage/**`
+- `src/focus/**`
 - `src/settings/playbackSettings.ts`
 - `src/player/createPlayer.ts`
 - `src/player/createMediaPlayer.ts`
+- `src/player/timeFormat.ts`
 - `src/platform/detect.ts`
 
 UI screens and native AVPlay/Starfish adapter implementations stay excluded (thin platform wrappers).
@@ -71,7 +80,9 @@ UI screens and native AVPlay/Starfish adapter implementations stay excluded (thi
 | **AVPlay** | Samsung Tizen native (`webapis.avplay`) |
 | **Starfish-style** | LG webOS HTML5 `<video>` with `mediaOption` / `mediaPreferred` hints |
 
-On the player screen: **OK / Enter** toggles play-pause; **Back / Escape** exits and destroys the native player instance.
+VOD player: **OK / Enter** toggles play-pause; **−15s / +15s** seek; Audio / Subs menus when tracks exist; **Back** reports progress, deletes the playback session, and destroys the native player.
+
+Live TV uses `/api/v1/livetv/...` session start/release (not VOD `playback/start`).
 
 ## API surface
 
@@ -82,6 +93,8 @@ On the player screen: **OK / Enter** toggles play-pause; **Back / Escape** exits
 5. `GET /api/v1/library/{id}/collections` · `GET /api/v1/collections`
 6. `GET /api/v1/catalog/items/{id}` · seasons/episodes · `GET /api/v1/watch/{id}`
 7. `POST /api/v1/playback/start` → play `stream_url`
+8. `POST /api/v1/playback/{id}/progress` · `PATCH …/audio` · `DELETE …/{id}`
+9. `GET /api/v1/livetv/channels` · `GET …/guide` · `POST …/channels/{id}/session` · `DELETE …/sessions/{id}`
 
 Session auth is in `localStorage` (`prairie.session`): server URL, tokens, active profile id / PIN token.
 
@@ -89,18 +102,16 @@ Session auth is in `localStorage` (`prairie.session`): server URL, tokens, activ
 
 ```text
 src/
-  api/           Prairie /api/v1 client, auth, catalog, home, watch, playback
+  api/           Prairie /api/v1 client, auth, catalog, home, watch, playback, livetv
+  focus/         Spatial D-pad focus engine
   platform/      detect + tizen/avplay + webos/starfish adapters
-  player/        backend selection, HTML5 host, PlayerHost
+  player/        backend selection, HTML5 host, PlayerHost, time helpers
   settings/      playback troubleshooting settings + screen
-  screens/       Connect, profiles, home/libraries/collections/search/detail/player
+  screens/       Connect, profiles, browse, Live TV, detail, player
   components/    Shell nav, poster cards, media rows
-platforms/       Tizen config.xml + webOS appinfo.json stubs
+platforms/       Tizen config.xml + webOS appinfo.json + packaging docs
+scripts/         build-web + package-store
 ```
-
-## Still follow-up
-
-Richer player chrome (seek, audio/subs), Live TV, For You recommendations polish, spatial focus engine, and signed store packages.
 
 ## License
 

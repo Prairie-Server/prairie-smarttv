@@ -2,6 +2,28 @@ import { apiRequest } from "./client";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
+export interface AudioTrackInfo {
+  title?: string;
+  embedded_title?: string;
+  language?: string;
+  codec?: string;
+  layout?: string;
+  channels?: number;
+  default?: boolean;
+}
+
+export interface SubtitleTrackInfo {
+  index?: number;
+  language?: string;
+  codec?: string;
+  title?: string;
+  embedded_title?: string;
+  forced?: boolean;
+  default?: boolean;
+  hearing_impaired?: boolean;
+  external?: boolean;
+}
+
 export interface FileVersion {
   file_id: number;
   resolution?: string | null;
@@ -9,6 +31,8 @@ export interface FileVersion {
   codec_audio?: string | null;
   container?: string | null;
   duration?: number | null;
+  audio_tracks?: AudioTrackInfo[];
+  subtitle_tracks?: SubtitleTrackInfo[];
 }
 
 export interface WatchUserData {
@@ -68,4 +92,36 @@ export function selectPlaybackFileId(
     return last;
   }
   return versions[0]?.file_id ?? null;
+}
+
+export function selectFileVersion(
+  watch: WatchDetail,
+  fileId: number,
+): FileVersion | null {
+  return watch.versions.find((v) => v.file_id === fileId) ?? null;
+}
+
+export function formatAudioLabel(track: AudioTrackInfo, index: number): string {
+  const parts = [
+    track.language,
+    track.title || track.embedded_title,
+    track.codec,
+    track.channels ? `${track.channels}ch` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : `Audio ${index + 1}`;
+}
+
+export function formatSubtitleLabel(track: {
+  language?: string;
+  label?: string;
+  title?: string;
+  hearing_impaired?: boolean;
+  forced?: boolean;
+}): string {
+  const base = track.label || track.title || track.language || "Subtitle";
+  const tags = [
+    track.forced ? "Forced" : null,
+    track.hearing_impaired ? "HI" : null,
+  ].filter(Boolean);
+  return tags.length ? `${base} (${tags.join(", ")})` : base;
 }

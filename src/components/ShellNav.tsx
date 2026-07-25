@@ -1,17 +1,18 @@
 import { FocusButton } from "./FocusButton";
 
-export type ShellTab = "home" | "libraries" | "collections" | "search";
+export type ShellTab = "home" | "libraries" | "collections" | "search" | "livetv";
 
 interface ShellNavProps {
   active: ShellTab;
   profileName?: string;
+  showLiveTv?: boolean;
   onNavigate: (tab: ShellTab) => void;
   onProfiles: () => void;
   onSettings: () => void;
   onDisconnect: () => void;
 }
 
-const TABS: Array<{ id: ShellTab; label: string }> = [
+const BASE_TABS: Array<{ id: ShellTab; label: string }> = [
   { id: "home", label: "Home" },
   { id: "libraries", label: "Libraries" },
   { id: "collections", label: "Collections" },
@@ -21,11 +22,16 @@ const TABS: Array<{ id: ShellTab; label: string }> = [
 export function ShellNav({
   active,
   profileName,
+  showLiveTv = false,
   onNavigate,
   onProfiles,
   onSettings,
   onDisconnect,
 }: ShellNavProps) {
+  const tabs = showLiveTv
+    ? [...BASE_TABS.slice(0, 3), { id: "livetv" as const, label: "Live TV" }, BASE_TABS[3]!]
+    : BASE_TABS;
+
   return (
     <header className="shell-nav">
       <div className="shell-nav__brand">
@@ -33,7 +39,7 @@ export function ShellNav({
         <p className="shell-nav__profile muted">{profileName ?? "Profile"}</p>
       </div>
       <nav className="shell-nav__tabs" aria-label="Main">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <FocusButton
             key={tab.id}
             variant={active === tab.id ? "primary" : "ghost"}

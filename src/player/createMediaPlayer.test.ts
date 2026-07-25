@@ -5,6 +5,10 @@ vi.mock("../platform/tizen/avplay", () => ({
     play: vi.fn(),
     pause: vi.fn(),
     destroy: vi.fn(),
+    seekTo: vi.fn(),
+    getCurrentTime: vi.fn(() => 0),
+    getDuration: vi.fn(() => 0),
+    setTextTrack: vi.fn(),
   }),
 }));
 
@@ -13,6 +17,10 @@ vi.mock("../platform/webos/starfish", () => ({
     play: vi.fn(),
     pause: vi.fn(),
     destroy: vi.fn(),
+    seekTo: vi.fn(),
+    getCurrentTime: vi.fn(() => 0),
+    getDuration: vi.fn(() => 0),
+    setTextTrack: vi.fn(),
   }),
 }));
 
@@ -22,6 +30,10 @@ vi.mock("./html5Player", () => ({
     play: vi.fn(),
     pause: vi.fn(),
     destroy: vi.fn(),
+    seekTo: vi.fn(),
+    getCurrentTime: vi.fn(() => 0),
+    getDuration: vi.fn(() => 0),
+    setTextTrack: vi.fn(),
   }),
 }));
 
@@ -39,6 +51,10 @@ describe("createMediaPlayer", () => {
     expect(player.backend).toBe("avplay");
     player.play();
     player.pause();
+    void player.seekTo(12);
+    expect(player.getCurrentTime()).toBe(0);
+    expect(player.getDuration()).toBe(0);
+    void player.setTextTrack(null);
     player.destroy();
   });
 
@@ -51,6 +67,8 @@ describe("createMediaPlayer", () => {
     expect(player.backend).toBe("starfish");
     player.play();
     player.pause();
+    void player.seekTo(3);
+    void player.setTextTrack("https://example/sub.vtt", "English");
     player.destroy();
   });
 
@@ -61,5 +79,7 @@ describe("createMediaPlayer", () => {
       container,
     });
     expect(player.backend).toBe("html5");
+    void player.seekTo(1);
+    void player.setTextTrack(null);
   });
 });

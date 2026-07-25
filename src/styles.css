@@ -369,16 +369,143 @@ button:focus,
   pointer-events: auto;
 }
 
+.player-top-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: auto;
+}
+
 .player-meta h1 {
   margin: 0;
   font-family: var(--font-display);
   font-size: 2rem;
 }
 
+.player-scrub {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.player-scrub-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.player-scrub-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--prairie-amber-deep), var(--prairie-amber));
+}
+
+.player-time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: var(--prairie-muted);
+}
+
 .player-controls {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.player-menu {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: rgba(20, 24, 32, 0.92);
+  border: 1px solid rgba(240, 197, 116, 0.18);
+}
+
+.player-menu__item {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.player-tap-catcher {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.livetv-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(16rem, 0.8fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.livetv-channel-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.livetv-channel {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.85rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: rgba(28, 36, 48, 0.72);
+  color: inherit;
+  cursor: pointer;
+}
+
+.livetv-channel:focus-visible,
+.livetv-channel.is-selected {
+  outline: none;
+  border-color: rgba(240, 197, 116, 0.55);
+  box-shadow: 0 0 0 3px var(--prairie-glow);
+}
+
+.livetv-channel__num {
+  font-weight: 600;
+  color: var(--prairie-amber);
+}
+
+.livetv-channel__body {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.livetv-channel__body strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+
+.livetv-detail {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  background: rgba(28, 36, 48, 0.65);
+}
+
+.livetv-now-next {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .livetv-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .prairie-video {

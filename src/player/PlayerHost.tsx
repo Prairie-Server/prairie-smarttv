@@ -7,23 +7,28 @@ interface PlayerHostProps {
   url: string;
   backend: ResolvedPlayerBackend;
   playing: boolean;
+  mimeType?: string;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onReady?: (player: MediaPlayer) => void;
+  onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
 }
 
 export function PlayerHost({
   url,
   backend,
   playing,
+  mimeType,
   onError,
   onEnded,
   onReady,
+  onTimeUpdate,
 }: PlayerHostProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<MediaPlayer | null>(null);
-  // Creation already honors `playing` via autoplay — skip the first sync tick.
   const skipPlaySyncRef = useRef(false);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  onTimeUpdateRef.current = onTimeUpdate;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -36,8 +41,10 @@ export function PlayerHost({
         container,
         backend,
         autoplay: playing,
+        mimeType,
         onError,
         onEnded,
+        onTimeUpdate: (current, duration) => onTimeUpdateRef.current?.(current, duration),
       });
     } catch (err) {
       onError?.(err instanceof Error ? err.message : String(err));
@@ -53,7 +60,7 @@ export function PlayerHost({
       playerRef.current = null;
       container.replaceChildren();
     };
-  }, [url, backend]);
+  }, [url, backend, mimeType]);
 
   useEffect(() => {
     const player = playerRef.current;

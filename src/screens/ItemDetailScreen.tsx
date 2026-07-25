@@ -8,15 +8,24 @@ import {
   type ItemDetail,
   type SeasonSummary,
 } from "../api/catalog";
-import { fetchWatchDetail, selectPlaybackFileId } from "../api/watch";
+import { fetchWatchDetail, selectPlaybackFileId, type WatchDetail } from "../api/watch";
 import { FocusButton } from "../components/FocusButton";
+import type { PlayerLaunch } from "./PlayerScreen";
 import type { PrairieSession } from "../storage/session";
 
 interface ItemDetailScreenProps {
   session: PrairieSession;
   contentId: string;
   onBack: () => void;
-  onPlay: (fileId: number, title: string) => void;
+  onPlay: (launch: PlayerLaunch) => void;
+}
+
+function resumeSeconds(watch: WatchDetail): number | undefined {
+  const position = watch.user_data?.position_seconds;
+  if (position == null || position <= 0) return undefined;
+  const duration = watch.user_data?.duration_seconds;
+  if (duration != null && duration > 0 && position / duration >= 0.95) return undefined;
+  return position;
 }
 
 export function ItemDetailScreen({
@@ -92,7 +101,13 @@ export function ItemDetailScreen({
       if (fileId == null) {
         throw new Error("No playable file for this title");
       }
-      onPlay(fileId, watch.title || title);
+      onPlay({
+        fileId,
+        title: watch.title || title,
+        contentId: id,
+        startPositionSeconds: resumeSeconds(watch),
+        watch,
+      });
     } catch (err) {
       setError(err instanceof ApiError || err instanceof Error ? err.message : "Play failed");
     } finally {

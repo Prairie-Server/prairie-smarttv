@@ -26,9 +26,11 @@ export default defineConfig({
       include: [
         "src/api/**/*.ts",
         "src/storage/**/*.ts",
+        "src/focus/**/*.ts",
         "src/settings/playbackSettings.ts",
         "src/player/createPlayer.ts",
         "src/player/createMediaPlayer.ts",
+        "src/player/timeFormat.ts",
         "src/platform/detect.ts",
       ],
       exclude: ["src/**/*.test.ts"],

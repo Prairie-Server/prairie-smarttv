@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchWatchDetail, selectPlaybackFileId, type WatchDetail } from "./watch";
+import {
+  fetchWatchDetail,
+  formatAudioLabel,
+  formatSubtitleLabel,
+  selectFileVersion,
+  selectPlaybackFileId,
+  type WatchDetail,
+} from "./watch";
 import type { PrairieSession } from "../storage/session";
 
 const session: PrairieSession = {
@@ -73,5 +80,24 @@ describe("fetchWatchDetail", () => {
     expect(detail.versions).toEqual([]);
     expect(detail.title).toBe("Dune");
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+});
+
+describe("watch helpers", () => {
+  it("selects file versions and formats track labels", () => {
+    const detail = watch({
+      versions: [
+        {
+          file_id: 3,
+          audio_tracks: [{ language: "eng", codec: "aac", channels: 2 }],
+        },
+      ],
+    });
+    expect(selectFileVersion(detail, 3)?.file_id).toBe(3);
+    expect(selectFileVersion(detail, 9)).toBeNull();
+    expect(formatAudioLabel({ language: "eng", channels: 6 }, 0)).toContain("eng");
+    expect(formatAudioLabel({}, 1)).toBe("Audio 2");
+    expect(formatSubtitleLabel({ language: "spa", forced: true })).toContain("Forced");
+    expect(formatSubtitleLabel({ title: "English", hearing_impaired: true })).toContain("HI");
   });
 });
