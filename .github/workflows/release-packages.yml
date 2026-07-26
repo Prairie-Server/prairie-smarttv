@@ -93,7 +93,8 @@ jobs:
         run: |
           set -euo pipefail
           ls -la artifacts
-          test -n "$(find artifacts -name '*.wgt' -print -quit)"
+          test -n "$(find artifacts -name 'Prairie-*-tizen-unsigned.wgt' -print -quit)"
+          test -n "$(find artifacts -name 'Prairie-*-tizen-legacy-unsigned.wgt' -print -quit)"
           test -n "$(find artifacts -name '*.ipk' -print -quit)"
 
       - name: Upload package artifacts

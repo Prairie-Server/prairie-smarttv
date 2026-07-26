@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Stamp a semver into package.json, platforms/tizen/config.xml, and
+ * Stamp a semver into package.json, Tizen config.xml (modern + legacy), and
  * platforms/webos/appinfo.json so release tags cannot drift across manifests.
  *
  * Usage: node scripts/stamp-version.mjs 1.2.3
@@ -33,19 +33,25 @@ async function formatJson(path, value) {
   });
 }
 
+function stampConfigXml(configPath) {
+  const config = readFileSync(configPath, "utf8");
+  const nextConfig = config.replace(/(<widget\b[^>]*\bversion=")([^"]+)(")/, `$1${version}$3`);
+  if (nextConfig === config && !config.includes(`version="${version}"`)) {
+    console.error(`Failed to update version attribute in ${configPath}`);
+    process.exit(1);
+  }
+  return nextConfig;
+}
+
 const pkgPath = join(root, "package.json");
-const configPath = join(root, "platforms/tizen/config.xml");
+const tizenConfigPath = join(root, "platforms/tizen/config.xml");
+const tizenLegacyConfigPath = join(root, "platforms/tizen-legacy/config.xml");
 const appinfoPath = join(root, "platforms/webos/appinfo.json");
 
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-const config = readFileSync(configPath, "utf8");
 const appinfo = JSON.parse(readFileSync(appinfoPath, "utf8"));
-
-const nextConfig = config.replace(/(<widget\b[^>]*\bversion=")([^"]+)(")/, `$1${version}$3`);
-if (nextConfig === config && !config.includes(`version="${version}"`)) {
-  console.error("Failed to update version attribute in platforms/tizen/config.xml");
-  process.exit(1);
-}
+const nextTizenConfig = stampConfigXml(tizenConfigPath);
+const nextTizenLegacyConfig = stampConfigXml(tizenLegacyConfigPath);
 
 pkg.version = version;
 appinfo.version = version;
@@ -56,7 +62,10 @@ const [nextPkg, nextAppinfo] = await Promise.all([
 ]);
 
 writeAtomic(pkgPath, nextPkg);
-writeAtomic(configPath, nextConfig);
+writeAtomic(tizenConfigPath, nextTizenConfig);
+writeAtomic(tizenLegacyConfigPath, nextTizenLegacyConfig);
 writeAtomic(appinfoPath, nextAppinfo);
 
-console.log(`Stamped version ${version} into package.json, config.xml, and appinfo.json`);
+console.log(
+  `Stamped version ${version} into package.json, tizen/config.xml, tizen-legacy/config.xml, and appinfo.json`,
+);

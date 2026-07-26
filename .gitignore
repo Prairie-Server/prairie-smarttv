@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-tizen/
+dist-tizen-legacy/
+dist-tizen-legacy-web/
 dist-webos/
 artifacts/
 *.local

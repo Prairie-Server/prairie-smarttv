@@ -51,8 +51,11 @@ jobs:
       - name: Packaging stubs (Tizen / webOS)
         run: |
           npm run build:tizen
+          npm run build:tizen-legacy
           npm run build:webos
           test -f dist-tizen/config.xml
+          test -f dist-tizen-legacy/config.xml
+          grep -q 'required_version="5.5"' dist-tizen-legacy/config.xml
           test -f dist-webos/appinfo.json
 
       - name: Upload coverage summary

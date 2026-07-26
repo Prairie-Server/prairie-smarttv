@@ -44,25 +44,27 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 
 ## Scripts
 
-| Command                 | Purpose                                                              |
-| ----------------------- | -------------------------------------------------------------------- |
-| `npm run dev`           | Vite dev server                                                      |
-| `npm run build`         | Typecheck + production web bundle → `dist/`                          |
-| `npm run lint`          | ESLint (strict TypeScript + React Hooks)                             |
-| `npm run format`        | Prettier write                                                       |
-| `npm run format:check`  | Prettier check (CI)                                                  |
-| `npm run typecheck`     | `tsc --noEmit`                                                       |
-| `npm test`              | Vitest unit tests                                                    |
-| `npm run test:coverage` | Vitest + **75%** coverage gate on logic modules                      |
-| `npm run build:web`     | Same as production web build                                         |
-| `npm run build:tizen`   | Web build + copy into `dist-tizen/` with `config.xml`                |
-| `npm run build:webos`   | Web build + copy into `dist-webos/` with `appinfo.json`              |
-| `npm run package:tizen` | Build + unsigned `.wgt` (auto-signs if `TIZEN_SECURITY_PROFILE` set) |
-| `npm run sign:tizen`    | Sign `dist-tizen/` → installable `artifacts/Prairie-*-tizen.wgt`     |
-| `npm run package:webos` | Build + `.ipk` (via ares) or staging zip under `artifacts/`          |
-| `npm run package:store` | Both platform packages                                               |
+| Command                        | Purpose                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| `npm run dev`                  | Vite dev server                                                 |
+| `npm run build`                | Typecheck + production web bundle → `dist/`                     |
+| `npm run lint`                 | ESLint (strict TypeScript + React Hooks)                        |
+| `npm run format`               | Prettier write                                                  |
+| `npm run format:check`         | Prettier check (CI)                                             |
+| `npm run typecheck`            | `tsc --noEmit`                                                  |
+| `npm test`                     | Vitest unit tests                                               |
+| `npm run test:coverage`        | Vitest + **75%** coverage gate on logic modules                 |
+| `npm run build:web`            | Same as production web build                                    |
+| `npm run build:tizen`          | Web build + copy into `dist-tizen/` with `config.xml`           |
+| `npm run build:tizen-legacy`   | Chrome 69 downlevel build → `dist-tizen-legacy/` (Prairie Lite) |
+| `npm run build:webos`          | Web build + copy into `dist-webos/` with `appinfo.json`         |
+| `npm run package:tizen`        | Modern 6.0+ unsigned `.wgt` (auto-signs if profile set)         |
+| `npm run package:tizen-legacy` | Legacy 5.5+ Prairie Lite `.wgt`                                 |
+| `npm run sign:tizen`           | Sign `dist-tizen/` or `TIZEN_DIST_DIR=dist-tizen-legacy`        |
+| `npm run package:webos`        | Build + `.ipk` (via ares) or staging zip under `artifacts/`     |
+| `npm run package:store`        | Modern Tizen + legacy Tizen + webOS                             |
 
-**Tizen target:** single package, `required_version="6.0"` (covers 6.0 / 6.5 / 7 / 8). No Moonfin/Litefin-style multi-build; Tizen 5.5 is out of scope. Details: `platforms/tizen/README.md`.
+**Tizen targets:** dual packages — Prairie (`required_version="6.0"`, 6.0/6.5/7/8) and Prairie Lite (`5.5`). Details + how to create Samsung signing secrets: `platforms/tizen/README.md`.
 
 Signing: `platforms/tizen/README.md` and `platforms/webos/README.md`. Unsigned Tizen `.wgt` files **do not install** on Samsung TVs — sign with a Samsung Certificate Manager profile (DUID registered for sideload).
 
@@ -70,11 +72,12 @@ Signing: `platforms/tizen/README.md` and `platforms/webos/README.md`. Unsigned T
 
 Push a `v*` tag (or run **Release packages** via `workflow_dispatch`) to build CI artifacts:
 
-- Unsigned Tizen `.wgt` (`artifacts/Prairie-<version>-tizen-unsigned.wgt`)
-- Signed Tizen `.wgt` when `TIZEN_*` repo secrets are configured
+- Unsigned Tizen `.wgt` (`Prairie-<version>-tizen-unsigned.wgt`)
+- Unsigned Tizen legacy `.wgt` (`Prairie-<version>-tizen-legacy-unsigned.wgt`)
+- Signed Tizen `.wgt` files when `TIZEN_*` repo secrets are configured
 - webOS `.ipk` via `@webos-tools/cli` (`ares-package`)
 
-Workflow: `.github/workflows/release-packages.yml`. It stamps `package.json`, `platforms/tizen/config.xml`, and `platforms/webos/appinfo.json` from the tag version and uploads Actions artifacts. Tag runs also attach those files to a GitHub Release; manual `workflow_dispatch` runs build and upload artifacts only.
+Workflow: `.github/workflows/release-packages.yml`. It stamps manifests from the tag version and uploads Actions artifacts. Tag runs also attach those files to a GitHub Release; manual `workflow_dispatch` runs build and upload artifacts only.
 
 ## Coverage CI
 

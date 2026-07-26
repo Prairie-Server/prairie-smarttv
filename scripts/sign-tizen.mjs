@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sign dist-tizen/ into a TV-installable .wgt using the Tizen Studio CLI.
+ * Sign a Tizen dist directory into a TV-installable .wgt using the Tizen Studio CLI.
  *
  * Requires:
  *   - `tizen` on PATH (Tizen Studio → tools/ide/bin)
@@ -8,12 +8,14 @@
  *
  * Env:
  *   TIZEN_SECURITY_PROFILE  Profile name (required)
+ *   TIZEN_DIST_DIR           Dist folder relative to repo root (default dist-tizen)
  *   TIZEN_PROFILES_PATH      Optional path to profiles.xml (cli-config)
  *   TIZEN_SIGNED_OUT         Optional output .wgt path
  *
  * Usage:
  *   npm run build:tizen
  *   TIZEN_SECURITY_PROFILE=PrairieDev npm run sign:tizen
+ *   TIZEN_DIST_DIR=dist-tizen-legacy TIZEN_SECURITY_PROFILE=PrairieDev npm run sign:tizen
  */
 import {
   existsSync,
@@ -31,10 +33,12 @@ import { spawnSync } from "node:child_process";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const isWindows = process.platform === "win32";
-const source = join(root, "dist-tizen");
+const distRel = (process.env.TIZEN_DIST_DIR ?? "dist-tizen").trim() || "dist-tizen";
+const source = join(root, distRel);
 const artifacts = join(root, "artifacts");
 const profile = (process.env.TIZEN_SECURITY_PROFILE ?? "").trim();
 const profilesPath = (process.env.TIZEN_PROFILES_PATH ?? "").trim();
+const isLegacy = distRel.includes("legacy");
 
 function run(command, args, opts = {}) {
   const result = spawnSync(command, args, {
@@ -66,7 +70,9 @@ if (!commandExists("tizen")) {
 }
 
 if (!existsSync(join(source, "config.xml")) || !existsSync(join(source, "index.html"))) {
-  console.error("dist-tizen/ is missing. Run `npm run build:tizen` first.");
+  console.error(
+    `${distRel}/ is missing. Run \`npm run build:${isLegacy ? "tizen-legacy" : "tizen"}\` first.`,
+  );
   process.exit(1);
 }
 
@@ -84,7 +90,7 @@ const before = new Set(
     .map((name) => join(source, name)),
 );
 
-console.log(`Signing dist-tizen/ with profile "${profile}"…`);
+console.log(`Signing ${distRel}/ with profile "${profile}"…`);
 run("tizen", ["package", "-t", "wgt", "-s", profile, "--", source]);
 
 const after = readdirSync(source)
@@ -95,14 +101,16 @@ const signedSource =
   created[0] ?? after.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
 if (!signedSource || !existsSync(signedSource)) {
-  console.error("tizen package finished but no .wgt was found under dist-tizen/.");
+  console.error(`tizen package finished but no .wgt was found under ${distRel}/.`);
   process.exit(1);
 }
 
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || "0.0.0";
 mkdirSync(artifacts, { recursive: true });
-const out =
-  (process.env.TIZEN_SIGNED_OUT ?? "").trim() || join(artifacts, `Prairie-${version}-tizen.wgt`);
+const defaultName = isLegacy
+  ? `Prairie-${version}-tizen-legacy.wgt`
+  : `Prairie-${version}-tizen.wgt`;
+const out = (process.env.TIZEN_SIGNED_OUT ?? "").trim() || join(artifacts, defaultName);
 if (existsSync(out)) rmSync(out);
 renameSync(signedSource, out);
 console.log(`Wrote signed package ${out} (${statSync(out).size} bytes)`);
