@@ -4,7 +4,9 @@
         id="http://prairieserver.org/prairie-smarttv"
         version="0.1.0"
         viewmodes="maximized">
-  <tizen:application id="prairie.PrairieSmartTV" package="prairie" required_version="6.0"/>
+  <!-- Package id must be 10 alphanumeric chars (Tizen Studio / TV install rule). -->
+  <!-- required_version is the install floor only — keep low like Litefin/Moonfin so Public Apps2Samsung certs work. -->
+  <tizen:application id="PrairieApp.Prairie" package="PrairieApp" required_version="2.3"/>
   <content src="index.html"/>
   <feature name="http://tizen.org/feature/screen.size.all"/>
   <icon src="icon.png"/>
@@ -16,11 +18,12 @@
   <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
   <tizen:privilege name="http://tizen.org/privilege/download"/>
   <tizen:privilege name="http://tizen.org/privilege/filesystem.read"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/network.public"/>
   <tizen:privilege name="http://developer.samsung.com/privilege/avplay"/>
-  <tizen:privilege name="http://developer.samsung.com/privilege/tvinfo"/>
   <access origin="*" subdomains="true"/>
   <tizen:setting screen-orientation="landscape" context-menu="disable" encryption="disable"
                  install-location="auto" hwkey-event="enable"/>
-  <!-- Apps2Samsung: enable Partner signing — avplay requires a Partner distributor cert. -->
   <!-- download + filesystem.read: remote subtitle_urls → wgt-private-tmp for AVPlay. -->
+  <!-- tvinfo omitted (optional caption control; soft-fails in code) so install matches Litefin/Public certs. -->
 </widget>

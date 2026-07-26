@@ -55,7 +55,10 @@ jobs:
           npm run build:webos
           test -f dist-tizen/config.xml
           test -f dist-tizen-legacy/config.xml
-          grep -q 'required_version="5.5"' dist-tizen-legacy/config.xml
+          grep -q 'package="PrairieApp"' dist-tizen/config.xml
+          grep -q 'package="PrairieLte"' dist-tizen-legacy/config.xml
+          grep -q 'required_version="2.3"' dist-tizen/config.xml
+          grep -q 'required_version="2.3"' dist-tizen-legacy/config.xml
           test -f dist-webos/appinfo.json
 
       - name: Upload coverage summary

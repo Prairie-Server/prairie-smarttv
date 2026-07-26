@@ -2,23 +2,20 @@
 
 ## Supported Tizen versions
 
-Prairie ships **two** Tizen packages (Moonfin/Litefin-style):
+Prairie ships **two** Tizen packages (Moonfin/Litefin-style). Install `required_version` is kept at **2.3** (same as Litefin) so Apps2Samsung **Public** certificates work. Which build you pick is about the TV’s WebKit engine, not the install floor:
 
-| Package    | App name     | `required_version` | TV generation (approx.)   | Artifact                      |
-| ---------- | ------------ | ------------------ | ------------------------- | ----------------------------- |
-| `prairie`  | Prairie      | **6.0**            | 2021+ (6.0 / 6.5 / 7 / 8) | `Prairie-*-tizen*.wgt`        |
-| `prairieL` | Prairie Lite | **5.5**            | 2020 and some earlier     | `Prairie-*-tizen-legacy*.wgt` |
+| Package id   | App name     | Build target                        | Use on                         | Artifact                      |
+| ------------ | ------------ | ----------------------------------- | ------------------------------ | ----------------------------- |
+| `PrairieApp` | Prairie      | Vite `es2019` + native ES modules   | Tizen 6.0+ (6.5 / 7 / 8, …)    | `Prairie-*-tizen*.wgt`        |
+| `PrairieLte` | Prairie Lite | `@vitejs/plugin-legacy` → Chrome 69 | Older WebKits (~Tizen 5.5 era) | `Prairie-*-tizen-legacy*.wgt` |
 
-Modern build: Vite `es2019` + native ES modules (`platforms/tizen/`).  
-Legacy build: `@vitejs/plugin-legacy` → Chrome 69 / SystemJS (`platforms/tizen-legacy/`).
-
-Your Tizen **6.5** TV should use the **modern** package. Use Prairie Lite only on 5.5 sets.
+Your Tizen **6.5** TV should use the **modern** package.
 
 ## Build unsigned `.wgt` (CI staging)
 
 ```bash
-npm run package:tizen          # modern 6.0+
-npm run package:tizen-legacy   # legacy 5.5+
+npm run package:tizen          # modern
+npm run package:tizen-legacy   # legacy
 npm run package:store          # modern + legacy + webOS
 ```
 
@@ -43,13 +40,11 @@ An unsigned `.wgt` is a zip of the dist folder. TVs will not install it **as-is*
 
 - **Do not** rely on our DUID-locked CI secrets for public installs — those only unlock _your_ TVs.
 - **Do** publish the **unsigned** release artifacts (already produced by CI).
-- End users: Developer Mode on → Apps2Samsung → Custom WGT (or catalog entry) → install.
+- End users: Developer Mode on → Apps2Samsung → Custom WGT (or catalog entry) → install with the default **Public** cert (Partner signing is **not** required for Prairie).
 
-**Partner signing is required.** Prairie declares `avplay` (same as Moonfin). With a Public distributor cert, install fails as:
+Package ids are 10-character alphanumeric (`PrairieApp` / `PrairieLte`) and `required_version` is `2.3`, matching Litefin/Moonfin so installs behave like the Apps2Samsung catalog apps. Apps2Samsung only auto-bumps to Partner for packages that declare `vpnservice` (e.g. Tailscale) — Prairie does not.
 
-`install error [118, -4], "operation not allowed"`
-
-Fix: Apps2Samsung → **Settings → enable Partner signing** → install again (Samsung account login may be needed so it can mint a Partner cert for your TV’s DUID). On Tizen 6.0+ (e.g. 6.5) use `Prairie-*-tizen-unsigned.wgt`; use `*-tizen-legacy-unsigned.wgt` only on 5.5 sets.
+If you previously installed an older Prairie build (`package="prairie"`), uninstall it first — the package id changed.
 
 Catalog listing (optional): add a provider in Apps2Samsung’s [`third-party-apps.json`](https://github.com/Apps2Samsung/Apps2Samsung/blob/main/third-party-apps.json) pointing at `https://api.github.com/repos/Prairie-Server/prairie-smarttv/releases` (same pattern as Moonfin/Litefin). Until then, users can load the GitHub Release `.wgt` via **Custom WGT/TPK**.
 
@@ -104,7 +99,7 @@ CI also signs when these repository secrets exist (Settings → Secrets and vari
 | `TIZEN_DISTRIBUTOR_PASSWORD` | Password for the distributor cert          |
 | `TIZEN_SECURITY_PROFILE`     | Profile name (optional; default `Prairie`) |
 
-### Step-by-step (Samsung)
+### Step-by-step (Samsung — personal / CI cert)
 
 Official guide: [Creating Certificates](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/creating-certificates.html).
 
@@ -122,7 +117,7 @@ Official guide: [Creating Certificates](https://developer.samsung.com/smarttv/de
    - Choose **Samsung** → **TV**
    - Name the profile (e.g. `Prairie`) — this becomes `TIZEN_SECURITY_PROFILE`
    - **Author certificate**: create new (or import existing `author.p12`). Set a password you will keep. Sign in with Samsung account. Back up the files.
-   - **Distributor certificate**: create new. Privilege level **Partner** if you use partner APIs (AVPlay). Add your TV’s **DUID** (and any other test TVs, up to 50).
+   - **Distributor certificate**: create new. Privilege level **Public** is enough for Prairie (same as Litefin). Add your TV’s **DUID** (and any other test TVs, up to 50).
    - Finish
 
 4. **Locate the `.p12` files**  
@@ -160,22 +155,23 @@ Official guide: [Creating Certificates](https://developer.samsung.com/smarttv/de
    - `TIZEN_DISTRIBUTOR_PASSWORD` ← distributor password
    - `TIZEN_SECURITY_PROFILE` ← `Prairie` (or your profile name)
 
-7. **Re-run Release packages** (or push a new `v*` tag). CI attaches signed `Prairie-*-tizen.wgt` and `Prairie-*-tizen-legacy.wgt` when secrets are present.
+7. **Re-run Release packages** (or push a new `v*` tag). CI still always attaches **unsigned** `.wgt` files for Apps2Samsung; signed `Prairie-*-tizen.wgt` / `*-tizen-legacy.wgt` appear only when secrets are present.
 
-**Important:** Keep the same author certificate for app updates. Losing it means you cannot update the same package id in Seller Office. Back up `~/SamsungCertificate/` offline. Never commit `.p12` files to git.
+**Important:** Keep the same author certificate for Seller Office updates. Losing it means you cannot update the same package id in the store. Back up `~/SamsungCertificate/` offline. Never commit `.p12` files to git.
 
-If you only need local sideload, you can skip GitHub secrets and sign with `TIZEN_SECURITY_PROFILE=… npm run sign:tizen` on your machine.
+Skip GitHub secrets entirely if you only care about Apps2Samsung / unsigned GitHub Releases.
 
 ## Privileges
 
-Declared in `config.xml` (modern and legacy):
+Declared in `config.xml` (modern and legacy), aligned with Litefin/Moonfin Public installs:
 
 - `http://tizen.org/privilege/internet`
 - `http://tizen.org/privilege/tv.inputdevice`
 - `http://tizen.org/privilege/download` — fetch remote `subtitle_urls` into `wgt-private-tmp`
 - `http://tizen.org/privilege/filesystem.read`
+- `http://developer.samsung.com/privilege/productinfo`
+- `http://developer.samsung.com/privilege/network.public`
 - `http://developer.samsung.com/privilege/avplay`
-- `http://developer.samsung.com/privilege/tvinfo` — in-app caption control
 
 ### AVPlay subtitles
 

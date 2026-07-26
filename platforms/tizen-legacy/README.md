@@ -1,11 +1,13 @@
-# Tizen legacy packaging (5.5+)
+# Tizen legacy packaging
 
-**Prairie Lite** is a second installable app for Samsung TVs on **Tizen 5.5** (roughly 2020 and some earlier Chromium M69 sets). The modern package (`platforms/tizen/`, `required_version="6.0"`) stays the primary client for 6.0 / 6.5 / 7 / 8.
+**Prairie Lite** is a second installable app for Samsung TVs with older WebKits (~Tizen 5.5 / Chromium M69). The modern package (`platforms/tizen/`) stays the primary client for Tizen 6.0+.
 
-| Artifact                      | App          | `required_version` | Package id |
-| ----------------------------- | ------------ | ------------------ | ---------- |
-| `Prairie-*-tizen*.wgt`        | Prairie      | 6.0                | `prairie`  |
-| `Prairie-*-tizen-legacy*.wgt` | Prairie Lite | 5.5                | `prairieL` |
+Install `required_version` is **2.3** on both packages (Litefin-style) so Apps2Samsung Public signing works. Pick the build for the engine, not the install floor:
+
+| Artifact                      | App          | Package id   | Engine                         |
+| ----------------------------- | ------------ | ------------ | ------------------------------ |
+| `Prairie-*-tizen*.wgt`        | Prairie      | `PrairieApp` | Vite `es2019` + ES modules     |
+| `Prairie-*-tizen-legacy*.wgt` | Prairie Lite | `PrairieLte` | Chrome 69 / SystemJS downlevel |
 
 Same Samsung Certificate Manager profile can sign both. Distinct package ids let both sit on one TV.
 
@@ -38,4 +40,4 @@ React 19 on M69 is best-effort; if a 5.5 TV fails to boot Home/AVPlay, the next 
 
 ## Secrets / signing
 
-Same as `platforms/tizen/README.md` — see **Generate GitHub signing secrets** there.
+Same as `platforms/tizen/README.md` — Public Apps2Samsung signing is enough; see that README for optional CI secrets.
