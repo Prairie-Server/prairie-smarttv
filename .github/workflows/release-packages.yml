@@ -100,5 +100,7 @@ jobs:
             artifacts/*.zip
           generate_release_notes: true
           fail_on_unmatched_files: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          name: Prairie Smart TV ${{ steps.version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
