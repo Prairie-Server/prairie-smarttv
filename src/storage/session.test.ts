@@ -26,7 +26,7 @@ describe("normalizeServerUrl", () => {
 });
 
 describe("session persistence", () => {
-  it("round-trips a valid session", () => {
+  it("round-trips a valid session without persisting refreshToken", () => {
     const storage = memoryStorage();
     const saved = saveSession(
       {
@@ -41,7 +41,30 @@ describe("session persistence", () => {
       storage,
     );
     expect(saved.serverUrl).toBe("https://prairie.example");
-    expect(loadSession(storage)).toEqual(saved);
+    expect(saved.refreshToken).toBeUndefined();
+    const raw = JSON.parse(storage.getItem("prairie.session")!);
+    expect(raw.refreshToken).toBeUndefined();
+    expect(loadSession(storage)).toEqual({
+      serverUrl: "https://prairie.example",
+      accessToken: "tok",
+      username: "ada",
+      profileId: "p1",
+      profileName: "Ada",
+      profileToken: "pin",
+    });
+  });
+
+  it("does not restore a legacy refreshToken from storage", () => {
+    const storage = memoryStorage({
+      "prairie.session": JSON.stringify({
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        refreshToken: "legacy-ref",
+        username: "ada",
+        profileId: "p1",
+      }),
+    });
+    expect(loadSession(storage)?.refreshToken).toBeUndefined();
   });
 
   it("returns null for missing, incomplete, or corrupt payloads", () => {
@@ -52,7 +75,7 @@ describe("session persistence", () => {
     expect(loadSession(memoryStorage({ "prairie.session": "{not-json" }))).toBeNull();
   });
 
-  it("clears the session key", () => {
+  it("clears the session key but keeps last server URL for reconnect", () => {
     const storage = memoryStorage();
     saveSession(
       {
@@ -65,5 +88,6 @@ describe("session persistence", () => {
     );
     clearSession(storage);
     expect(loadSession(storage)).toBeNull();
+    expect(storage.getItem("prairie.lastServerUrl")).toBe("https://prairie.example");
   });
 });

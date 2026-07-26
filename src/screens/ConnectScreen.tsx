@@ -28,11 +28,23 @@ export function ConnectScreen({
       if (!trimmedUrl) {
         throw new Error("Enter your Prairie server URL");
       }
+      let parsed: URL;
+      try {
+        parsed = new URL(trimmedUrl);
+      } catch {
+        throw new Error("Server URL must be a valid http(s) address");
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("Server URL must use http or https");
+      }
+      if (parsed.username || parsed.password) {
+        throw new Error("Server URL must not include credentials");
+      }
       const auth = await login(trimmedUrl, { username: username.trim(), password });
+      // Do not persist refresh_token until client-side refresh is implemented.
       onAuthenticated({
         serverUrl: trimmedUrl,
         accessToken: auth.access_token,
-        refreshToken: auth.refresh_token,
         username: auth.user.username,
       });
     } catch (err) {

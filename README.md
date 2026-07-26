@@ -14,7 +14,9 @@ AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first
 - **Search** across the catalog
 - **Live TV** channel list + guide now/next (tab hidden when the server has no enabled channels)
 - **Item detail** → seasons/episodes → Play via `/api/v1/watch/{id}` + `/playback/start` with resume
-- **Player chrome**: play/pause, ±15s seek, scrub readout, progress reporting, audio track switch, client-side subtitles, session teardown on exit
+- **Player chrome**: play/pause, ±15s seek, scrub readout, progress reporting, audio track switch, client-side subtitle selection, session teardown on exit
+- **Subtitle styling**: size, text/background color, opacity, box/shadow/outline, position (persisted; HTML5/webOS `::cue` + Tizen AVPlay overlay)
+- **Upgrade-safe persistence**: session + settings + last server URL survive app updates; logout keeps last server URL for reconnect
 - Spatial D-pad focus (geometry-based, not DOM-order)
 - Playback backends: HTML5 / Tizen AVPlay / webOS Starfish-style
 - Troubleshooting settings: force direct / force transcode, backend preference

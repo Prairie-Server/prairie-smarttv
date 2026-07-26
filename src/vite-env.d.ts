@@ -4,6 +4,12 @@ interface ImportMetaEnv {
   readonly VITE_DEFAULT_SERVER_URL?: string;
 }
 
+interface AvPlayTrackInfo {
+  type: string;
+  index: number;
+  extra_info?: string | Record<string, unknown>;
+}
+
 interface AvPlayApi {
   open(url: string): void;
   close(): void;
@@ -18,12 +24,41 @@ interface AvPlayApi {
   getDuration(): number;
   getCurrentTime(): number;
   seekTo(milliseconds: number, success?: () => void, error?: (err: unknown) => void): void;
+  setExternalSubtitlePath?(path: string): void;
+  setSilentSubtitle?(silent: boolean): void;
+  setSelectTrack?(type: string, index: number): void;
+  getTotalTrackInfo?(): AvPlayTrackInfo[];
+  setSubtitlePosition?(positionMs: number): void;
+}
+
+interface TvInfoApi {
+  registerInAppCaptionControl?(enabled: boolean): void;
+  showCaption?(show: boolean): void;
+}
+
+interface TizenDownloadRequestConstructor {
+  new (url: string, destination?: string, fileName?: string): unknown;
+}
+
+interface TizenDownloadManager {
+  start(
+    request: unknown,
+    callbacks?: {
+      oncompleted?: (id: number, fullPath: string) => void;
+      onfailed?: (id: number, error: { message?: string } | string) => void;
+    },
+  ): number;
 }
 
 declare global {
   interface Window {
     webapis?: {
       avplay?: AvPlayApi;
+      tvinfo?: TvInfoApi;
+    };
+    tizen?: {
+      DownloadRequest: TizenDownloadRequestConstructor;
+      download: TizenDownloadManager;
     };
     webOS?: {
       platform?: {

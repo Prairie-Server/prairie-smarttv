@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { buildPlaybackStartRequest, withPlayMethod } from "../api/playback";
-import { resolveForcedPlayMethod } from "../settings/playbackSettings";
+import {
+  DEFAULT_PLAYBACK_SETTINGS,
+  resolveForcedPlayMethod,
+} from "../settings/playbackSettings";
 
 describe("buildPlaybackStartRequest", () => {
   it("omits play_method by default so Prairie can prefer remux/auto", () => {
     const body = buildPlaybackStartRequest({
       fileId: 42,
       profileId: "profile-1",
-      forcedPlayMethod: resolveForcedPlayMethod({
-        playerBackend: "auto",
-        forceDirectPlay: false,
-        forceTranscode: false,
-      }),
+      forcedPlayMethod: resolveForcedPlayMethod(DEFAULT_PLAYBACK_SETTINGS),
     });
     expect(body.file_id).toBe(42);
     expect(body.profile_id).toBe("profile-1");

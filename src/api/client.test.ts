@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiRequest, buildStreamUrl } from "./client";
+import { ApiError, apiRequest, buildStreamUrl, isAuthLoginPath } from "./client";
 
 describe("buildStreamUrl", () => {
   it("joins relative stream paths and appends token", () => {
@@ -8,10 +8,25 @@ describe("buildStreamUrl", () => {
     );
   });
 
-  it("preserves existing query params", () => {
+  it("appends token to same-origin absolute URLs with existing query params", () => {
+    expect(
+      buildStreamUrl("https://prairie.example", "https://prairie.example/s?st=1", "tok"),
+    ).toBe("https://prairie.example/s?st=1&token=tok");
+  });
+
+  it("does not attach the session token to cross-origin absolute URLs", () => {
     expect(
       buildStreamUrl("https://prairie.example", "https://cdn.example/s?st=1", "tok"),
-    ).toBe("https://cdn.example/s?st=1&token=tok");
+    ).toBe("https://cdn.example/s?st=1");
+  });
+});
+
+describe("isAuthLoginPath", () => {
+  it("matches login routes with optional query/trailing slash", () => {
+    expect(isAuthLoginPath("/api/v1/auth/login")).toBe(true);
+    expect(isAuthLoginPath("/api/v1/auth/login?x=1")).toBe(true);
+    expect(isAuthLoginPath("/api/v1/auth/login/")).toBe(true);
+    expect(isAuthLoginPath("/api/v1/home/sections")).toBe(false);
   });
 });
 
@@ -39,6 +54,79 @@ describe("apiRequest", () => {
       status: 401,
       code: "auth_failed",
     } satisfies Partial<ApiError>);
+  });
+
+  it("calls onUnauthorized for 401 on non-login paths", async () => {
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "expired" }), {
+        status: 401,
+        statusText: "Unauthorized",
+      }),
+    );
+
+    await expect(
+      apiRequest(
+        { serverUrl: "https://prairie.example", fetchImpl, onUnauthorized },
+        "/api/v1/home/sections",
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it("does not call onUnauthorized for auth/login 401", async () => {
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "bad creds" }), {
+        status: 401,
+        statusText: "Unauthorized",
+      }),
+    );
+
+    await expect(
+      apiRequest(
+        { serverUrl: "https://prairie.example", fetchImpl, onUnauthorized },
+        "/api/v1/auth/login",
+        { method: "POST", body: "{}" },
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("calls onUnauthorized for 403 with auth codes", async () => {
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "gone", code: "token_expired" }), {
+        status: 403,
+        statusText: "Forbidden",
+      }),
+    );
+
+    await expect(
+      apiRequest(
+        { serverUrl: "https://prairie.example", fetchImpl, onUnauthorized },
+        "/api/v1/libraries",
+      ),
+    ).rejects.toMatchObject({ status: 403, code: "token_expired" });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it("does not call onUnauthorized for ordinary 403", async () => {
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "nope" }), {
+        status: 403,
+        statusText: "Forbidden",
+      }),
+    );
+
+    await expect(
+      apiRequest(
+        { serverUrl: "https://prairie.example", fetchImpl, onUnauthorized },
+        "/api/v1/libraries",
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
   it("aborts hung requests after the timeout", async () => {

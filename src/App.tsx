@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { CollectionCard } from "./api/collections";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
 import type { Library } from "./api/libraries";
+import { setSessionUnauthorizedHandler } from "./api/sessionClient";
 import { ShellNav, type ShellTab } from "./components/ShellNav";
 import { handleSpatialArrowKey } from "./focus/spatialFocus";
 import { CollectionBrowseScreen } from "./screens/CollectionBrowseScreen";
@@ -17,6 +18,7 @@ import { PlayerScreen, type PlayerLaunch } from "./screens/PlayerScreen";
 import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
+import { loadLastServerUrl } from "./storage/persist";
 import {
   clearSession,
   loadSession,
@@ -73,6 +75,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    setSessionUnauthorizedHandler(disconnect);
+    return () => setSessionUnauthorizedHandler(undefined);
+  }, [disconnect]);
+
+  useEffect(() => {
     if (!session) {
       setLiveTvAvailable(false);
       return;
@@ -102,7 +109,12 @@ export function App() {
   if (route.name === "connect" || (!session && route.name !== "profiles")) {
     return (
       <ConnectScreen
-        initialServerUrl={session?.serverUrl ?? import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""}
+        initialServerUrl={
+          session?.serverUrl ||
+          loadLastServerUrl() ||
+          import.meta.env.VITE_DEFAULT_SERVER_URL ||
+          ""
+        }
         onAuthenticated={(auth) => {
           setSession(null);
           setRoute({ name: "profiles", auth });
@@ -131,7 +143,9 @@ export function App() {
   if (!session) {
     return (
       <ConnectScreen
-        initialServerUrl={import.meta.env.VITE_DEFAULT_SERVER_URL ?? ""}
+        initialServerUrl={
+          loadLastServerUrl() || import.meta.env.VITE_DEFAULT_SERVER_URL || ""
+        }
         onAuthenticated={(auth) => setRoute({ name: "profiles", auth })}
       />
     );
@@ -258,7 +272,6 @@ export function App() {
             auth: {
               serverUrl: session.serverUrl,
               accessToken: session.accessToken,
-              refreshToken: session.refreshToken,
               username: session.username,
             },
           })

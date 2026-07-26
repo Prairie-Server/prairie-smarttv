@@ -22,14 +22,41 @@ export interface ApiClientOptions {
   fetchImpl?: typeof fetch;
   /** Request timeout in milliseconds. Defaults to 30s. */
   timeoutMs?: number;
+  /**
+   * Called when the server rejects the session (401, or 403 with auth codes).
+   * Not invoked for auth/login so bad credentials do not recurse.
+   */
+  onUnauthorized?: () => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** 403 response codes that indicate the access token / session is no longer valid. */
+const AUTH_FORBIDDEN_CODES = new Set([
+  "unauthorized",
+  "invalid_token",
+  "token_expired",
+  "authentication_required",
+  "auth_required",
+  "session_expired",
+]);
 
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.replace(/\/+$/, "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${normalizedBase}${normalizedPath}`;
+}
+
+/** Paths that must not trigger onUnauthorized (bad login must not clear/loop). */
+export function isAuthLoginPath(path: string): boolean {
+  const bare = path.split("?")[0]?.replace(/\/+$/, "") ?? "";
+  return bare === "/api/v1/auth/login" || bare.endsWith("/auth/login");
+}
+
+function shouldNotifyUnauthorized(status: number, code?: string): boolean {
+  if (status === 401) return true;
+  if (status === 403 && code && AUTH_FORBIDDEN_CODES.has(code)) return true;
+  return false;
 }
 
 export async function apiRequest<T>(
@@ -103,6 +130,17 @@ export async function apiRequest<T>(
     } catch {
       /* ignore non-JSON */
     }
+    if (
+      options.onUnauthorized &&
+      shouldNotifyUnauthorized(response.status, code) &&
+      !isAuthLoginPath(path)
+    ) {
+      try {
+        options.onUnauthorized();
+      } catch {
+        /* logout handlers must not mask the ApiError */
+      }
+    }
     throw new ApiError(message, response.status, code, body);
   }
 
@@ -113,8 +151,21 @@ export async function apiRequest<T>(
   return (await response.json()) as T;
 }
 
+/** True when `candidate` shares origin with the connected Prairie server. */
+export function isSameServerOrigin(serverUrl: string, candidate: string): boolean {
+  try {
+    const server = new URL(serverUrl);
+    const target = new URL(candidate, server);
+    return target.protocol === server.protocol && target.host === server.host;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Resolve a stream_url from Prairie against the server base and attach token.
+ * Resolve a stream_url from Prairie against the server base and attach token
+ * only when the resolved URL is same-origin with `serverUrl`. Cross-origin
+ * absolute URLs (CDN, tuner, etc.) must not receive the session bearer.
  */
 export function buildStreamUrl(
   serverUrl: string,
@@ -126,7 +177,7 @@ export function buildStreamUrl(
       ? streamPath
       : joinUrl(serverUrl, streamPath);
 
-  if (!token) return base;
+  if (!token || !isSameServerOrigin(serverUrl, base)) return base;
 
   const params = new URLSearchParams();
   params.set("token", token);

@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, buildStreamUrl, isSameServerOrigin } from "./client";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
@@ -42,6 +42,28 @@ export interface LiveTvSessionStart {
 export function playableLiveUrl(start: LiveTvSessionStart): string | null {
   const url = (start.hls_url || start.stream_url || "").trim();
   return url || null;
+}
+
+/**
+ * Resolve a Live TV stream for playback. Only same-origin absolute URLs and
+ * relative paths (joined via buildStreamUrl) are allowed — raw external tuner
+ * URLs must be proxied by the Prairie server.
+ */
+export function resolveLivePlaybackUrl(
+  serverUrl: string,
+  streamPath: string,
+  token: string | null,
+): string {
+  const trimmed = streamPath.trim();
+  if (!trimmed) {
+    throw new Error("Live TV session returned no stream URL");
+  }
+  const isAbsoluteHttp =
+    trimmed.startsWith("http://") || trimmed.startsWith("https://");
+  if (isAbsoluteHttp && !isSameServerOrigin(serverUrl, trimmed)) {
+    throw new Error("Live TV requires a server-proxied stream");
+  }
+  return buildStreamUrl(serverUrl, trimmed, token);
 }
 
 export async function fetchLiveTvChannels(

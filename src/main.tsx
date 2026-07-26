@@ -6,6 +6,10 @@ import "@fontsource/fraunces/600.css";
 import "@fontsource/fraunces/700.css";
 import "./styles.css";
 import { App } from "./App";
+import { ensureStorageSchema } from "./storage/persist";
+
+// Additive migrations only — never wipe session/settings on upgrade.
+ensureStorageSchema();
 
 const root = document.getElementById("root");
 if (!root) {

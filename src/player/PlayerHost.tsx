@@ -1,4 +1,8 @@
 import { useEffect, useRef } from "react";
+import {
+  subtitleAppearanceCssVars,
+  type SubtitleAppearance,
+} from "../settings/subtitleAppearance";
 import { createMediaPlayer } from "./createMediaPlayer";
 import type { MediaPlayer } from "./types";
 import type { ResolvedPlayerBackend } from "../platform/types";
@@ -8,10 +12,27 @@ interface PlayerHostProps {
   backend: ResolvedPlayerBackend;
   playing: boolean;
   mimeType?: string;
+  subtitleAppearance?: SubtitleAppearance;
+  /** Preferred/selected external subtitle for AVPlay IDLE attach. */
+  initialSubtitleUrl?: string | null;
+  initialSubtitleLabel?: string;
+  /** Connected Prairie origin — gates Tizen subtitle downloads. */
+  allowedServerUrl?: string | null;
   onError?: (message: string) => void;
   onEnded?: () => void;
   onReady?: (player: MediaPlayer) => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
+}
+
+function applySubtitleVars(
+  el: HTMLElement,
+  appearance: SubtitleAppearance | undefined,
+): void {
+  if (!appearance) return;
+  const vars = subtitleAppearanceCssVars(appearance);
+  for (const [key, value] of Object.entries(vars)) {
+    el.style.setProperty(key, value);
+  }
 }
 
 export function PlayerHost({
@@ -19,6 +40,10 @@ export function PlayerHost({
   backend,
   playing,
   mimeType,
+  subtitleAppearance,
+  initialSubtitleUrl,
+  initialSubtitleLabel,
+  allowedServerUrl,
   onError,
   onEnded,
   onReady,
@@ -28,7 +53,13 @@ export function PlayerHost({
   const playerRef = useRef<MediaPlayer | null>(null);
   const skipPlaySyncRef = useRef(false);
   const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onErrorRef = useRef(onError);
+  const onEndedRef = useRef(onEnded);
+  const onReadyRef = useRef(onReady);
   onTimeUpdateRef.current = onTimeUpdate;
+  onErrorRef.current = onError;
+  onEndedRef.current = onEnded;
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -42,25 +73,38 @@ export function PlayerHost({
         backend,
         autoplay: playing,
         mimeType,
-        onError,
-        onEnded,
+        initialSubtitleUrl,
+        initialSubtitleLabel,
+        allowedServerUrl,
+        onError: (message) => onErrorRef.current?.(message),
+        onEnded: () => onEndedRef.current?.(),
         onTimeUpdate: (current, duration) => onTimeUpdateRef.current?.(current, duration),
       });
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : String(err));
+      onErrorRef.current?.(err instanceof Error ? err.message : String(err));
       return;
     }
 
     playerRef.current = player;
     skipPlaySyncRef.current = true;
-    onReady?.(player);
+    applySubtitleVars(container, subtitleAppearance);
+    onReadyRef.current?.(player);
 
     return () => {
       player.destroy();
       playerRef.current = null;
       container.replaceChildren();
     };
+    // Recreate only when the stream identity changes. Subtitle selection mid-play
+    // uses setTextTrack; initialSubtitle* is consumed at create for AVPlay IDLE attach.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional create-once-per-stream
   }, [url, backend, mimeType]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    applySubtitleVars(container, subtitleAppearance);
+  }, [subtitleAppearance]);
 
   useEffect(() => {
     const player = playerRef.current;
