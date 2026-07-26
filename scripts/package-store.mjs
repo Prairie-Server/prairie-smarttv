@@ -103,7 +103,7 @@ function packageWebos(version) {
   const out = join(artifacts, `Prairie-${version}-webos-unsigned.zip`);
   zipDirectory(source, out);
   console.log(`ares-package not found — wrote staging zip ${out}`);
-  console.log("Install @webosose/ares-cli, then create a real .ipk:");
+  console.log("Install @webos-tools/cli, then create a real .ipk:");
   console.log(`  ares-package ${source} -o artifacts`);
   console.log("Sign with your LG Developer Partner certificate before LG Content Store upload.");
 }

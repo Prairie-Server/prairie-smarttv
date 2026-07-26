@@ -8,11 +8,11 @@ npm run package:webos
 
 This runs `build:webos` (Vite → `dist-webos/` with `appinfo.json` + icons).
 
-- If [`ares-cli`](https://webosose.org/docs/tools/sdk/cli/) (`ares-package`) is on your `PATH`, a real `.ipk` is written under `artifacts/`.
+- If [`@webos-tools/cli`](https://www.npmjs.com/package/@webos-tools/cli) (`ares-package`) is on your `PATH`, a real `.ipk` is written under `artifacts/`.
 - Otherwise an unsigned staging zip is written as `artifacts/Prairie-1.0.0-webos-unsigned.zip`. Create the `.ipk` with:
 
 ```bash
-npm install -g @webosose/ares-cli
+npm install -g @webos-tools/cli
 ares-package dist-webos -o artifacts
 ```
 

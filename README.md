@@ -68,9 +68,9 @@ Signing steps: `platforms/tizen/README.md` and `platforms/webos/README.md`.
 Push a `v*` tag (or run **Release packages** via `workflow_dispatch`) to build CI artifacts:
 
 - Unsigned Tizen `.wgt` (`artifacts/Prairie-<version>-tizen-unsigned.wgt`)
-- webOS `.ipk` via `@webosose/ares-cli` (`ares-package`)
+- webOS `.ipk` via `@webos-tools/cli` (`ares-package`)
 
-Workflow: `.github/workflows/release-packages.yml`. It stamps `package.json`, `platforms/tizen/config.xml`, and `platforms/webos/appinfo.json` from the tag version, uploads Actions artifacts, and attaches files to the GitHub Release.
+Workflow: `.github/workflows/release-packages.yml`. It stamps `package.json`, `platforms/tizen/config.xml`, and `platforms/webos/appinfo.json` from the tag version and uploads Actions artifacts. Tag runs also attach those files to a GitHub Release; manual `workflow_dispatch` runs build and upload artifacts only.
 
 Store signing (Samsung Seller Office / LG Partner certificates) remains a local step — CI produces unsigned / developer-packaged staging builds only.
 

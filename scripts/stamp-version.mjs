@@ -5,7 +5,7 @@
  *
  * Usage: node scripts/stamp-version.mjs 1.2.3
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { renameSync, writeFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,23 +18,34 @@ if (!/^\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$/.test(version)) {
   process.exit(1);
 }
 
-const pkgPath = join(root, "package.json");
-const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-pkg.version = version;
-writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+function writeAtomic(path, contents) {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, contents);
+  renameSync(tmp, path);
+}
 
+const pkgPath = join(root, "package.json");
 const configPath = join(root, "platforms/tizen/config.xml");
+const appinfoPath = join(root, "platforms/webos/appinfo.json");
+
+const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const config = readFileSync(configPath, "utf8");
+const appinfo = JSON.parse(readFileSync(appinfoPath, "utf8"));
+
 const nextConfig = config.replace(/(<widget\b[^>]*\bversion=")([^"]+)(")/, `$1${version}$3`);
 if (nextConfig === config && !config.includes(`version="${version}"`)) {
   console.error("Failed to update version attribute in platforms/tizen/config.xml");
   process.exit(1);
 }
-writeFileSync(configPath, nextConfig);
 
-const appinfoPath = join(root, "platforms/webos/appinfo.json");
-const appinfo = JSON.parse(readFileSync(appinfoPath, "utf8"));
+pkg.version = version;
 appinfo.version = version;
-writeFileSync(appinfoPath, `${JSON.stringify(appinfo, null, 2)}\n`);
+
+const nextPkg = `${JSON.stringify(pkg, null, 2)}\n`;
+const nextAppinfo = `${JSON.stringify(appinfo, null, 2)}\n`;
+
+writeAtomic(pkgPath, nextPkg);
+writeAtomic(configPath, nextConfig);
+writeAtomic(appinfoPath, nextAppinfo);
 
 console.log(`Stamped version ${version} into package.json, config.xml, and appinfo.json`);
