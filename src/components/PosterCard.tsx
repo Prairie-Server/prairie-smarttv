@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { ArtworkImage } from "./ArtworkImage";
 
 interface PosterCardProps {
   title: string;
@@ -34,7 +35,7 @@ export function PosterCard({
     >
       <div className="poster-card__art" aria-hidden="true">
         {posterUrl ? (
-          <img src={posterUrl} alt="" loading="lazy" />
+          <ArtworkImage src={posterUrl} alt="" loading="lazy" />
         ) : (
           <div className="poster-card__placeholder">{title.slice(0, 1)}</div>
         )}
