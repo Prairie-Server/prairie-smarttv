@@ -122,12 +122,14 @@ Session auth is in `localStorage` (`prairie.session`): server URL, tokens, activ
 
 ```text
 src/
-  api/           Prairie /api/v1 client, auth, catalog, home, watch, playback, livetv
+  api/           Prairie /api/v1 client, auth, health, catalog, home, watch, playback, livetv
+  discovery/     LAN candidate builder + parallel /api/v1/health scan
   focus/         Spatial D-pad focus engine
   platform/      detect + tizen/avplay + webos/starfish adapters
   player/        backend selection, HTML5 host, PlayerHost, time helpers
   settings/      playback troubleshooting settings + screen
-  screens/       Connect, profiles, browse, Live TV, detail, player
+  storage/       session, server registry, upgrade-safe persistence
+  screens/       Connect, server list, profiles, browse, Live TV, detail, player
   components/    Shell nav, poster cards, media rows
 platforms/       Tizen config.xml + webOS appinfo.json + packaging docs
 scripts/         build-web + package-store
