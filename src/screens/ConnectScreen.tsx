@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { login } from "../api/auth";
+import { fetchSetupStatus, login } from "../api/auth";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
 import type { AuthTokens } from "../storage/session";
@@ -47,6 +47,12 @@ export function ConnectScreen({
       }
       if (parsed.username || parsed.password) {
         throw new Error("Server URL must not include credentials");
+      }
+      const setup = await fetchSetupStatus(trimmedUrl);
+      if (setup.needs_setup) {
+        throw new Error(
+          `This server has not been set up yet. Open ${trimmedUrl} in a browser on your phone or computer to create the first account, then return here to sign in.`,
+        );
       }
       const auth = await login(trimmedUrl, { username: username.trim(), password });
       onAuthenticated({
