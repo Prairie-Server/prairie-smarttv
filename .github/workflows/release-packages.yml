@@ -1,8 +1,9 @@
 name: Release packages
 
-# Builds unsigned store staging packages for Samsung Tizen (.wgt) and LG webOS
-# (.ipk). Store signing still requires Samsung / LG developer certificates
-# locally — see platforms/tizen/README.md and platforms/webos/README.md.
+# Builds store staging packages for Samsung Tizen (.wgt) and LG webOS (.ipk).
+# Tizen signing runs only when TIZEN_* certificate secrets are configured —
+# see platforms/tizen/README.md. webOS .ipk via ares-package; store re-sign
+# remains a local LG Partner step.
 
 on:
   push:
@@ -78,6 +79,15 @@ jobs:
 
       - name: Package Tizen (.wgt) and webOS (.ipk)
         run: npm run package:store
+
+      - name: Sign Tizen package (optional)
+        env:
+          TIZEN_AUTHOR_P12: ${{ secrets.TIZEN_AUTHOR_P12 }}
+          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+          TIZEN_DISTRIBUTOR_P12: ${{ secrets.TIZEN_DISTRIBUTOR_P12 }}
+          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
+          TIZEN_SECURITY_PROFILE: ${{ secrets.TIZEN_SECURITY_PROFILE }}
+        run: bash scripts/ci-sign-tizen.sh
 
       - name: List artifacts
         run: |

@@ -8,6 +8,7 @@
 import { renameSync, writeFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import prettier from "prettier";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -22,6 +23,14 @@ function writeAtomic(path, contents) {
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, contents);
   renameSync(tmp, path);
+}
+
+async function formatJson(path, value) {
+  const raw = `${JSON.stringify(value, null, 2)}\n`;
+  return prettier.format(raw, {
+    ...(await prettier.resolveConfig(path)),
+    filepath: path,
+  });
 }
 
 const pkgPath = join(root, "package.json");
@@ -41,8 +50,10 @@ if (nextConfig === config && !config.includes(`version="${version}"`)) {
 pkg.version = version;
 appinfo.version = version;
 
-const nextPkg = `${JSON.stringify(pkg, null, 2)}\n`;
-const nextAppinfo = `${JSON.stringify(appinfo, null, 2)}\n`;
+const [nextPkg, nextAppinfo] = await Promise.all([
+  formatJson(pkgPath, pkg),
+  formatJson(appinfoPath, appinfo),
+]);
 
 writeAtomic(pkgPath, nextPkg);
 writeAtomic(configPath, nextConfig);
