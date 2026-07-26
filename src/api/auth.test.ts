@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchSetupStatus, listProfiles, login, pickDefaultProfile, verifyProfilePin } from "./auth";
+import {
+  fetchSetupStatus,
+  listProfiles,
+  login,
+  pickDefaultProfile,
+  verifyProfilePin,
+} from "./auth";
 
 describe("pickDefaultProfile", () => {
   it("returns null for an empty list", () => {
