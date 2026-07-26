@@ -7,6 +7,7 @@ AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first
 ## What’s included
 
 - Connect to a Prairie server (username / password)
+- **Multi-server registry** + **LAN discovery** (`GET /api/v1/health` probes; Scan LAN / Servers)
 - **Profile picker** (PIN unlock when required)
 - **Home** rails from `/api/v1/home/sections`
 - **Libraries** browse with pagination (`/api/v1/user/libraries` + `/api/v1/catalog`)

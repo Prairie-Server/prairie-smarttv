@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { listProfiles, verifyProfilePin, type Profile } from "../api/auth";
 import { ApiError } from "../api/client";
+import { fetchServerHealth } from "../api/health";
 import { FocusButton } from "../components/FocusButton";
+import { loadRegistry, rememberSession, saveRegistry } from "../storage/serverRegistry";
 import { saveSession, type AuthTokens, type PrairieSession } from "../storage/session";
 
 interface ProfileSelectScreenProps {
@@ -45,6 +47,9 @@ export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelec
       profileName: profile.name,
       profileToken,
     });
+    const health = await fetchServerHealth(session.serverUrl);
+    const registry = rememberSession(loadRegistry(), session, health?.serverName ?? "");
+    saveRegistry(registry);
     onSelected(session);
   }
 

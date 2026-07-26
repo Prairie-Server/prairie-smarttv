@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LAST_SERVER_URL_KEY,
   PRESERVED_STORAGE_KEYS,
+  SERVER_REGISTRY_KEY,
   SESSION_KEY,
   STORAGE_SCHEMA_KEY,
   ensureStorageSchema,
@@ -27,9 +28,10 @@ describe("persist / upgrade safety", () => {
   it("lists the keys that must survive upgrades", () => {
     expect(PRESERVED_STORAGE_KEYS).toContain(SESSION_KEY);
     expect(PRESERVED_STORAGE_KEYS).toContain(LAST_SERVER_URL_KEY);
+    expect(PRESERVED_STORAGE_KEYS).toContain(SERVER_REGISTRY_KEY);
   });
 
-  it("promotes server URL from session on schema v0 → v1 without wiping session", () => {
+  it("promotes server URL from session on schema v0 → v2 without wiping session", () => {
     const storage = memoryStorage({
       [SESSION_KEY]: JSON.stringify({
         serverUrl: "https://prairie.example/",
@@ -39,22 +41,35 @@ describe("persist / upgrade safety", () => {
       }),
     });
     const version = ensureStorageSchema(storage);
-    expect(version).toBe(1);
-    expect(storage.getItem(STORAGE_SCHEMA_KEY)).toBe("1");
+    expect(version).toBe(2);
+    expect(storage.getItem(STORAGE_SCHEMA_KEY)).toBe("2");
     expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://prairie.example");
     // Session blob must still be intact after upgrade migration.
     expect(JSON.parse(storage.getItem(SESSION_KEY)!).accessToken).toBe("tok");
   });
 
-  it("does not clear existing keys when schema is already current", () => {
+  it("bumps v1 → v2 without clearing session or last URL", () => {
     const storage = memoryStorage({
       [STORAGE_SCHEMA_KEY]: "1",
       [SESSION_KEY]: JSON.stringify({ accessToken: "keep" }),
       [LAST_SERVER_URL_KEY]: "https://keep.example",
     });
+    expect(ensureStorageSchema(storage)).toBe(2);
+    expect(storage.getItem(SESSION_KEY)).toContain("keep");
+    expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://keep.example");
+  });
+
+  it("does not clear existing keys when schema is already current", () => {
+    const storage = memoryStorage({
+      [STORAGE_SCHEMA_KEY]: "2",
+      [SESSION_KEY]: JSON.stringify({ accessToken: "keep" }),
+      [LAST_SERVER_URL_KEY]: "https://keep.example",
+      [SERVER_REGISTRY_KEY]: JSON.stringify({ entries: [] }),
+    });
     ensureStorageSchema(storage);
     expect(storage.getItem(SESSION_KEY)).toContain("keep");
     expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://keep.example");
+    expect(storage.getItem(SERVER_REGISTRY_KEY)).toContain("entries");
   });
 
   it("loads last server URL from dedicated key or session fallback", () => {
@@ -101,16 +116,16 @@ describe("persist / upgrade safety", () => {
       [STORAGE_SCHEMA_KEY]: "nope",
       [SESSION_KEY]: JSON.stringify({ serverUrl: "https://d.example" }),
     });
-    expect(ensureStorageSchema(storage)).toBe(1);
+    expect(ensureStorageSchema(storage)).toBe(2);
     expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://d.example");
   });
 
   it("leaves a current schema version unchanged", () => {
     const storage = memoryStorage({
-      [STORAGE_SCHEMA_KEY]: "1",
+      [STORAGE_SCHEMA_KEY]: "2",
       [LAST_SERVER_URL_KEY]: "https://stable.example",
     });
-    expect(ensureStorageSchema(storage)).toBe(1);
+    expect(ensureStorageSchema(storage)).toBe(2);
     expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://stable.example");
   });
 });
