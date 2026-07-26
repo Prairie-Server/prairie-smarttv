@@ -64,9 +64,9 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 | `npm run package:webos`        | Build + `.ipk` (via ares) or staging zip under `artifacts/`     |
 | `npm run package:store`        | Modern Tizen + legacy Tizen + webOS                             |
 
-**Tizen targets:** dual packages — Prairie (`required_version="6.0"`, 6.0/6.5/7/8) and Prairie Lite (`5.5`). Details + how to create Samsung signing secrets: `platforms/tizen/README.md`.
+**Tizen targets:** dual packages — Prairie (`required_version="6.0"`, 6.0/6.5/7/8) and Prairie Lite (`5.5`). Details: `platforms/tizen/README.md`.
 
-Signing: `platforms/tizen/README.md` and `platforms/webos/README.md`. Unsigned Tizen `.wgt` files **do not install** on Samsung TVs — sign with a Samsung Certificate Manager profile (DUID registered for sideload).
+**Public sideload (Apps2Samsung):** ship the **unsigned** `*-tizen-unsigned.wgt` / `*-tizen-legacy-unsigned.wgt` from GitHub Releases. Apps2Samsung re-signs with each user’s own Samsung cert for their TV. DUID-locked CI secrets only unlock _your_ TVs — they are not how “everyone” installs. Store listing without Developer Mode is Samsung Seller Office (separate process).
 
 ### GitHub Release packages
 

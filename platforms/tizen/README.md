@@ -27,11 +27,33 @@ Writes under `artifacts/`:
 - `Prairie-<version>-tizen-unsigned.wgt`
 - `Prairie-<version>-tizen-legacy-unsigned.wgt`
 
-An unsigned `.wgt` is only a zip of the dist folder. **It will not install on a Samsung TV.** Sign it (below).
+An unsigned `.wgt` is a zip of the dist folder. TVs will not install it **as-is** — something has to sign it first. For most users that “something” is Apps2Samsung (below), not our CI secrets.
 
-## Sign so it installs (required for real TVs)
+## Distribution paths (pick one)
 
-Samsung TVs only install packages signed with a **Samsung Certificate Manager** profile:
+| Path                                | Who can install                                             | What we ship                                                        | Developer Mode? |
+| ----------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------- | --------------- |
+| **Apps2Samsung / custom `.wgt`**    | Anyone (each person signs for _their_ TV)                   | **Unsigned** `*-tizen-unsigned.wgt` / `*-tizen-legacy-unsigned.wgt` | Yes             |
+| **Your CI / local Samsung cert**    | Only TVs whose **DUID** is on _your_ distributor cert (≤50) | Signed `*-tizen.wgt` via `TIZEN_*` secrets                          | Yes             |
+| **Samsung Apps TV (Seller Office)** | Everyone via the store (no sideload)                        | Signed package you upload; Samsung re-signs for the store           | No              |
+
+### Apps2Samsung (recommended for “everyone” sideload)
+
+[Apps2Samsung](https://apps2samsung.com/) downloads a community/custom `.wgt`, creates a **Samsung developer certificate for that user’s TV**, re-signs, and installs. So:
+
+- **Do not** rely on our DUID-locked CI secrets for public installs — those only unlock _your_ TVs.
+- **Do** publish the **unsigned** release artifacts (already produced by CI).
+- End users: Developer Mode on → Apps2Samsung → Custom WGT (or catalog entry) → install.
+
+Catalog listing (optional): add a provider in Apps2Samsung’s [`third-party-apps.json`](https://github.com/Apps2Samsung/Apps2Samsung/blob/main/third-party-apps.json) pointing at `https://api.github.com/repos/Prairie-Server/prairie-smarttv/releases` (same pattern as Moonfin/Litefin). Until then, users can load the GitHub Release `.wgt` via **Custom WGT/TPK**.
+
+### Samsung Seller Office (real store)
+
+For install **without** Developer Mode / Apps2Samsung: register in [TV Seller Office](https://seller.samsungapps.com/), upload a package signed with your Samsung author certificate, pass Samsung verification. On acceptance, Samsung swaps in the store distributor certificate so any supported TV can install from Apps. That is a separate product/process from GitHub Releases.
+
+## Sign locally / CI (your TVs only)
+
+Samsung TVs only install packages signed with a **Samsung Certificate Manager** profile. A distributor cert with your DUID list is a **personal** cert — not a public one:
 
 1. Install [Tizen Studio](https://developer.tizen.org/development/tizen-studio) + **TV Extensions** + **Samsung Certificate Extension**.
 2. Enable **Developer Mode** on the TV and note the **DUID**.
@@ -62,18 +84,11 @@ tizen install -n Prairie-<version>-tizen.wgt -- artifacts
 
 Optional: `TIZEN_PROFILES_PATH=/path/to/profiles.xml` if the CLI cannot find Certificate Manager profiles.
 
-### Seller Office (store) vs sideload
+## Generate GitHub signing secrets (maintainers’ TVs only)
 
-| Goal                    | Certificate                                            |
-| ----------------------- | ------------------------------------------------------ |
-| Sideload / your own TVs | Samsung certificate profile with each TV’s DUID        |
-| Samsung Seller Office   | Seller Office author + Samsung-issued distributor cert |
+Optional. These secrets produce signed release assets for **DUIDs on your distributor cert only**. Public Apps2Samsung users do **not** need them — they use the unsigned `.wgt` and sign locally via Apps2Samsung.
 
-Same `sign:tizen` command — switch active profile in Certificate Manager (or pass the store profile name).
-
-## Generate GitHub signing secrets
-
-CI signs when these repository secrets exist (Settings → Secrets and variables → Actions):
+CI also signs when these repository secrets exist (Settings → Secrets and variables → Actions):
 
 | Secret                       | Value                                      |
 | ---------------------------- | ------------------------------------------ |
