@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, buildStreamUrl } from "../api/client";
+import { ApiError } from "../api/client";
 import {
   channelDisplayLabel,
   playableLiveUrl,
   releaseLiveTvSession,
+  resolveLivePlaybackUrl,
   startLiveTvSession,
   type LiveTvChannel,
 } from "../api/livetv";
@@ -54,16 +55,16 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
         liveSessionId.current = started.session_id;
         const raw = playableLiveUrl(started);
         if (!raw) throw new Error("Live TV session returned no stream URL");
-        const absolute =
-          raw.startsWith("http://") || raw.startsWith("https://")
-            ? raw
-            : buildStreamUrl(session.serverUrl, raw, session.accessToken);
-        setStreamUrl(absolute);
+        setStreamUrl(
+          resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken),
+        );
         setNote(started.note ?? null);
         setPlaying(true);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Could not start Live TV");
+          if (err instanceof ApiError) setError(err.message);
+          else if (err instanceof Error) setError(err.message);
+          else setError("Could not start Live TV");
         }
       } finally {
         if (!cancelled) setLoading(false);

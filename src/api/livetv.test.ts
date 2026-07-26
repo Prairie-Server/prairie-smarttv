@@ -7,6 +7,7 @@ import {
   nextProgramForChannel,
   playableLiveUrl,
   releaseLiveTvSession,
+  resolveLivePlaybackUrl,
   startLiveTvSession,
   type LiveTvChannel,
   type LiveTvProgram,
@@ -35,6 +36,34 @@ describe("playableLiveUrl", () => {
     expect(playableLiveUrl({ session_id: "s", hls_url: "/hls" })).toBe("/hls");
     expect(playableLiveUrl({ session_id: "s", stream_url: "/raw" })).toBe("/raw");
     expect(playableLiveUrl({ session_id: "s" })).toBeNull();
+  });
+});
+
+describe("resolveLivePlaybackUrl", () => {
+  it("joins relative paths via buildStreamUrl", () => {
+    expect(resolveLivePlaybackUrl("https://prairie.example", "/live.m3u8", "tok")).toBe(
+      "https://prairie.example/live.m3u8?token=tok",
+    );
+  });
+
+  it("allows same-origin absolute URLs", () => {
+    expect(
+      resolveLivePlaybackUrl(
+        "https://prairie.example",
+        "https://prairie.example/api/v1/livetv/proxy.m3u8",
+        "tok",
+      ),
+    ).toBe("https://prairie.example/api/v1/livetv/proxy.m3u8?token=tok");
+  });
+
+  it("rejects cross-origin absolute tuner URLs", () => {
+    expect(() =>
+      resolveLivePlaybackUrl(
+        "https://prairie.example",
+        "http://tuner.local:5004/auto/v4.1",
+        "tok",
+      ),
+    ).toThrow("Live TV requires a server-proxied stream");
   });
 });
 

@@ -21,6 +21,7 @@ describe("sessionClient", () => {
       profileId: "p1",
       profileToken: "pin",
       fetchImpl,
+      onUnauthorized: undefined,
     });
   });
 });

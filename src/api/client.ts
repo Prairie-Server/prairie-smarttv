@@ -22,14 +22,41 @@ export interface ApiClientOptions {
   fetchImpl?: typeof fetch;
   /** Request timeout in milliseconds. Defaults to 30s. */
   timeoutMs?: number;
+  /**
+   * Called when the server rejects the session (401, or 403 with auth codes).
+   * Not invoked for auth/login so bad credentials do not recurse.
+   */
+  onUnauthorized?: () => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** 403 response codes that indicate the access token / session is no longer valid. */
+const AUTH_FORBIDDEN_CODES = new Set([
+  "unauthorized",
+  "invalid_token",
+  "token_expired",
+  "authentication_required",
+  "auth_required",
+  "session_expired",
+]);
 
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.replace(/\/+$/, "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${normalizedBase}${normalizedPath}`;
+}
+
+/** Paths that must not trigger onUnauthorized (bad login must not clear/loop). */
+export function isAuthLoginPath(path: string): boolean {
+  const bare = path.split("?")[0]?.replace(/\/+$/, "") ?? "";
+  return bare === "/api/v1/auth/login" || bare.endsWith("/auth/login");
+}
+
+function shouldNotifyUnauthorized(status: number, code?: string): boolean {
+  if (status === 401) return true;
+  if (status === 403 && code && AUTH_FORBIDDEN_CODES.has(code)) return true;
+  return false;
 }
 
 export async function apiRequest<T>(
@@ -102,6 +129,17 @@ export async function apiRequest<T>(
       }
     } catch {
       /* ignore non-JSON */
+    }
+    if (
+      options.onUnauthorized &&
+      shouldNotifyUnauthorized(response.status, code) &&
+      !isAuthLoginPath(path)
+    ) {
+      try {
+        options.onUnauthorized();
+      } catch {
+        /* logout handlers must not mask the ApiError */
+      }
     }
     throw new ApiError(message, response.status, code, body);
   }

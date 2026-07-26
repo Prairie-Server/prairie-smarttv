@@ -29,10 +29,11 @@ export function loadSession(storage: Pick<Storage, "getItem"> = localStorage): P
     if (!parsed.serverUrl || !parsed.accessToken || !parsed.username || !parsed.profileId) {
       return null;
     }
+    // refreshToken is optional for forward-compat but intentionally not restored —
+    // unused refresh tokens must not linger in session memory until refresh ships.
     return {
       serverUrl: normalizeServerUrl(parsed.serverUrl),
       accessToken: parsed.accessToken,
-      refreshToken: parsed.refreshToken,
       username: parsed.username,
       profileId: parsed.profileId,
       profileName: parsed.profileName,
@@ -47,8 +48,10 @@ export function saveSession(
   session: PrairieSession,
   storage: Pick<Storage, "setItem"> = localStorage,
 ): PrairieSession {
+  // Never write refreshToken to localStorage until token refresh is implemented.
+  const { refreshToken: _omitRefresh, ...withoutRefresh } = session;
   const normalized: PrairieSession = {
-    ...session,
+    ...withoutRefresh,
     serverUrl: normalizeServerUrl(session.serverUrl),
   };
   storage.setItem(SESSION_KEY, JSON.stringify(normalized));

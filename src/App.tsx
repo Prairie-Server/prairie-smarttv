@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { CollectionCard } from "./api/collections";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
 import type { Library } from "./api/libraries";
+import { setSessionUnauthorizedHandler } from "./api/sessionClient";
 import { ShellNav, type ShellTab } from "./components/ShellNav";
 import { handleSpatialArrowKey } from "./focus/spatialFocus";
 import { CollectionBrowseScreen } from "./screens/CollectionBrowseScreen";
@@ -72,6 +73,11 @@ export function App() {
     setLiveTvAvailable(false);
     setRoute({ name: "connect" });
   }, []);
+
+  useEffect(() => {
+    setSessionUnauthorizedHandler(disconnect);
+    return () => setSessionUnauthorizedHandler(undefined);
+  }, [disconnect]);
 
   useEffect(() => {
     if (!session) {
@@ -266,7 +272,6 @@ export function App() {
             auth: {
               serverUrl: session.serverUrl,
               accessToken: session.accessToken,
-              refreshToken: session.refreshToken,
               username: session.username,
             },
           })

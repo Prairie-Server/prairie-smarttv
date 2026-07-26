@@ -29,10 +29,10 @@ export function ConnectScreen({
         throw new Error("Enter your Prairie server URL");
       }
       const auth = await login(trimmedUrl, { username: username.trim(), password });
+      // Do not persist refresh_token until client-side refresh is implemented.
       onAuthenticated({
         serverUrl: trimmedUrl,
         accessToken: auth.access_token,
-        refreshToken: auth.refresh_token,
         username: auth.user.username,
       });
     } catch (err) {
