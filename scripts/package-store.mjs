@@ -3,7 +3,9 @@
  * Build store-ready (or signing-ready) packages for Tizen (.wgt) and webOS (.ipk).
  *
  * - Tizen: zips dist-tizen/ into artifacts/Prairie-<version>-tizen-unsigned.wgt
- *   (a .wgt is a zip). Sign with Tizen CLI / Certificate Manager before Seller Office.
+ *   (a .wgt is a zip). Real TVs require a signed package — set
+ *   TIZEN_SECURITY_PROFILE to also produce Prairie-<version>-tizen.wgt via the
+ *   Tizen CLI. See platforms/tizen/README.md.
  * - webOS: prefers `ares-package` when installed; otherwise writes an unsigned
  *   zip of dist-webos/ and prints the ares-package command for store signing.
  */
@@ -82,9 +84,19 @@ function packageTizen(version) {
   const out = join(artifacts, `Prairie-${version}-tizen-unsigned.wgt`);
   zipDirectory(source, out);
   console.log(`Wrote ${out} (${statSync(out).size} bytes)`);
-  console.log("Sign before Samsung Seller Office upload:");
-  console.log(`  tizen package -t wgt -s <distributor-profile> -- ${source}`);
-  console.log("  # or Package with Certificate Manager in Tizen Studio");
+
+  const profile = (process.env.TIZEN_SECURITY_PROFILE ?? "").trim();
+  if (profile && commandExists("tizen")) {
+    run(isWindows ? "npm.cmd" : "npm", ["run", "sign:tizen"], {
+      env: { ...process.env, TIZEN_SECURITY_PROFILE: profile },
+    });
+    return;
+  }
+
+  console.log("Unsigned .wgt will not install on a Samsung TV.");
+  console.log("Sign for sideload / Seller Office:");
+  console.log(`  TIZEN_SECURITY_PROFILE=<profile> npm run sign:tizen`);
+  console.log("  # requires Tizen Studio CLI + Certificate Manager profile");
 }
 
 function packageWebos(version) {
@@ -103,7 +115,7 @@ function packageWebos(version) {
   const out = join(artifacts, `Prairie-${version}-webos-unsigned.zip`);
   zipDirectory(source, out);
   console.log(`ares-package not found — wrote staging zip ${out}`);
-  console.log("Install @webosose/ares-cli, then create a real .ipk:");
+  console.log("Install @webos-tools/cli, then create a real .ipk:");
   console.log(`  ares-package ${source} -o artifacts`);
   console.log("Sign with your LG Developer Partner certificate before LG Content Store upload.");
 }
