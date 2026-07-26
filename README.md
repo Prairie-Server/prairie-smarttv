@@ -63,6 +63,17 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 
 Signing steps: `platforms/tizen/README.md` and `platforms/webos/README.md`.
 
+### GitHub Release packages
+
+Push a `v*` tag (or run **Release packages** via `workflow_dispatch`) to build CI artifacts:
+
+- Unsigned Tizen `.wgt` (`artifacts/Prairie-<version>-tizen-unsigned.wgt`)
+- webOS `.ipk` via `@webosose/ares-cli` (`ares-package`)
+
+Workflow: `.github/workflows/release-packages.yml`. It stamps `package.json`, `platforms/tizen/config.xml`, and `platforms/webos/appinfo.json` from the tag version, uploads Actions artifacts, and attaches files to the GitHub Release.
+
+Store signing (Samsung Seller Office / LG Partner certificates) remains a local step — CI produces unsigned / developer-packaged staging builds only.
+
 ## Coverage CI
 
 GitHub Actions runs lint, Prettier check, typecheck, build, then `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on logic modules:
