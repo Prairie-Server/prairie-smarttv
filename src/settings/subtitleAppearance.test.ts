@@ -90,8 +90,6 @@ describe("subtitleAppearance", () => {
     const normalized = normalizeSubtitleAppearance({
       backgroundOpacity: Number.NaN,
     });
-    expect(normalized.backgroundOpacity).toBe(
-      DEFAULT_SUBTITLE_APPEARANCE.backgroundOpacity,
-    );
+    expect(normalized.backgroundOpacity).toBe(DEFAULT_SUBTITLE_APPEARANCE.backgroundOpacity);
   });
 });

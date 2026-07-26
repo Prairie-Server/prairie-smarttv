@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  fetchCatalog,
-  fetchEpisodes,
-  fetchItemDetail,
-  fetchSeasons,
-} from "./catalog";
+import { fetchCatalog, fetchEpisodes, fetchItemDetail, fetchSeasons } from "./catalog";
 import type { PrairieSession } from "../storage/session";
 
 const session: PrairieSession = {
@@ -58,9 +53,12 @@ describe("fetchCatalog", () => {
   it("requests the bare catalog path with defaults", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
       expect(String(url)).toBe("https://prairie.example/api/v1/catalog");
-      return new Response(JSON.stringify({ items: [{ content_id: "1", type: "movie", title: "A" }] }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ items: [{ content_id: "1", type: "movie", title: "A" }] }),
+        {
+          status: 200,
+        },
+      );
     });
     const page = await fetchCatalog(session, {}, fetchImpl);
     expect(page.items).toHaveLength(1);
@@ -71,10 +69,9 @@ describe("catalog detail helpers", () => {
   it("fetches item detail", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
       expect(String(url)).toContain("/api/v1/catalog/items/tt%2F1");
-      return new Response(
-        JSON.stringify({ content_id: "tt/1", type: "movie", title: "Dune" }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ content_id: "tt/1", type: "movie", title: "Dune" }), {
+        status: 200,
+      });
     });
     await expect(fetchItemDetail(session, "tt/1", fetchImpl)).resolves.toMatchObject({
       title: "Dune",
@@ -82,15 +79,16 @@ describe("catalog detail helpers", () => {
   });
 
   it("accepts seasons as a bare array or envelope", async () => {
-    const arrayFetch = vi.fn(async () =>
-      new Response(JSON.stringify([{ season_number: 1 }]), { status: 200 }),
+    const arrayFetch = vi.fn(
+      async () => new Response(JSON.stringify([{ season_number: 1 }]), { status: 200 }),
     );
     await expect(fetchSeasons(session, "show-1", arrayFetch)).resolves.toEqual([
       { season_number: 1 },
     ]);
 
-    const envelopeFetch = vi.fn(async () =>
-      new Response(JSON.stringify({ seasons: [{ season_number: 2 }] }), { status: 200 }),
+    const envelopeFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ seasons: [{ season_number: 2 }] }), { status: 200 }),
     );
     await expect(fetchSeasons(session, "show-1", envelopeFetch)).resolves.toEqual([
       { season_number: 2 },
@@ -103,19 +101,17 @@ describe("catalog detail helpers", () => {
   it("accepts episodes as a bare array or envelope", async () => {
     const arrayFetch = vi.fn(async (url: RequestInfo | URL) => {
       expect(String(url)).toContain("/seasons/1/episodes");
-      return new Response(
-        JSON.stringify([{ content_id: "e1", title: "Pilot" }]),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify([{ content_id: "e1", title: "Pilot" }]), { status: 200 });
     });
     await expect(fetchEpisodes(session, "show-1", 1, arrayFetch)).resolves.toEqual([
       { content_id: "e1", title: "Pilot" },
     ]);
 
-    const envelopeFetch = vi.fn(async () =>
-      new Response(JSON.stringify({ episodes: [{ content_id: "e2", title: "Two" }] }), {
-        status: 200,
-      }),
+    const envelopeFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ episodes: [{ content_id: "e2", title: "Two" }] }), {
+          status: 200,
+        }),
     );
     await expect(fetchEpisodes(session, "show-1", 1, envelopeFetch)).resolves.toEqual([
       { content_id: "e2", title: "Two" },

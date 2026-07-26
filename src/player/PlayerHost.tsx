@@ -1,8 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  subtitleAppearanceCssVars,
-  type SubtitleAppearance,
-} from "../settings/subtitleAppearance";
+import { subtitleAppearanceCssVars, type SubtitleAppearance } from "../settings/subtitleAppearance";
 import { createMediaPlayer } from "./createMediaPlayer";
 import type { MediaPlayer } from "./types";
 import type { ResolvedPlayerBackend } from "../platform/types";
@@ -24,10 +21,7 @@ interface PlayerHostProps {
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
 }
 
-function applySubtitleVars(
-  el: HTMLElement,
-  appearance: SubtitleAppearance | undefined,
-): void {
+function applySubtitleVars(el: HTMLElement, appearance: SubtitleAppearance | undefined): void {
   if (!appearance) return;
   const vars = subtitleAppearanceCssVars(appearance);
   for (const [key, value] of Object.entries(vars)) {
@@ -56,10 +50,15 @@ export function PlayerHost({
   const onErrorRef = useRef(onError);
   const onEndedRef = useRef(onEnded);
   const onReadyRef = useRef(onReady);
-  onTimeUpdateRef.current = onTimeUpdate;
-  onErrorRef.current = onError;
-  onEndedRef.current = onEnded;
-  onReadyRef.current = onReady;
+  const playingRef = useRef(playing);
+
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+    onErrorRef.current = onError;
+    onEndedRef.current = onEnded;
+    onReadyRef.current = onReady;
+    playingRef.current = playing;
+  });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -71,7 +70,7 @@ export function PlayerHost({
         url,
         container,
         backend,
-        autoplay: playing,
+        autoplay: playingRef.current,
         mimeType,
         initialSubtitleUrl,
         initialSubtitleLabel,

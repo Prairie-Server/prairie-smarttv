@@ -40,9 +40,9 @@ describe("subtitleLocalFileName", () => {
     expect(subtitleLocalFileName("https://example/api/v1/sub/1", "English", "srt")).toMatch(
       /^English_.+\.srt$/,
     );
-    expect(
-      subtitleLocalFileName("https://example/api/v1/sub/1?format=smi", "English"),
-    ).toMatch(/^English_.+\.smi$/);
+    expect(subtitleLocalFileName("https://example/api/v1/sub/1?format=smi", "English")).toMatch(
+      /^English_.+\.smi$/,
+    );
   });
 
   it("defaults extensionless Prairie subtitle URLs to .vtt", () => {
@@ -66,9 +66,9 @@ describe("assertAllowedSubtitleDownloadUrl", () => {
     expect(() => assertAllowedSubtitleDownloadUrl("file:///tmp/x.vtt", SERVER)).toThrow(
       /http or https/i,
     );
-    expect(() =>
-      assertAllowedSubtitleDownloadUrl("https://prairie.example/a.vtt", null),
-    ).toThrow(/connected server/i);
+    expect(() => assertAllowedSubtitleDownloadUrl("https://prairie.example/a.vtt", null)).toThrow(
+      /connected server/i,
+    );
   });
 });
 

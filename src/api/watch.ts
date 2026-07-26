@@ -94,10 +94,7 @@ export function selectPlaybackFileId(
   return versions[0]?.file_id ?? null;
 }
 
-export function selectFileVersion(
-  watch: WatchDetail,
-  fileId: number,
-): FileVersion | null {
+export function selectFileVersion(watch: WatchDetail, fileId: number): FileVersion | null {
   return watch.versions.find((v) => v.file_id === fileId) ?? null;
 }
 
@@ -119,9 +116,8 @@ export function formatSubtitleLabel(track: {
   forced?: boolean;
 }): string {
   const base = track.label || track.title || track.language || "Subtitle";
-  const tags = [
-    track.forced ? "Forced" : null,
-    track.hearing_impaired ? "HI" : null,
-  ].filter(Boolean);
+  const tags = [track.forced ? "Forced" : null, track.hearing_impaired ? "HI" : null].filter(
+    Boolean,
+  );
   return tags.length ? `${base} (${tags.join(", ")})` : base;
 }

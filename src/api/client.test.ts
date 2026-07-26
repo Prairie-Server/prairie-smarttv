@@ -9,15 +9,15 @@ describe("buildStreamUrl", () => {
   });
 
   it("appends token to same-origin absolute URLs with existing query params", () => {
-    expect(
-      buildStreamUrl("https://prairie.example", "https://prairie.example/s?st=1", "tok"),
-    ).toBe("https://prairie.example/s?st=1&token=tok");
+    expect(buildStreamUrl("https://prairie.example", "https://prairie.example/s?st=1", "tok")).toBe(
+      "https://prairie.example/s?st=1&token=tok",
+    );
   });
 
   it("does not attach the session token to cross-origin absolute URLs", () => {
-    expect(
-      buildStreamUrl("https://prairie.example", "https://cdn.example/s?st=1", "tok"),
-    ).toBe("https://cdn.example/s?st=1");
+    expect(buildStreamUrl("https://prairie.example", "https://cdn.example/s?st=1", "tok")).toBe(
+      "https://cdn.example/s?st=1",
+    );
   });
 });
 
@@ -36,11 +36,12 @@ describe("apiRequest", () => {
   });
 
   it("parses error bodies into ApiError", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ message: "bad creds", code: "auth_failed" }), {
-        status: 401,
-        statusText: "Unauthorized",
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "bad creds", code: "auth_failed" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
     );
 
     await expect(
@@ -58,11 +59,12 @@ describe("apiRequest", () => {
 
   it("calls onUnauthorized for 401 on non-login paths", async () => {
     const onUnauthorized = vi.fn();
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ message: "expired" }), {
-        status: 401,
-        statusText: "Unauthorized",
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "expired" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
     );
 
     await expect(
@@ -76,11 +78,12 @@ describe("apiRequest", () => {
 
   it("does not call onUnauthorized for auth/login 401", async () => {
     const onUnauthorized = vi.fn();
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ message: "bad creds" }), {
-        status: 401,
-        statusText: "Unauthorized",
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "bad creds" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
     );
 
     await expect(
@@ -95,11 +98,12 @@ describe("apiRequest", () => {
 
   it("calls onUnauthorized for 403 with auth codes", async () => {
     const onUnauthorized = vi.fn();
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ message: "gone", code: "token_expired" }), {
-        status: 403,
-        statusText: "Forbidden",
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "gone", code: "token_expired" }), {
+          status: 403,
+          statusText: "Forbidden",
+        }),
     );
 
     await expect(
@@ -113,11 +117,12 @@ describe("apiRequest", () => {
 
   it("does not call onUnauthorized for ordinary 403", async () => {
     const onUnauthorized = vi.fn();
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ message: "nope" }), {
-        status: 403,
-        statusText: "Forbidden",
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "nope" }), {
+          status: 403,
+          statusText: "Forbidden",
+        }),
     );
 
     await expect(

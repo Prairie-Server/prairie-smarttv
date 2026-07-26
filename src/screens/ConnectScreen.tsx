@@ -9,10 +9,7 @@ interface ConnectScreenProps {
   initialServerUrl?: string;
 }
 
-export function ConnectScreen({
-  onAuthenticated,
-  initialServerUrl = "",
-}: ConnectScreenProps) {
+export function ConnectScreen({ onAuthenticated, initialServerUrl = "" }: ConnectScreenProps) {
   const [serverUrl, setServerUrl] = useState(initialServerUrl);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -107,7 +104,11 @@ export function ConnectScreen({
             />
           </label>
 
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
 
           <FocusButton type="submit" className="connect-submit" disabled={busy}>
             {busy ? "Connecting…" : "Connect"}

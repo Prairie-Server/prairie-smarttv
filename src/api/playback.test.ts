@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPlaybackStartRequest, withPlayMethod } from "../api/playback";
-import {
-  DEFAULT_PLAYBACK_SETTINGS,
-  resolveForcedPlayMethod,
-} from "../settings/playbackSettings";
+import { DEFAULT_PLAYBACK_SETTINGS, resolveForcedPlayMethod } from "../settings/playbackSettings";
 
 describe("buildPlaybackStartRequest", () => {
   it("omits play_method by default so Prairie can prefer remux/auto", () => {

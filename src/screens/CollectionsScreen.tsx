@@ -62,7 +62,11 @@ export function CollectionsScreen({ session, onOpenCollection }: CollectionsScre
         <p className="muted">Library franchises and personal lists.</p>
       </div>
       {loading ? <p className="muted">Loading…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       {!loading && libraryCollections.length === 0 && personal.length === 0 ? (
         <p className="muted">No collections yet.</p>
       ) : null}

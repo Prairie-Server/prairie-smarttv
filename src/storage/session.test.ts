@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  clearSession,
-  loadSession,
-  normalizeServerUrl,
-  saveSession,
-} from "./session";
+import { clearSession, loadSession, normalizeServerUrl, saveSession } from "./session";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));

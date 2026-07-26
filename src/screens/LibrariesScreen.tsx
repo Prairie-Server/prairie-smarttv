@@ -40,7 +40,11 @@ export function LibrariesScreen({ session, onOpenLibrary }: LibrariesScreenProps
         <p className="muted">Browse movies, shows, and more from your server.</p>
       </div>
       {loading ? <p className="muted">Loading…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div className="library-grid">
         {libraries.map((library, index) => (
           <button

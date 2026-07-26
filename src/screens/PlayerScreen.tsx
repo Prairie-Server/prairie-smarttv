@@ -75,6 +75,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const pendingResumeRef = useRef<number | null>(launch.startPositionSeconds ?? null);
   const activeSubtitleIndexRef = useRef(-1);
   const exitedRef = useRef(false);
+  const seekByRef = useRef<(delta: number) => void>(() => undefined);
+  const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
 
   const [playback, setPlayback] = useState<PlaybackSessionResponse | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -91,8 +93,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   const audioTracks = useMemo(() => {
     if (!watch || !playback) return [];
-    const version =
-      selectFileVersion(watch, playback.media_file_id) ?? watch.versions[0] ?? null;
+    const version = selectFileVersion(watch, playback.media_file_id) ?? watch.versions[0] ?? null;
     return version?.audio_tracks ?? [];
   }, [watch, playback]);
 
@@ -135,9 +136,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         });
         if (cancelled) return;
         setPlayback(started);
-        setStreamUrl(
-          resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken),
-        );
+        setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken));
         setPlaying(true);
         if (started.duration_seconds) setDuration(started.duration_seconds);
       } catch (err) {
@@ -152,7 +151,14 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [launch.fileId, launch.contentId, launch.startPositionSeconds, launch.watch, session, settings]);
+  }, [
+    launch.fileId,
+    launch.contentId,
+    launch.startPositionSeconds,
+    launch.watch,
+    session,
+    settings,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -174,12 +180,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       }
       if (key === "MediaRewind" || (key === "ArrowLeft" && event.altKey)) {
         event.preventDefault();
-        seekBy(-SEEK_STEP_SECONDS);
+        seekByRef.current(-SEEK_STEP_SECONDS);
         return;
       }
       if (key === "MediaFastForward" || (key === "ArrowRight" && event.altKey)) {
         event.preventDefault();
-        seekBy(SEEK_STEP_SECONDS);
+        seekByRef.current(SEEK_STEP_SECONDS);
         return;
       }
       if (
@@ -190,12 +196,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         key === "GoBack"
       ) {
         event.preventDefault();
-        void handleExit();
+        void handleExitRef.current();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menu, playback]);
+  }, [menu]);
 
   function bumpControls() {
     setControlsVisible(true);
@@ -243,6 +249,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     void reportProgress(true);
   }
 
+  useEffect(() => {
+    seekByRef.current = seekBy;
+    handleExitRef.current = handleExit;
+  });
+
   async function chooseAudio(index: number) {
     const sid = playbackRef.current?.session_id;
     const current = playbackRef.current;
@@ -261,9 +272,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       };
       setPlayback(nextSession);
       pendingResumeRef.current = updated.player_start_seconds ?? position;
-      setStreamUrl(
-        resolvePlaybackStreamUrl(session.serverUrl, nextSession, session.accessToken),
-      );
+      setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, nextSession, session.accessToken));
       setMenu("none");
       bumpControls();
     } catch (err) {
@@ -292,8 +301,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   function chooseSubtitle(index: number) {
     applySubtitleIndex(index);
-    const language =
-      index < 0 ? "" : (subtitleTracks[index]?.language ?? "").toLowerCase();
+    const language = index < 0 ? "" : (subtitleTracks[index]?.language ?? "").toLowerCase();
     savePlaybackSettings({
       ...loadPlaybackSettings(),
       preferredSubtitleLanguage: language,
@@ -321,7 +329,13 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       index,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed tied to stream identity
-  }, [streamUrl, subtitleTracks, settings.preferredSubtitleLanguage, session.serverUrl, session.accessToken]);
+  }, [
+    streamUrl,
+    subtitleTracks,
+    settings.preferredSubtitleLanguage,
+    session.serverUrl,
+    session.accessToken,
+  ]);
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const title = launch.title?.trim() || watch?.title || `File ${launch.fileId}`;
@@ -489,7 +503,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             </div>
           ) : null}
 
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
           <p className="hint muted">OK toggles play · −15s / +15s seek · Back exits</p>
         </div>
       ) : (

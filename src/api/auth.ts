@@ -41,14 +41,10 @@ export async function login(
   credentials: LoginRequest,
   fetchImpl?: typeof fetch,
 ): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>(
-    { serverUrl, fetchImpl },
-    "/api/v1/auth/login",
-    {
-      method: "POST",
-      body: JSON.stringify(credentials),
-    },
-  );
+  return apiRequest<LoginResponse>({ serverUrl, fetchImpl }, "/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
 }
 
 export async function listProfiles(

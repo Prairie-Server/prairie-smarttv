@@ -86,9 +86,7 @@ export function normalizeSubtitleAppearance(
 }
 
 /** CSS custom properties applied to the player host for ::cue styling. */
-export function subtitleAppearanceCssVars(
-  appearance: SubtitleAppearance,
-): Record<string, string> {
+export function subtitleAppearanceCssVars(appearance: SubtitleAppearance): Record<string, string> {
   const normalized = normalizeSubtitleAppearance(appearance);
   const opacity = normalized.backgroundOpacity / 100;
   const bg = hexToRgba(normalized.backgroundColor, opacity);
@@ -116,8 +114,7 @@ export function subtitleAppearanceCssVars(
     ].join(", ");
   }
 
-  const background =
-    normalized.backgroundStyle === "box" && opacity > 0 ? bg : "transparent";
+  const background = normalized.backgroundStyle === "box" && opacity > 0 ? bg : "transparent";
 
   return {
     "--prairie-sub-color": normalized.fontColor,

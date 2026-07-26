@@ -1,7 +1,4 @@
-import {
-  deleteLocalSubtitleFile,
-  downloadSubtitleToLocalPath,
-} from "./downloadSubtitle";
+import { deleteLocalSubtitleFile, downloadSubtitleToLocalPath } from "./downloadSubtitle";
 import {
   clearSubtitleOverlay,
   createSubtitleOverlay,
@@ -126,10 +123,9 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   /** Whether Prairie should show the HTML overlay (independent of AVPlay native silence). */
   let overlayEnabled = false;
   let trackGeneration = 0;
-  let pendingSubtitle: { url: string; label?: string } | null =
-    options.initialSubtitleUrl
-      ? { url: options.initialSubtitleUrl, label: options.initialSubtitleLabel }
-      : null;
+  let pendingSubtitle: { url: string; label?: string } | null = options.initialSubtitleUrl
+    ? { url: options.initialSubtitleUrl, label: options.initialSubtitleLabel }
+    : null;
   let activeDownloadCancel: (() => void) | null = null;
   let activeLocalSubtitlePath: string | null = null;
   let prepareTimer: number | null = null;
@@ -162,7 +158,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       try {
         durationMs = avplay.getDuration();
       } catch {
-        durationMs = 0;
+        // keep durationMs at 0 when getDuration is unavailable
       }
       options.onTimeUpdate?.(currentTimeMs / 1000, durationMs / 1000);
     },
@@ -379,9 +375,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       try {
         await downloadAndApply(url, label);
       } catch (err) {
-        options.onError?.(
-          err instanceof Error ? err.message : "Could not load AVPlay subtitles",
-        );
+        options.onError?.(err instanceof Error ? err.message : "Could not load AVPlay subtitles");
       }
     },
     destroy: () => {

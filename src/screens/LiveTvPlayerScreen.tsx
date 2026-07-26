@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   channelDisplayLabel,
@@ -35,6 +35,7 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
 
   const liveSessionId = useRef<string | null>(null);
   const exitedRef = useRef(false);
+  const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -55,9 +56,7 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
         liveSessionId.current = started.session_id;
         const raw = playableLiveUrl(started);
         if (!raw) throw new Error("Live TV session returned no stream URL");
-        setStreamUrl(
-          resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken),
-        );
+        setStreamUrl(resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken));
         setNote(started.note ?? null);
         setPlaying(true);
       } catch (err) {
@@ -95,14 +94,14 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
         key === "GoBack"
       ) {
         event.preventDefault();
-        void handleExit();
+        void handleExitRef.current();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  async function handleExit() {
+  const handleExit = useCallback(async () => {
     if (exitedRef.current) return;
     exitedRef.current = true;
     const sid = liveSessionId.current;
@@ -111,17 +110,16 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
       liveSessionId.current = null;
     }
     onExit();
-  }
+  }, [session, onExit]);
+
+  useEffect(() => {
+    handleExitRef.current = handleExit;
+  }, [handleExit]);
 
   return (
     <section className="screen player-screen">
       {streamUrl && !error ? (
-        <PlayerHost
-          url={streamUrl}
-          backend={backend}
-          playing={playing}
-          onError={setError}
-        />
+        <PlayerHost url={streamUrl} backend={backend} playing={playing} onError={setError} />
       ) : null}
 
       <div className="player-chrome">
@@ -152,7 +150,11 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
             Stop
           </FocusButton>
         </div>
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <p className="hint muted">Live sessions are released when you leave this screen</p>
       </div>
     </section>

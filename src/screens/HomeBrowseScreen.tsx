@@ -67,7 +67,11 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
         <p className="muted">Continue watching and fresh arrivals from your Prairie libraries.</p>
       </div>
       {loading ? <p className="muted">Loading…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       {!loading && !error && sections.length === 0 ? (
         <p className="muted">No home rows yet — browse Libraries to find something to play.</p>
       ) : null}

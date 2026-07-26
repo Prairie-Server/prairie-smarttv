@@ -19,12 +19,7 @@ import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
 import { loadLastServerUrl } from "./storage/persist";
-import {
-  clearSession,
-  loadSession,
-  type AuthTokens,
-  type PrairieSession,
-} from "./storage/session";
+import { clearSession, loadSession, type AuthTokens, type PrairieSession } from "./storage/session";
 
 type Route =
   | { name: "connect" }
@@ -65,12 +60,13 @@ export function App() {
   const [route, setRoute] = useState<Route>(() =>
     loadSession() ? { name: "home" } : { name: "connect" },
   );
-  const [liveTvAvailable, setLiveTvAvailable] = useState(false);
+  const [liveTvProbe, setLiveTvProbe] = useState(false);
+  const liveTvAvailable = session != null && liveTvProbe;
 
   const disconnect = useCallback(() => {
     clearSession();
     setSession(null);
-    setLiveTvAvailable(false);
+    setLiveTvProbe(false);
     setRoute({ name: "connect" });
   }, []);
 
@@ -81,16 +77,15 @@ export function App() {
 
   useEffect(() => {
     if (!session) {
-      setLiveTvAvailable(false);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const channels = await fetchLiveTvChannels(session);
-        if (!cancelled) setLiveTvAvailable(channels.length > 0);
+        if (!cancelled) setLiveTvProbe(channels.length > 0);
       } catch {
-        if (!cancelled) setLiveTvAvailable(false);
+        if (!cancelled) setLiveTvProbe(false);
       }
     })();
     return () => {
@@ -110,10 +105,7 @@ export function App() {
     return (
       <ConnectScreen
         initialServerUrl={
-          session?.serverUrl ||
-          loadLastServerUrl() ||
-          import.meta.env.VITE_DEFAULT_SERVER_URL ||
-          ""
+          session?.serverUrl || loadLastServerUrl() || import.meta.env.VITE_DEFAULT_SERVER_URL || ""
         }
         onAuthenticated={(auth) => {
           setSession(null);
@@ -143,9 +135,7 @@ export function App() {
   if (!session) {
     return (
       <ConnectScreen
-        initialServerUrl={
-          loadLastServerUrl() || import.meta.env.VITE_DEFAULT_SERVER_URL || ""
-        }
+        initialServerUrl={loadLastServerUrl() || import.meta.env.VITE_DEFAULT_SERVER_URL || ""}
         onAuthenticated={(auth) => setRoute({ name: "profiles", auth })}
       />
     );
@@ -157,11 +147,7 @@ export function App() {
 
   if (route.name === "player") {
     return (
-      <PlayerScreen
-        session={session}
-        launch={route.launch}
-        onExit={() => setRoute(route.back)}
-      />
+      <PlayerScreen session={session} launch={route.launch} onExit={() => setRoute(route.back)} />
     );
   }
 
@@ -187,8 +173,7 @@ export function App() {
   }
 
   const tab = shellTabFor(route) ?? "home";
-  const openItem = (contentId: string) =>
-    setRoute({ name: "detail", contentId, back: route });
+  const openItem = (contentId: string) => setRoute({ name: "detail", contentId, back: route });
 
   let body: ReactNode = null;
   if (route.name === "home") {
@@ -234,9 +219,7 @@ export function App() {
     body = (
       <LiveTvScreen
         session={session}
-        onTune={(channel) =>
-          setRoute({ name: "livetv-player", channel, back: { name: "livetv" } })
-        }
+        onTune={(channel) => setRoute({ name: "livetv-player", channel, back: { name: "livetv" } })}
       />
     );
   }
