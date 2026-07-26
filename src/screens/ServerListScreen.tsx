@@ -15,8 +15,8 @@ export interface ServerListScreenProps {
   onSelectSaved: (entry: ServerEntry) => void;
   onSelectDiscovery: (hit: DiscoveryHit) => void;
   onAddManual: () => void;
-  onBack: () => void;
-  /** Start a LAN scan when the screen mounts (e.g. from Connect → Scan LAN). */
+  onBack?: () => void;
+  /** Start a LAN scan when the screen mounts (default true — launch behavior). */
   autoScan?: boolean;
 }
 
@@ -31,7 +31,7 @@ export function ServerListScreen({
   onSelectDiscovery,
   onAddManual,
   onBack,
-  autoScan = false,
+  autoScan = true,
 }: ServerListScreenProps) {
   const [registry, setRegistry] = useState(() => loadRegistry());
   const [discovered, setDiscovered] = useState<DiscoveryHit[]>([]);
@@ -43,6 +43,8 @@ export function ServerListScreen({
   const didAutoScan = useRef(false);
 
   const saved = sortedEntries(registry);
+  const savedUrls = new Set(saved.map((e) => e.url));
+  const freshHits = discovered.filter((hit) => !savedUrls.has(hit.url));
 
   useEffect(() => {
     return () => {
@@ -63,7 +65,7 @@ export function ServerListScreen({
     setBusy(true);
     setErrorText("");
     setDiscovered([]);
-    setStatusText("Scanning for Prairie servers…");
+    setStatusText("Looking for Prairie servers on your network…");
 
     try {
       const current = loadRegistry();
@@ -99,7 +101,7 @@ export function ServerListScreen({
 
       setStatusText(
         hits.length === 0
-          ? "No Prairie servers found on the LAN"
+          ? "No Prairie servers found — add one manually or scan again"
           : `Found ${hits.length} server(s)`,
       );
     } catch (err) {
@@ -122,17 +124,22 @@ export function ServerListScreen({
 
   return (
     <section className="screen server-list-screen">
-      <header className="server-list-header">
-        <div>
-          <p className="eyebrow">Servers</p>
-          <h1 className="home-title">Prairie servers</h1>
+      <div className="server-list-atmosphere" aria-hidden="true" />
+
+      <header className="server-list-hero">
+        <img className="server-list-mark" src="/prairie-mark.png" alt="" width={96} height={96} />
+        <div className="server-list-hero__copy">
+          <p className="eyebrow">Smart TV</p>
+          <h1 className="brand-hero">Prairie</h1>
           <p className="lede">
-            Saved servers and LAN discoveries via <code>GET /api/v1/health</code>.
+            Choose a saved server or one found on your LAN. Sign-in comes next.
           </p>
         </div>
-        <FocusButton variant="ghost" onClick={onBack}>
-          Back
-        </FocusButton>
+        {onBack ? (
+          <FocusButton variant="ghost" onClick={onBack}>
+            Back
+          </FocusButton>
+        ) : null}
       </header>
 
       {statusText ? <p className="server-list-status">{statusText}</p> : null}
@@ -143,8 +150,8 @@ export function ServerListScreen({
       ) : null}
 
       <div className="server-list-actions">
-        <FocusButton onClick={() => void startScan(true)} disabled={busy} autoFocus>
-          {busy ? "Scanning…" : "Scan LAN"}
+        <FocusButton onClick={() => void startScan(true)} disabled={busy} autoFocus={!saved.length}>
+          {busy ? "Scanning…" : "Scan again"}
         </FocusButton>
         <FocusButton variant="ghost" onClick={onAddManual} disabled={busy}>
           Add manually
@@ -154,45 +161,62 @@ export function ServerListScreen({
         </FocusButton>
       </div>
 
-      <div className="server-list-grid" role="list">
-        {saved.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="listitem"
-            className={`server-card focusable ${focusedId === entry.id ? "is-focused" : ""} ${
-              entry.id === registry.activeServerId ? "is-active" : ""
-            }`}
-            onFocus={() => setFocusedId(entry.id)}
-            onClick={() => onSelectSaved(entry)}
-            disabled={busy}
-          >
-            <span className="server-card__name">{displayName(entry)}</span>
-            <span className="server-card__meta">
-              {entry.id === registry.activeServerId ? "Active · " : "Saved · "}
-              {entry.url}
-            </span>
-          </button>
-        ))}
+      {saved.length > 0 ? (
+        <section className="server-list-section" aria-label="Saved servers">
+          <h2 className="server-list-section__title">Saved</h2>
+          <div className="server-list-grid" role="list">
+            {saved.map((entry, index) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="listitem"
+                className={`server-card focusable ${focusedId === entry.id ? "is-focused" : ""} ${
+                  entry.id === registry.activeServerId ? "is-active" : ""
+                }`}
+                autoFocus={index === 0}
+                onFocus={() => setFocusedId(entry.id)}
+                onClick={() => onSelectSaved(entry)}
+                disabled={busy}
+              >
+                <span className="server-card__name">{displayName(entry)}</span>
+                <span className="server-card__meta">
+                  {entry.id === registry.activeServerId ? "Active · " : "Saved · "}
+                  {entry.username ? `${entry.username} · ` : ""}
+                  {entry.url}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-        {discovered.map((hit) => (
-          <button
-            key={`disc-${hit.url}`}
-            type="button"
-            role="listitem"
-            className="server-card focusable"
-            onClick={() => onSelectDiscovery(hit)}
-            disabled={busy}
-          >
-            <span className="server-card__name">{hit.serverName.trim() || hit.url}</span>
-            <span className="server-card__meta">Found · {hit.url}</span>
-          </button>
-        ))}
+      {freshHits.length > 0 || busy ? (
+        <section className="server-list-section" aria-label="Discovered servers">
+          <h2 className="server-list-section__title">Discovered</h2>
+          <div className="server-list-grid" role="list">
+            {freshHits.map((hit) => (
+              <button
+                key={`disc-${hit.url}`}
+                type="button"
+                role="listitem"
+                className="server-card focusable"
+                onClick={() => onSelectDiscovery(hit)}
+                disabled={busy}
+              >
+                <span className="server-card__name">{hit.serverName.trim() || hit.url}</span>
+                <span className="server-card__meta">Found · {hit.url}</span>
+              </button>
+            ))}
+            {busy && freshHits.length === 0 ? (
+              <p className="muted">Scanning your network for Prairie…</p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
-        {!busy && saved.length === 0 && discovered.length === 0 ? (
-          <p className="muted">No servers yet — scan the LAN or add a URL manually.</p>
-        ) : null}
-      </div>
+      {!busy && saved.length === 0 && freshHits.length === 0 ? (
+        <p className="muted">No servers yet — wait for the scan, or add a URL manually.</p>
+      ) : null}
     </section>
   );
 }

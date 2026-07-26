@@ -15,12 +15,13 @@ import { LibrariesScreen } from "./screens/LibrariesScreen";
 import { LibraryBrowseScreen } from "./screens/LibraryBrowseScreen";
 import { LiveTvPlayerScreen } from "./screens/LiveTvPlayerScreen";
 import { LiveTvScreen } from "./screens/LiveTvScreen";
+import { ManualServerScreen } from "./screens/ManualServerScreen";
 import { PlayerScreen, type PlayerLaunch } from "./screens/PlayerScreen";
 import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { ServerListScreen } from "./screens/ServerListScreen";
 import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
-import { loadLastServerUrl, saveLastServerUrl } from "./storage/persist";
+import { saveLastServerUrl } from "./storage/persist";
 import {
   addOrUpdate,
   clearTokens,
@@ -41,8 +42,14 @@ import {
 } from "./storage/session";
 
 type Route =
-  | { name: "connect"; prefillUrl?: string }
-  | { name: "servers"; back: "connect" | "home"; autoScan?: boolean }
+  | { name: "servers"; back?: "home"; autoScan?: boolean }
+  | { name: "manual"; initialUrl?: string }
+  | {
+      name: "connect";
+      serverUrl: string;
+      serverName?: string;
+      initialUsername?: string;
+    }
   | { name: "profiles"; auth: AuthTokens }
   | { name: "home" }
   | { name: "libraries" }
@@ -87,8 +94,7 @@ function sessionFromActiveRegistry(): PrairieSession | null {
 function initialRoute(): Route {
   migrateFromLegacy();
   if (loadSession() || sessionFromActiveRegistry()) return { name: "home" };
-  if (loadRegistry().entries.length > 0) return { name: "servers", back: "connect" };
-  return { name: "connect" };
+  return { name: "servers", autoScan: true };
 }
 
 export function App() {
@@ -100,13 +106,21 @@ export function App() {
   const [liveTvProbe, setLiveTvProbe] = useState(false);
   const liveTvAvailable = session != null && liveTvProbe;
 
-  const goConnectOrServers = useCallback((prefillUrl?: string) => {
-    if (loadRegistry().entries.length > 0) {
-      setRoute({ name: "servers", back: "connect" });
-      return;
-    }
-    setRoute({ name: "connect", prefillUrl });
+  const goServers = useCallback((autoScan = true) => {
+    setRoute({ name: "servers", autoScan });
   }, []);
+
+  const openLogin = useCallback(
+    (serverUrl: string, options?: { serverName?: string; initialUsername?: string }) => {
+      setRoute({
+        name: "connect",
+        serverUrl,
+        serverName: options?.serverName,
+        initialUsername: options?.initialUsername,
+      });
+    },
+    [],
+  );
 
   const disconnect = useCallback(() => {
     const registry = loadRegistry();
@@ -116,8 +130,8 @@ export function App() {
     clearSession();
     setSession(null);
     setLiveTvProbe(false);
-    goConnectOrServers();
-  }, [goConnectOrServers]);
+    goServers(true);
+  }, [goServers]);
 
   useEffect(() => {
     setSessionUnauthorizedHandler(disconnect);
@@ -164,7 +178,10 @@ export function App() {
       setRoute({ name: "home" });
       return;
     }
-    setRoute({ name: "connect", prefillUrl: full.url });
+    openLogin(full.url, {
+      serverName: full.fetchedName,
+      initialUsername: full.username || undefined,
+    });
   }
 
   function handleSelectDiscovery(hit: DiscoveryHit) {
@@ -175,40 +192,38 @@ export function App() {
       });
       saveRegistry(registry);
     }
-    setRoute({ name: "connect", prefillUrl: hit.url });
+    openLogin(hit.url, { serverName: hit.serverName.trim() || undefined });
   }
 
   if (route.name === "servers") {
     return (
       <ServerListScreen
-        autoScan={route.autoScan}
+        autoScan={route.autoScan !== false}
         onSelectSaved={handleSelectSaved}
         onSelectDiscovery={handleSelectDiscovery}
-        onAddManual={() => setRoute({ name: "connect" })}
-        onBack={() => {
-          if (route.back === "home" && session) {
-            setRoute({ name: "home" });
-          } else {
-            setRoute({ name: "connect" });
-          }
-        }}
+        onAddManual={() => setRoute({ name: "manual" })}
+        onBack={route.back === "home" && session ? () => setRoute({ name: "home" }) : undefined}
       />
     );
   }
 
-  if (route.name === "connect" || (!session && route.name !== "profiles")) {
+  if (route.name === "manual") {
+    return (
+      <ManualServerScreen
+        initialUrl={route.initialUrl}
+        onBack={() => goServers(false)}
+        onContinue={(serverUrl) => openLogin(serverUrl)}
+      />
+    );
+  }
+
+  if (route.name === "connect") {
     return (
       <ConnectScreen
-        initialServerUrl={
-          route.name === "connect" && route.prefillUrl
-            ? route.prefillUrl
-            : session?.serverUrl ||
-              loadLastServerUrl() ||
-              import.meta.env.VITE_DEFAULT_SERVER_URL ||
-              ""
-        }
-        onOpenServers={() => setRoute({ name: "servers", back: "connect" })}
-        onScanLan={() => setRoute({ name: "servers", back: "connect", autoScan: true })}
+        serverUrl={route.serverUrl}
+        serverName={route.serverName}
+        initialUsername={route.initialUsername}
+        onBack={() => goServers(false)}
         onAuthenticated={(auth) => {
           setSession(null);
           setRoute({ name: "profiles", auth });
@@ -228,7 +243,7 @@ export function App() {
         onCancel={() => {
           clearSession();
           setSession(null);
-          goConnectOrServers();
+          goServers(false);
         }}
       />
     );
@@ -236,11 +251,11 @@ export function App() {
 
   if (!session) {
     return (
-      <ConnectScreen
-        initialServerUrl={loadLastServerUrl() || import.meta.env.VITE_DEFAULT_SERVER_URL || ""}
-        onOpenServers={() => setRoute({ name: "servers", back: "connect" })}
-        onScanLan={() => setRoute({ name: "servers", back: "connect", autoScan: true })}
-        onAuthenticated={(auth) => setRoute({ name: "profiles", auth })}
+      <ServerListScreen
+        autoScan
+        onSelectSaved={handleSelectSaved}
+        onSelectDiscovery={handleSelectDiscovery}
+        onAddManual={() => setRoute({ name: "manual" })}
       />
     );
   }
@@ -249,7 +264,7 @@ export function App() {
     return (
       <PlaybackSettingsScreen
         onBack={() => setRoute(route.back)}
-        onSwitchServer={() => setRoute({ name: "servers", back: "home" })}
+        onSwitchServer={() => setRoute({ name: "servers", back: "home", autoScan: true })}
       />
     );
   }

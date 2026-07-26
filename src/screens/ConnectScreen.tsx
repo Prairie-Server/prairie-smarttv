@@ -5,32 +5,36 @@ import { FocusButton } from "../components/FocusButton";
 import type { AuthTokens } from "../storage/session";
 
 interface ConnectScreenProps {
+  /** Server already chosen on the launch list / manual URL step. */
+  serverUrl: string;
+  serverName?: string;
+  initialUsername?: string;
   onAuthenticated: (auth: AuthTokens) => void;
-  initialServerUrl?: string;
-  onOpenServers?: () => void;
-  onScanLan?: () => void;
+  onBack: () => void;
 }
 
 export function ConnectScreen({
+  serverUrl,
+  serverName = "",
+  initialUsername = "",
   onAuthenticated,
-  initialServerUrl = "",
-  onOpenServers,
-  onScanLan,
+  onBack,
 }: ConnectScreenProps) {
-  const [serverUrl, setServerUrl] = useState(initialServerUrl);
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(initialUsername);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const trimmedUrl = serverUrl.trim().replace(/\/+$/, "");
+  const title = serverName.trim() || trimmedUrl;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      const trimmedUrl = serverUrl.trim().replace(/\/+$/, "");
       if (!trimmedUrl) {
-        throw new Error("Enter your Prairie server URL");
+        throw new Error("No server selected");
       }
       let parsed: URL;
       try {
@@ -45,7 +49,6 @@ export function ConnectScreen({
         throw new Error("Server URL must not include credentials");
       }
       const auth = await login(trimmedUrl, { username: username.trim(), password });
-      // Do not persist refresh_token until client-side refresh is implemented.
       onAuthenticated({
         serverUrl: trimmedUrl,
         accessToken: auth.access_token,
@@ -68,29 +71,18 @@ export function ConnectScreen({
     <section className="screen connect-screen">
       <div className="connect-atmosphere" aria-hidden="true" />
       <div className="connect-panel">
-        <p className="eyebrow">Smart TV</p>
-        <h1 className="brand-hero">Prairie</h1>
+        <img className="connect-mark" src="/prairie-mark.png" alt="" width={72} height={72} />
+        <p className="eyebrow">Sign in</p>
+        <h1 className="brand-hero brand-hero--compact">Prairie</h1>
         <p className="lede">
-          Connect to your Prairie server. Remote-friendly — use the D-pad to move between fields.
+          Sign in to <strong className="connect-server-name">{title}</strong>
         </p>
 
         <form className="connect-form" onSubmit={handleSubmit}>
           <label className="field">
-            <span>Server URL</span>
-            <input
-              autoFocus
-              className="focusable"
-              type="url"
-              inputMode="url"
-              placeholder="https://prairie.example.com"
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
             <span>Username</span>
             <input
+              autoFocus
               className="focusable"
               type="text"
               autoComplete="username"
@@ -119,18 +111,11 @@ export function ConnectScreen({
 
           <div className="connect-actions">
             <FocusButton type="submit" className="connect-submit" disabled={busy}>
-              {busy ? "Connecting…" : "Connect"}
+              {busy ? "Signing in…" : "Sign in"}
             </FocusButton>
-            {onOpenServers ? (
-              <FocusButton type="button" variant="ghost" disabled={busy} onClick={onOpenServers}>
-                Servers
-              </FocusButton>
-            ) : null}
-            {onScanLan ? (
-              <FocusButton type="button" variant="ghost" disabled={busy} onClick={onScanLan}>
-                Scan LAN
-              </FocusButton>
-            ) : null}
+            <FocusButton type="button" variant="ghost" disabled={busy} onClick={onBack}>
+              Back to servers
+            </FocusButton>
           </div>
         </form>
       </div>
