@@ -50,6 +50,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
     const next = query.trim();
     setSubmitted(next);
     if (!next) {
+      setLoading(false);
       setItems([]);
       setError(null);
     }

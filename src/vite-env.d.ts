@@ -1,17 +1,10 @@
 /// <reference types="vite/client" />
 
-// Project-specific Vite env keys (merged with vite/client ImportMetaEnv).
-interface ImportMetaEnv {
-  readonly VITE_DEFAULT_SERVER_URL?: string;
-}
-
 interface AvPlayTrackInfo {
   type: string;
   index: number;
   extra_info?: string | Record<string, unknown>;
 }
-
-export type { ImportMetaEnv };
 
 interface AvPlayApi {
   open(url: string): void;
@@ -54,6 +47,12 @@ interface TizenDownloadManager {
 }
 
 declare global {
+  // Augment Vite's ImportMetaEnv (must stay inside declare global while this
+  // file is a module via `export {}`).
+  interface ImportMetaEnv {
+    readonly VITE_DEFAULT_SERVER_URL?: string;
+  }
+
   interface Window {
     webapis?: {
       avplay?: AvPlayApi;
