@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   channelDisplayLabel,
@@ -6,6 +6,7 @@ import {
   fetchLiveTvChannels,
   fetchLiveTvGuide,
   nextProgramForChannel,
+  scheduleLiveTvRecording,
   type LiveTvChannel,
   type LiveTvProgram,
 } from "../api/livetv";
@@ -40,6 +41,48 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingMessage, setRecordingMessage] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+  const recordingMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordingMessageTimer.current) clearTimeout(recordingMessageTimer.current);
+    };
+  }, []);
+
+  function showRecordingMessage(kind: "success" | "error", text: string) {
+    if (recordingMessageTimer.current) clearTimeout(recordingMessageTimer.current);
+    setRecordingMessage({ kind, text });
+    if (kind === "success") {
+      recordingMessageTimer.current = setTimeout(() => setRecordingMessage(null), 4000);
+    }
+  }
+
+  async function handleRecord(program: LiveTvProgram) {
+    if (!program.id || recordingBusy) return;
+    setRecordingBusy(true);
+    try {
+      await scheduleLiveTvRecording(session, {
+        program_id: program.id,
+        channel_id: program.channel_id,
+        start: program.start,
+        stop: program.stop,
+        title: program.title,
+      });
+      showRecordingMessage("success", `Recording scheduled: ${program.title}`);
+    } catch (err) {
+      showRecordingMessage(
+        "error",
+        err instanceof ApiError ? err.message : "Could not schedule recording",
+      );
+    } finally {
+      setRecordingBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +144,15 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
         </p>
       ) : null}
 
+      {recordingMessage ? (
+        <p
+          className={recordingMessage.kind === "error" ? "form-error" : "livetv-status-toast"}
+          role={recordingMessage.kind === "error" ? "alert" : "status"}
+        >
+          {recordingMessage.text}
+        </p>
+      ) : null}
+
       {!loading && channels.length === 0 && !error ? (
         <p className="muted">
           An admin can add an HDHomeRun (or similar) tuner under Admin → Live TV on the Prairie
@@ -150,10 +202,32 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                   <p className="eyebrow">Now</p>
                   <p>{programLine(now, "Nothing listed")}</p>
                   {now?.description ? <p className="muted">{now.description}</p> : null}
+                  {now?.id ? (
+                    <div className="row-actions">
+                      <FocusButton
+                        autoFocus={false}
+                        disabled={recordingBusy}
+                        onClick={() => void handleRecord(now)}
+                      >
+                        {recordingBusy ? "Scheduling…" : "Record"}
+                      </FocusButton>
+                    </div>
+                  ) : null}
                 </div>
                 <div>
                   <p className="eyebrow">Next</p>
                   <p>{programLine(next, "Nothing listed")}</p>
+                  {next?.id ? (
+                    <div className="row-actions">
+                      <FocusButton
+                        autoFocus={false}
+                        disabled={recordingBusy}
+                        onClick={() => void handleRecord(next)}
+                      >
+                        {recordingBusy ? "Scheduling…" : "Record"}
+                      </FocusButton>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="row-actions">

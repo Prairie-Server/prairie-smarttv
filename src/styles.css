@@ -652,6 +652,15 @@ button:focus,
   gap: 1rem;
 }
 
+.livetv-status-toast {
+  margin: 0;
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius);
+  background: rgba(224, 168, 74, 0.14);
+  color: var(--prairie-ink);
+  border: 1px solid rgba(224, 168, 74, 0.28);
+}
+
 @media (max-width: 900px) {
   .livetv-layout {
     grid-template-columns: 1fr;

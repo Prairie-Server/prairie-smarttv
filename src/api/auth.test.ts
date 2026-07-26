@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { listProfiles, login, pickDefaultProfile, verifyProfilePin } from "./auth";
+import {
+  fetchSetupStatus,
+  listProfiles,
+  login,
+  pickDefaultProfile,
+  verifyProfilePin,
+} from "./auth";
 
 describe("pickDefaultProfile", () => {
   it("returns null for an empty list", () => {
@@ -26,6 +32,16 @@ describe("pickDefaultProfile", () => {
 });
 
 describe("auth API helpers", () => {
+  it("fetches setup status", async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      expect(String(url)).toContain("/api/v1/auth/setup");
+      return new Response(JSON.stringify({ needs_setup: true }), { status: 200 });
+    });
+
+    const result = await fetchSetupStatus("https://prairie.example", fetchImpl);
+    expect(result.needs_setup).toBe(true);
+  });
+
   it("posts login credentials", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toContain("/api/v1/auth/login");

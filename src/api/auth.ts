@@ -36,6 +36,17 @@ export interface VerifyPinResponse {
   expires_at?: string;
 }
 
+export interface SetupStatusResponse {
+  needs_setup: boolean;
+}
+
+export async function fetchSetupStatus(
+  serverUrl: string,
+  fetchImpl?: typeof fetch,
+): Promise<SetupStatusResponse> {
+  return apiRequest<SetupStatusResponse>({ serverUrl, fetchImpl }, "/api/v1/auth/setup");
+}
+
 export async function login(
   serverUrl: string,
   credentials: LoginRequest,

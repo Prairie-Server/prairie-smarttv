@@ -8,6 +8,7 @@ import {
   playableLiveUrl,
   releaseLiveTvSession,
   resolveLivePlaybackUrl,
+  scheduleLiveTvRecording,
   startLiveTvSession,
   type LiveTvChannel,
   type LiveTvProgram,
@@ -157,5 +158,29 @@ describe("Live TV API", () => {
     });
     await releaseLiveTvSession(session, "live-1", releaseFetch);
     expect(releaseFetch).toHaveBeenCalledOnce();
+  });
+
+  it("schedules a recording by program id", async () => {
+    const recordFetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toContain("/api/v1/livetv/recordings");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({ program_id: "p1" });
+      return new Response(
+        JSON.stringify({
+          id: "rec-1",
+          program_id: "p1",
+          channel_id: "ch-1",
+          status: "scheduled",
+          start: "2026-07-25T19:00:00.000Z",
+          stop: "2026-07-25T20:00:00.000Z",
+          title: "Now Show",
+        }),
+        { status: 201 },
+      );
+    });
+
+    const recording = await scheduleLiveTvRecording(session, { program_id: "p1" }, recordFetch);
+    expect(recording.id).toBe("rec-1");
+    expect(recording.status).toBe("scheduled");
   });
 });
