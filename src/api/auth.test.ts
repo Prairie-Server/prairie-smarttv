@@ -60,10 +60,7 @@ describe("auth API helpers", () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toContain("/api/v1/profiles/p1/verify-pin");
       expect(JSON.parse(String(init?.body))).toEqual({ pin: "1234" });
-      return new Response(
-        JSON.stringify({ valid: true, profile_token: "ptok" }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ valid: true, profile_token: "ptok" }), { status: 200 });
     });
 
     const result = await verifyProfilePin(

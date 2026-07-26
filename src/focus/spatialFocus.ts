@@ -42,10 +42,8 @@ function isInDirection(from: Point, to: Point, key: ArrowKey): boolean {
 function scoreCandidate(from: Point, to: Point, key: ArrowKey): number {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const primary =
-    key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
-  const secondary =
-    key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
+  const primary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
+  const secondary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
   return primary * 1000 + secondary;
 }
 

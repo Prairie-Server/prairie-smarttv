@@ -18,8 +18,8 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!submitted.trim()) {
-      setItems([]);
+    const q = submitted.trim();
+    if (!q) {
       return;
     }
     let cancelled = false;
@@ -28,7 +28,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
       setError(null);
       try {
         const page = await fetchCatalog(session, {
-          q: submitted.trim(),
+          q,
           offset: 0,
           limit: 48,
         });
@@ -47,8 +47,15 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    setSubmitted(query.trim());
+    const next = query.trim();
+    setSubmitted(next);
+    if (!next) {
+      setItems([]);
+      setError(null);
+    }
   }
+
+  const visibleItems = submitted.trim() ? items : [];
 
   return (
     <section className="browse-pane">
@@ -71,12 +78,16 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
         <FocusButton type="submit">Search</FocusButton>
       </form>
       {loading ? <p className="muted">Searching…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
-      {!loading && submitted && items.length === 0 ? (
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {!loading && submitted && visibleItems.length === 0 ? (
         <p className="muted">No matches for “{submitted}”.</p>
       ) : null}
       <div className="poster-grid">
-        {items.map((item, index) => (
+        {visibleItems.map((item, index) => (
           <PosterCard
             key={`${item.content_id}-${index}`}
             title={item.title}

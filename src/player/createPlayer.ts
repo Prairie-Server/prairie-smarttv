@@ -1,4 +1,8 @@
-import type { PlatformKind, PlayerBackendPreference, ResolvedPlayerBackend } from "../platform/types";
+import type {
+  PlatformKind,
+  PlayerBackendPreference,
+  ResolvedPlayerBackend,
+} from "../platform/types";
 import { isAvPlayAvailable } from "../platform/tizen/avplay";
 import { isStarfishEnvironment } from "../platform/webos/starfish";
 

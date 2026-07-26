@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+// Project-specific Vite env keys (merged with vite/client ImportMetaEnv).
 interface ImportMetaEnv {
   readonly VITE_DEFAULT_SERVER_URL?: string;
 }
@@ -9,6 +10,8 @@ interface AvPlayTrackInfo {
   index: number;
   extra_info?: string | Record<string, unknown>;
 }
+
+export type { ImportMetaEnv };
 
 interface AvPlayApi {
   open(url: string): void;

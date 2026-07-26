@@ -58,11 +58,7 @@ describe("resolveLivePlaybackUrl", () => {
 
   it("rejects cross-origin absolute tuner URLs", () => {
     expect(() =>
-      resolveLivePlaybackUrl(
-        "https://prairie.example",
-        "http://tuner.local:5004/auto/v4.1",
-        "tok",
-      ),
+      resolveLivePlaybackUrl("https://prairie.example", "http://tuner.local:5004/auto/v4.1", "tok"),
     ).toThrow("Live TV requires a server-proxied stream");
   });
 });
@@ -70,12 +66,10 @@ describe("resolveLivePlaybackUrl", () => {
 describe("channelDisplayLabel", () => {
   it("uses name, callsign, then channel number", () => {
     expect(channelDisplayLabel(channel)).toBe("Prairie Local");
-    expect(
-      channelDisplayLabel({ ...channel, name: "", callsign: "KTV" }),
-    ).toBe("KTV");
-    expect(
-      channelDisplayLabel({ ...channel, name: "", callsign: "", number: "7" }),
-    ).toBe("Channel 7");
+    expect(channelDisplayLabel({ ...channel, name: "", callsign: "KTV" })).toBe("KTV");
+    expect(channelDisplayLabel({ ...channel, name: "", callsign: "", number: "7" })).toBe(
+      "Channel 7",
+    );
   });
 });
 
@@ -121,16 +115,14 @@ describe("guide helpers", () => {
 
 describe("Live TV API", () => {
   it("lists enabled channels and treats 404 as empty", async () => {
-    const ok = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          channels: [
-            channel,
-            { ...channel, id: "off", enabled: false },
-          ],
-        }),
-        { status: 200 },
-      ),
+    const ok = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            channels: [channel, { ...channel, id: "off", enabled: false }],
+          }),
+          { status: 200 },
+        ),
     );
     const list = await fetchLiveTvChannels(session, ok);
     expect(list).toHaveLength(1);
@@ -151,10 +143,9 @@ describe("Live TV API", () => {
     const startFetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toContain("/api/v1/livetv/channels/ch-1/session");
       expect(init?.method).toBe("POST");
-      return new Response(
-        JSON.stringify({ session_id: "live-1", hls_url: "/live.m3u8" }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ session_id: "live-1", hls_url: "/live.m3u8" }), {
+        status: 200,
+      });
     });
     const started = await startLiveTvSession(session, "ch-1", startFetch);
     expect(started.session_id).toBe("live-1");

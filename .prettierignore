@@ -1,0 +1,6 @@
+dist
+dist-*
+coverage
+node_modules
+platforms/**/dist
+*.min.js

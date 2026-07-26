@@ -44,24 +44,28 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 
 ## Scripts
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Vite dev server |
-| `npm run build` | Typecheck + production web bundle → `dist/` |
-| `npm test` | Vitest unit tests |
-| `npm run test:coverage` | Vitest + **75%** coverage gate on logic modules |
-| `npm run build:web` | Same as production web build |
-| `npm run build:tizen` | Web build + copy into `dist-tizen/` with `config.xml` |
-| `npm run build:webos` | Web build + copy into `dist-webos/` with `appinfo.json` |
-| `npm run package:tizen` | Build + write unsigned `.wgt` under `artifacts/` |
+| Command                 | Purpose                                                     |
+| ----------------------- | ----------------------------------------------------------- |
+| `npm run dev`           | Vite dev server                                             |
+| `npm run build`         | Typecheck + production web bundle → `dist/`                 |
+| `npm run lint`          | ESLint (strict TypeScript + React Hooks)                    |
+| `npm run format`        | Prettier write                                              |
+| `npm run format:check`  | Prettier check (CI)                                         |
+| `npm run typecheck`     | `tsc --noEmit`                                              |
+| `npm test`              | Vitest unit tests                                           |
+| `npm run test:coverage` | Vitest + **75%** coverage gate on logic modules             |
+| `npm run build:web`     | Same as production web build                                |
+| `npm run build:tizen`   | Web build + copy into `dist-tizen/` with `config.xml`       |
+| `npm run build:webos`   | Web build + copy into `dist-webos/` with `appinfo.json`     |
+| `npm run package:tizen` | Build + write unsigned `.wgt` under `artifacts/`            |
 | `npm run package:webos` | Build + `.ipk` (via ares) or staging zip under `artifacts/` |
-| `npm run package:store` | Both platform packages |
+| `npm run package:store` | Both platform packages                                      |
 
 Signing steps: `platforms/tizen/README.md` and `platforms/webos/README.md`.
 
 ## Coverage CI
 
-GitHub Actions runs `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on logic modules:
+GitHub Actions runs lint, Prettier check, typecheck, build, then `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on logic modules:
 
 - `src/api/**`
 - `src/storage/**`
@@ -76,10 +80,10 @@ UI screens and native AVPlay/Starfish adapter implementations stay excluded (thi
 
 ## Player backends
 
-| Backend | When |
-| --- | --- |
-| **HTML5** | Dev browser, explicit setting, or fallback |
-| **AVPlay** | Samsung Tizen native (`webapis.avplay`) |
+| Backend            | When                                                                 |
+| ------------------ | -------------------------------------------------------------------- |
+| **HTML5**          | Dev browser, explicit setting, or fallback                           |
+| **AVPlay**         | Samsung Tizen native (`webapis.avplay`)                              |
 | **Starfish-style** | LG webOS HTML5 `<video>` with `mediaOption` / `mediaPreferred` hints |
 
 VOD player: **OK / Enter** toggles play-pause; **−15s / +15s** seek; Audio / Subs menus when tracks exist; **Back** reports progress, deletes the playback session, and destroys the native player.

@@ -58,8 +58,7 @@ export function resolveLivePlaybackUrl(
   if (!trimmed) {
     throw new Error("Live TV session returned no stream URL");
   }
-  const isAbsoluteHttp =
-    trimmed.startsWith("http://") || trimmed.startsWith("https://");
+  const isAbsoluteHttp = trimmed.startsWith("http://") || trimmed.startsWith("https://");
   if (isAbsoluteHttp && !isSameServerOrigin(serverUrl, trimmed)) {
     throw new Error("Live TV requires a server-proxied stream");
   }
@@ -78,7 +77,12 @@ export async function fetchLiveTvChannels(
     return (data.channels ?? []).filter((ch) => ch.enabled !== false);
   } catch (err) {
     // Feature absent on older servers — treat as empty rather than hard-failing shell.
-    if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 404) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "status" in err &&
+      (err as { status: number }).status === 404
+    ) {
       return [];
     }
     throw err;

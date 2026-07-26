@@ -28,12 +28,7 @@ function resumeSeconds(watch: WatchDetail): number | undefined {
   return position;
 }
 
-export function ItemDetailScreen({
-  session,
-  contentId,
-  onBack,
-  onPlay,
-}: ItemDetailScreenProps) {
+export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDetailScreenProps) {
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
@@ -115,8 +110,7 @@ export function ItemDetailScreen({
     }
   }
 
-  const isSeries =
-    detail?.type === "series" || detail?.type === "show" || detail?.type === "tv";
+  const isSeries = detail?.type === "series" || detail?.type === "show" || detail?.type === "tv";
 
   return (
     <section className="screen detail-screen">
@@ -140,9 +134,7 @@ export function ItemDetailScreen({
             <>
               <p className="eyebrow">{detail.type}</p>
               <h1 className="browse-title">{detail.title}</h1>
-              <p className="muted">
-                {[detail.year, detail.type].filter(Boolean).join(" · ")}
-              </p>
+              <p className="muted">{[detail.year, detail.type].filter(Boolean).join(" · ")}</p>
               {detail.overview ? <p className="detail-overview">{detail.overview}</p> : null}
               {!isSeries ? (
                 <div className="row-actions">
@@ -157,7 +149,11 @@ export function ItemDetailScreen({
               ) : null}
             </>
           ) : null}
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -189,9 +185,7 @@ export function ItemDetailScreen({
                 </span>
                 <span className="episode-row__body">
                   <strong>{episode.title}</strong>
-                  {episode.overview ? (
-                    <span className="muted">{episode.overview}</span>
-                  ) : null}
+                  {episode.overview ? <span className="muted">{episode.overview}</span> : null}
                 </span>
               </button>
             ))}
@@ -201,7 +195,6 @@ export function ItemDetailScreen({
           ) : null}
         </div>
       ) : null}
-
     </section>
   );
 }

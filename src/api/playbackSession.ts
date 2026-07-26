@@ -52,10 +52,6 @@ export async function switchPlaybackAudio(
   );
 }
 
-export function resolveMediaUrl(
-  serverUrl: string,
-  path: string,
-  accessToken: string,
-): string {
+export function resolveMediaUrl(serverUrl: string, path: string, accessToken: string): string {
   return buildStreamUrl(serverUrl, path, accessToken);
 }

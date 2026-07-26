@@ -68,7 +68,11 @@ export function loadPlaybackSettings(
 ): PlaybackSettings {
   try {
     const raw = storage.getItem(PLAYBACK_SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_PLAYBACK_SETTINGS, subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE } };
+    if (!raw)
+      return {
+        ...DEFAULT_PLAYBACK_SETTINGS,
+        subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE },
+      };
     return normalizePlaybackSettings(JSON.parse(raw) as Partial<PlaybackSettings>);
   } catch {
     return { ...DEFAULT_PLAYBACK_SETTINGS, subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE } };

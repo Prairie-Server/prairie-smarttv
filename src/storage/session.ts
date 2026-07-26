@@ -1,8 +1,4 @@
-import {
-  SESSION_KEY,
-  normalizeServerUrl,
-  saveLastServerUrl,
-} from "./persist";
+import { SESSION_KEY, normalizeServerUrl, saveLastServerUrl } from "./persist";
 
 export { SESSION_KEY, normalizeServerUrl };
 
@@ -21,7 +17,9 @@ export interface PrairieSession extends AuthTokens {
   profileToken?: string;
 }
 
-export function loadSession(storage: Pick<Storage, "getItem"> = localStorage): PrairieSession | null {
+export function loadSession(
+  storage: Pick<Storage, "getItem"> = localStorage,
+): PrairieSession | null {
   try {
     const raw = storage.getItem(SESSION_KEY);
     if (!raw) return null;

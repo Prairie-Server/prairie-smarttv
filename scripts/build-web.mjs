@@ -16,9 +16,7 @@ let platform = "web";
 if (platformIdx !== -1) {
   const value = args[platformIdx + 1];
   if (!ALLOWED_PLATFORMS.has(value)) {
-    console.error(
-      `Invalid --platform "${value ?? ""}". Expected one of: web, tizen, webos.`,
-    );
+    console.error(`Invalid --platform "${value ?? ""}". Expected one of: web, tizen, webos.`);
     process.exit(1);
   }
   platform = value;

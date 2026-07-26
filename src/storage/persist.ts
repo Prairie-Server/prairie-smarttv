@@ -29,9 +29,7 @@ export function normalizeServerUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
-export function loadLastServerUrl(
-  storage: Pick<Storage, "getItem"> = localStorage,
-): string {
+export function loadLastServerUrl(storage: Pick<Storage, "getItem"> = localStorage): string {
   try {
     const direct = storage.getItem(LAST_SERVER_URL_KEY);
     if (direct?.trim()) return normalizeServerUrl(direct);
@@ -64,7 +62,7 @@ export function ensureStorageSchema(
     const raw = storage.getItem(STORAGE_SCHEMA_KEY);
     current = raw ? Number.parseInt(raw, 10) || 0 : 0;
   } catch {
-    current = 0;
+    // keep current at 0 when storage is unavailable
   }
 
   // v0 → v1: promote server URL out of the session blob so Connect still

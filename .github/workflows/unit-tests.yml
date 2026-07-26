@@ -33,8 +33,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
       - name: Typecheck and unit tests with coverage
         run: |
+          npm run typecheck
           npm run build
           # Vitest thresholds: 75% stmts/branches/funcs/lines on logic modules
           # (src/api/**, src/storage/**, playback settings, player selection,

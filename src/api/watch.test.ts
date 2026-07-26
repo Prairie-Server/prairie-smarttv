@@ -65,15 +65,16 @@ describe("selectPlaybackFileId", () => {
 
 describe("fetchWatchDetail", () => {
   it("normalizes a missing versions array", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          content_id: "tt1",
-          type: "movie",
-          title: "Dune",
-        }),
-        { status: 200 },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content_id: "tt1",
+            type: "movie",
+            title: "Dune",
+          }),
+          { status: 200 },
+        ),
     );
 
     const detail = await fetchWatchDetail(session, "tt1", fetchImpl);

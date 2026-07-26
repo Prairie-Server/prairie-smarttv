@@ -1,16 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  listProfiles,
-  verifyProfilePin,
-  type Profile,
-} from "../api/auth";
+import { listProfiles, verifyProfilePin, type Profile } from "../api/auth";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
-import {
-  saveSession,
-  type AuthTokens,
-  type PrairieSession,
-} from "../storage/session";
+import { saveSession, type AuthTokens, type PrairieSession } from "../storage/session";
 
 interface ProfileSelectScreenProps {
   auth: AuthTokens;
@@ -18,11 +10,7 @@ interface ProfileSelectScreenProps {
   onCancel: () => void;
 }
 
-export function ProfileSelectScreen({
-  auth,
-  onSelected,
-  onCancel,
-}: ProfileSelectScreenProps) {
+export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelectScreenProps) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +100,11 @@ export function ProfileSelectScreen({
       </header>
 
       {loading ? <p className="muted">Loading profiles…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {!pinProfile ? (
         <div className="profile-grid">

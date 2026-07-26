@@ -87,11 +87,7 @@ function extensionFromUrl(url: string, format?: string | null): string {
 }
 
 /** Unique local filename so concurrent downloads cannot overwrite each other. */
-export function subtitleLocalFileName(
-  url: string,
-  label?: string,
-  format?: string | null,
-): string {
+export function subtitleLocalFileName(url: string, label?: string, format?: string | null): string {
   const ext = extensionFromUrl(url, format);
   const safe = (label || "subtitle").replace(/[^\w.-]+/g, "_").slice(0, 24) || "subtitle";
   const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;

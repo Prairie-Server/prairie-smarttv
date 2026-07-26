@@ -11,10 +11,11 @@ const session: PrairieSession = {
 
 describe("fetchLibraries", () => {
   it("accepts a bare array response", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify([{ id: 1, name: "Movies", type: "movies" }]), {
-        status: 200,
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify([{ id: 1, name: "Movies", type: "movies" }]), {
+          status: 200,
+        }),
     );
     await expect(fetchLibraries(session, fetchImpl)).resolves.toEqual([
       { id: 1, name: "Movies", type: "movies" },
@@ -22,11 +23,11 @@ describe("fetchLibraries", () => {
   });
 
   it("accepts an envelope and defaults missing libraries", async () => {
-    const envelope = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ libraries: [{ id: 2, name: "Shows", type: "tv" }] }),
-        { status: 200 },
-      ),
+    const envelope = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ libraries: [{ id: 2, name: "Shows", type: "tv" }] }), {
+          status: 200,
+        }),
     );
     await expect(fetchLibraries(session, envelope)).resolves.toEqual([
       { id: 2, name: "Shows", type: "tv" },

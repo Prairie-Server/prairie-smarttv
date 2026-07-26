@@ -41,14 +41,15 @@ describe("fetchLibraryCollections", () => {
   });
 
   it("tolerates groups/ungrouped without collection arrays", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          groups: [{ id: "g-empty" }],
-          ungrouped: {},
-        }),
-        { status: 200 },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            groups: [{ id: "g-empty" }],
+            ungrouped: {},
+          }),
+          { status: 200 },
+        ),
     );
     await expect(fetchLibraryCollections(session, 2, fetchImpl)).resolves.toEqual([]);
   });
@@ -56,14 +57,15 @@ describe("fetchLibraryCollections", () => {
 
 describe("fetchPersonalCollections", () => {
   it("flattens top-level and grouped personal collections", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          collections: [{ id: "p1", name: "Mine" }],
-          groups: [{ collections: [{ id: "p2", title: "Favorites" }] }],
-        }),
-        { status: 200 },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            collections: [{ id: "p1", name: "Mine" }],
+            groups: [{ collections: [{ id: "p2", title: "Favorites" }] }],
+          }),
+          { status: 200 },
+        ),
     );
 
     await expect(fetchPersonalCollections(session, fetchImpl)).resolves.toEqual([
@@ -73,8 +75,8 @@ describe("fetchPersonalCollections", () => {
   });
 
   it("defaults missing personal collection arrays", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ groups: [{}] }), { status: 200 }),
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ groups: [{}] }), { status: 200 }),
     );
     await expect(fetchPersonalCollections(session, fetchImpl)).resolves.toEqual([]);
   });

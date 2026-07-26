@@ -95,7 +95,11 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
         </div>
       </header>
 
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {!loading && channels.length === 0 && !error ? (
         <p className="muted">
@@ -113,9 +117,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                 type="button"
                 role="listitem"
                 className={
-                  selected?.id === channel.id
-                    ? "livetv-channel is-selected"
-                    : "livetv-channel"
+                  selected?.id === channel.id ? "livetv-channel is-selected" : "livetv-channel"
                 }
                 autoFocus={index === 0}
                 onClick={() => setSelectedId(channel.id)}

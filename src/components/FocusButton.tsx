@@ -13,11 +13,7 @@ export function FocusButton({
   ...rest
 }: FocusButtonProps) {
   return (
-    <button
-      type={type}
-      className={`focus-btn focus-btn--${variant} ${className}`.trim()}
-      {...rest}
-    >
+    <button type={type} className={`focus-btn focus-btn--${variant} ${className}`.trim()} {...rest}>
       {children}
     </button>
   );

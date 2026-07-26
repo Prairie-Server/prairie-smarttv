@@ -114,7 +114,10 @@ input[type="number"] {
   border-radius: 12px;
   padding: 0.95rem 1rem;
   outline: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 input:focus,
@@ -133,7 +136,10 @@ button:focus,
   border-radius: 999px;
   padding: 0.95rem 1.4rem;
   cursor: pointer;
-  transition: transform 140ms ease, background 160ms ease, color 160ms ease;
+  transition:
+    transform 140ms ease,
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .focus-btn:active {
@@ -190,8 +196,7 @@ button:focus,
   width: min(560px, 100%);
   padding: clamp(1.5rem, 4vw, 2.5rem);
   border-radius: calc(var(--radius) + 4px);
-  background:
-    linear-gradient(180deg, rgba(34, 43, 56, 0.72), rgba(20, 24, 32, 0.88));
+  background: linear-gradient(180deg, rgba(34, 43, 56, 0.72), rgba(20, 24, 32, 0.88));
   border: 1px solid rgba(224, 168, 74, 0.16);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
   animation: panel-rise 650ms ease-out both;
@@ -746,7 +751,10 @@ button:focus,
   text-align: left;
   overflow: hidden;
   scroll-snap-align: start;
-  transition: transform 140ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition:
+    transform 140ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .poster-card:focus,
@@ -887,7 +895,12 @@ button:focus,
 .detail-hero__shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(10, 12, 16, 0.92) 18%, rgba(10, 12, 16, 0.55) 55%, rgba(10, 12, 16, 0.25));
+  background: linear-gradient(
+    90deg,
+    rgba(10, 12, 16, 0.92) 18%,
+    rgba(10, 12, 16, 0.55) 55%,
+    rgba(10, 12, 16, 0.25)
+  );
 }
 
 .detail-hero__content {

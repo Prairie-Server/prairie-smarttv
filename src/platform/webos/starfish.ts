@@ -77,7 +77,10 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
   };
   const onEnded = () => options.onEnded?.();
   const onTimeUpdate = () => {
-    options.onTimeUpdate?.(video.currentTime || 0, Number.isFinite(video.duration) ? video.duration : 0);
+    options.onTimeUpdate?.(
+      video.currentTime || 0,
+      Number.isFinite(video.duration) ? video.duration : 0,
+    );
   };
   video.addEventListener("error", onError);
   video.addEventListener("ended", onEnded);

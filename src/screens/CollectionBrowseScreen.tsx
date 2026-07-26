@@ -63,7 +63,11 @@ export function CollectionBrowseScreen({
         </FocusButton>
       </div>
       {loading ? <p className="muted">Loading…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div className="poster-grid">
         {items.map((item, index) => (
           <PosterCard
