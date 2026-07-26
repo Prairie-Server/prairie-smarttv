@@ -72,4 +72,19 @@ describe("spatialFocus", () => {
     expect(event.defaultPrevented).toBe(true);
     expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "Enter" }))).toBe(false);
   });
+
+  it("keeps left/right on the button row instead of jumping to a full-width input above", () => {
+    const password = document.createElement("input");
+    const signIn = document.createElement("button");
+    const back = document.createElement("button");
+    document.body.append(password, signIn, back);
+    // Full-width password field sits above the action row.
+    place(password, 0, 0, 400, 48);
+    place(signIn, 0, 80, 120, 48);
+    place(back, 140, 80, 160, 48);
+
+    expect(findSpatialNeighbor(signIn, "ArrowRight")).toBe(back);
+    expect(findSpatialNeighbor(back, "ArrowLeft")).toBe(signIn);
+    expect(findSpatialNeighbor(signIn, "ArrowUp")).toBe(password);
+  });
 });

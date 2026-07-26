@@ -24,14 +24,24 @@ function center(rect: DOMRect): Point {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-function isInDirection(from: Point, to: Point, key: ArrowKey): boolean {
+function isInDirection(
+  from: Point,
+  to: Point,
+  key: ArrowKey,
+  fromRect: DOMRect,
+  toRect: DOMRect,
+): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   switch (key) {
     case "ArrowLeft":
-      return dx < -2 && Math.abs(dx) >= Math.abs(dy) * 0.35;
-    case "ArrowRight":
-      return dx > 2 && Math.abs(dx) >= Math.abs(dy) * 0.35;
+    case "ArrowRight": {
+      // Keep left/right on the same row so full-width inputs above a button row
+      // (e.g. password) don't steal focus when moving between action buttons.
+      const rowSlop = Math.max(fromRect.height, toRect.height, 40) * 0.75;
+      if (Math.abs(dy) > rowSlop) return false;
+      return key === "ArrowLeft" ? dx < -2 : dx > 2;
+    }
     case "ArrowUp":
       return dy < -2 && Math.abs(dy) >= Math.abs(dx) * 0.35;
     case "ArrowDown":
@@ -61,14 +71,16 @@ export function findSpatialNeighbor(
     return candidates[0] ?? null;
   }
 
-  const from = center(active.getBoundingClientRect());
+  const fromRect = active.getBoundingClientRect();
+  const from = center(fromRect);
   let best: HTMLElement | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
     if (candidate === active) continue;
-    const to = center(candidate.getBoundingClientRect());
-    if (!isInDirection(from, to, key)) continue;
+    const toRect = candidate.getBoundingClientRect();
+    const to = center(toRect);
+    if (!isInDirection(from, to, key, fromRect, toRect)) continue;
     const score = scoreCandidate(from, to, key);
     if (score < bestScore) {
       bestScore = score;
