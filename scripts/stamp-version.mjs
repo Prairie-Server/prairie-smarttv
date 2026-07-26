@@ -25,10 +25,7 @@ writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
 const configPath = join(root, "platforms/tizen/config.xml");
 const config = readFileSync(configPath, "utf8");
-const nextConfig = config.replace(
-  /(<widget\b[^>]*\bversion=")([^"]+)(")/,
-  `$1${version}$3`,
-);
+const nextConfig = config.replace(/(<widget\b[^>]*\bversion=")([^"]+)(")/, `$1${version}$3`);
 if (nextConfig === config && !config.includes(`version="${version}"`)) {
   console.error("Failed to update version attribute in platforms/tizen/config.xml");
   process.exit(1);
