@@ -50,8 +50,10 @@ export function ConnectScreen({
       }
       const setup = await fetchSetupStatus(trimmedUrl);
       if (setup.needs_setup) {
+        // Do not echo the server URL here — the connect field already shows it,
+        // and repeating it in an action prompt aids phishing of mistyped hosts.
         throw new Error(
-          `This server has not been set up yet. Open ${trimmedUrl} in a browser on your phone or computer to create the first account, then return here to sign in.`,
+          "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.",
         );
       }
       const auth = await login(trimmedUrl, { username: username.trim(), password });

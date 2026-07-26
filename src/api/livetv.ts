@@ -47,17 +47,12 @@ export interface LiveTvRecording {
   start: string;
   stop: string;
   title: string;
-  path?: string;
   library_item_id?: string;
-  last_error?: string;
 }
 
+/** Guide-based schedule: server resolves channel/window/title from program_id. */
 export interface ScheduleLiveTvRecordingInput {
   program_id: string;
-  channel_id?: string;
-  start?: string;
-  stop?: string;
-  title?: string;
 }
 
 export function playableLiveUrl(start: LiveTvSessionStart): string | null {
@@ -154,10 +149,14 @@ export async function scheduleLiveTvRecording(
   input: ScheduleLiveTvRecordingInput,
   fetchImpl?: typeof fetch,
 ): Promise<LiveTvRecording> {
+  const programId = input.program_id?.trim();
+  if (!programId) {
+    throw new Error("Missing program id");
+  }
   return apiRequest<LiveTvRecording>(
     sessionClient(session, fetchImpl),
     "/api/v1/livetv/recordings",
-    { method: "POST", body: JSON.stringify(input) },
+    { method: "POST", body: JSON.stringify({ program_id: programId }) },
   );
 }
 

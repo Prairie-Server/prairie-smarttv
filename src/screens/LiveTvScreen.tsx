@@ -47,6 +47,8 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
     text: string;
   } | null>(null);
   const recordingMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Synchronous guard — React state alone cannot stop double-submit. */
+  const recordingInFlight = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -62,24 +64,28 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
     }
   }
 
+  function scheduleRecordingErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.status === 403) return "Not allowed to schedule recordings";
+      if (err.status === 404) return "Program not found";
+      if (err.status === 409) return "Recording already scheduled";
+    }
+    return "Could not schedule recording";
+  }
+
   async function handleRecord(program: LiveTvProgram) {
-    if (!program.id || recordingBusy) return;
+    const programId = program.id?.trim();
+    if (!programId || recordingInFlight.current) return;
+    recordingInFlight.current = true;
     setRecordingBusy(true);
     try {
-      await scheduleLiveTvRecording(session, {
-        program_id: program.id,
-        channel_id: program.channel_id,
-        start: program.start,
-        stop: program.stop,
-        title: program.title,
-      });
-      showRecordingMessage("success", `Recording scheduled: ${program.title}`);
+      // Server fills channel/window/title from program_id — do not over-post.
+      await scheduleLiveTvRecording(session, { program_id: programId });
+      showRecordingMessage("success", "Recording scheduled");
     } catch (err) {
-      showRecordingMessage(
-        "error",
-        err instanceof ApiError ? err.message : "Could not schedule recording",
-      );
+      showRecordingMessage("error", scheduleRecordingErrorMessage(err));
     } finally {
+      recordingInFlight.current = false;
       setRecordingBusy(false);
     }
   }
