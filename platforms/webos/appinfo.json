@@ -1,6 +1,6 @@
 {
   "id": "org.prairieserver.prairie",
-  "version": "0.1.0-beta1",
+  "version": "0.1.0",
   "vendor": "Prairie",
   "type": "web",
   "main": "index.html",
@@ -11,5 +11,9 @@
   "iconColor": "#e0a84a",
   "disableBackHistoryAPI": true,
   "resolution": "1920x1080",
-  "requiredPermissions": ["audio.operation", "media.operation", "network.op"]
+  "requiredPermissions": [
+    "audio.operation",
+    "media.operation",
+    "network.op"
+  ]
 }
