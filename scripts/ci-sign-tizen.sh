@@ -54,7 +54,14 @@ EOF
 tizen cli-config -g "default.profiles.path=$PROFILES"
 export TIZEN_SECURITY_PROFILE="$PROFILE"
 export TIZEN_PROFILES_PATH="$PROFILES"
-node "$ROOT/scripts/sign-tizen.mjs"
+
+# Sign modern (6.0+) and legacy (5.5+) packages when their dist dirs exist.
+if [[ -f dist-tizen/config.xml ]]; then
+  TIZEN_DIST_DIR=dist-tizen node "$ROOT/scripts/sign-tizen.mjs"
+fi
+if [[ -f dist-tizen-legacy/config.xml ]]; then
+  TIZEN_DIST_DIR=dist-tizen-legacy node "$ROOT/scripts/sign-tizen.mjs"
+fi
 
 rm -f "$AUTHOR_P12" "$DIST_P12" "$PROFILES"
-echo "Signed Tizen package ready under artifacts/"
+echo "Signed Tizen package(s) ready under artifacts/"

@@ -2,12 +2,11 @@
 /**
  * Build store-ready (or signing-ready) packages for Tizen (.wgt) and webOS (.ipk).
  *
- * - Tizen: zips dist-tizen/ into artifacts/Prairie-<version>-tizen-unsigned.wgt
- *   (a .wgt is a zip). Real TVs require a signed package — set
- *   TIZEN_SECURITY_PROFILE to also produce Prairie-<version>-tizen.wgt via the
- *   Tizen CLI. See platforms/tizen/README.md.
- * - webOS: prefers `ares-package` when installed; otherwise writes an unsigned
- *   zip of dist-webos/ and prints the ares-package command for store signing.
+ * - Tizen modern: dist-tizen/ → Prairie-<version>-tizen-unsigned.wgt (6.0+)
+ * - Tizen legacy: dist-tizen-legacy/ → Prairie-<version>-tizen-legacy-unsigned.wgt (5.5+)
+ * - webOS: prefers `ares-package` when installed; otherwise staging zip
+ *
+ * Set TIZEN_SECURITY_PROFILE (+ tizen on PATH) to also produce signed .wgt files.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,8 +17,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const isWindows = process.platform === "win32";
 
+const ALLOWED = new Set(["tizen", "tizen-legacy", "webos", "all"]);
 const args = process.argv.slice(2);
-const platformArg = args.find((a) => a === "tizen" || a === "webos" || a === "all") ?? "all";
+const platformArg = args.find((a) => ALLOWED.has(a)) ?? "all";
 
 function run(command, commandArgs, opts = {}) {
   const result = spawnSync(command, commandArgs, {
@@ -75,8 +75,28 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
   process.exit(1);
 }
 
+function maybeSignTizen({ distDir, signedOut, buildHint }) {
+  const profile = (process.env.TIZEN_SECURITY_PROFILE ?? "").trim();
+  if (profile && commandExists("tizen")) {
+    run(isWindows ? "npm.cmd" : "npm", ["run", "sign:tizen"], {
+      env: {
+        ...process.env,
+        TIZEN_SECURITY_PROFILE: profile,
+        TIZEN_DIST_DIR: distDir,
+        TIZEN_SIGNED_OUT: signedOut,
+      },
+    });
+    return;
+  }
+
+  console.log("Unsigned .wgt will not install on a Samsung TV.");
+  console.log("Sign for sideload / Seller Office:");
+  console.log(`  ${buildHint}`);
+  console.log("  # requires Tizen Studio CLI + Certificate Manager profile");
+}
+
 function packageTizen(version) {
-  console.log("Building Tizen bundle…");
+  console.log("Building Tizen (6.0+) bundle…");
   run(isWindows ? "npm.cmd" : "npm", ["run", "build:tizen"]);
   const source = join(root, "dist-tizen");
   const artifacts = join(root, "artifacts");
@@ -84,19 +104,28 @@ function packageTizen(version) {
   const out = join(artifacts, `Prairie-${version}-tizen-unsigned.wgt`);
   zipDirectory(source, out);
   console.log(`Wrote ${out} (${statSync(out).size} bytes)`);
+  maybeSignTizen({
+    distDir: "dist-tizen",
+    signedOut: join(artifacts, `Prairie-${version}-tizen.wgt`),
+    buildHint: "TIZEN_SECURITY_PROFILE=<profile> npm run sign:tizen",
+  });
+}
 
-  const profile = (process.env.TIZEN_SECURITY_PROFILE ?? "").trim();
-  if (profile && commandExists("tizen")) {
-    run(isWindows ? "npm.cmd" : "npm", ["run", "sign:tizen"], {
-      env: { ...process.env, TIZEN_SECURITY_PROFILE: profile },
-    });
-    return;
-  }
-
-  console.log("Unsigned .wgt will not install on a Samsung TV.");
-  console.log("Sign for sideload / Seller Office:");
-  console.log(`  TIZEN_SECURITY_PROFILE=<profile> npm run sign:tizen`);
-  console.log("  # requires Tizen Studio CLI + Certificate Manager profile");
+function packageTizenLegacy(version) {
+  console.log("Building Tizen legacy (5.5+) bundle…");
+  run(isWindows ? "npm.cmd" : "npm", ["run", "build:tizen-legacy"]);
+  const source = join(root, "dist-tizen-legacy");
+  const artifacts = join(root, "artifacts");
+  mkdirSync(artifacts, { recursive: true });
+  const out = join(artifacts, `Prairie-${version}-tizen-legacy-unsigned.wgt`);
+  zipDirectory(source, out);
+  console.log(`Wrote ${out} (${statSync(out).size} bytes)`);
+  maybeSignTizen({
+    distDir: "dist-tizen-legacy",
+    signedOut: join(artifacts, `Prairie-${version}-tizen-legacy.wgt`),
+    buildHint:
+      "TIZEN_DIST_DIR=dist-tizen-legacy TIZEN_SECURITY_PROFILE=<profile> npm run sign:tizen",
+  });
 }
 
 function packageWebos(version) {
@@ -124,6 +153,9 @@ const version = readVersion();
 
 if (platformArg === "tizen" || platformArg === "all") {
   packageTizen(version);
+}
+if (platformArg === "tizen-legacy" || platformArg === "all") {
+  packageTizenLegacy(version);
 }
 if (platformArg === "webos" || platformArg === "all") {
   packageWebos(version);
