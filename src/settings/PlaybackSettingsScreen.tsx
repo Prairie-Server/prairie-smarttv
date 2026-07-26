@@ -19,6 +19,7 @@ import {
 
 interface PlaybackSettingsScreenProps {
   onBack: () => void;
+  onSwitchServer?: () => void;
 }
 
 const BACKEND_OPTIONS: { value: PlayerBackendPreference; label: string; hint: string }[] = [
@@ -32,7 +33,7 @@ const STYLE_OPTIONS: SubtitleBackgroundStyle[] = ["none", "outline", "shadow", "
 const POSITION_OPTIONS: SubtitlePosition[] = ["bottom", "lower-third", "top"];
 const OPACITY_STEPS = [0, 25, 50, 75, 100];
 
-export function PlaybackSettingsScreen({ onBack }: PlaybackSettingsScreenProps) {
+export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSettingsScreenProps) {
   const [settings, setSettings] = useState<PlaybackSettings>(() => loadPlaybackSettings());
   const platform = detectPlatform();
   const appearance = settings.subtitleAppearance;
@@ -67,6 +68,18 @@ export function PlaybackSettingsScreen({ onBack }: PlaybackSettingsScreenProps) 
           Back
         </FocusButton>
       </header>
+
+      {onSwitchServer ? (
+        <div className="settings-block">
+          <h2>Servers</h2>
+          <p className="muted settings-note">
+            Switch between saved Prairie servers or scan the LAN for new ones.
+          </p>
+          <FocusButton variant="ghost" onClick={onSwitchServer}>
+            Servers / Scan LAN
+          </FocusButton>
+        </div>
+      ) : null}
 
       <div className="settings-block">
         <h2>Subtitles</h2>

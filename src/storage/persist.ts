@@ -11,17 +11,19 @@
 
 export const STORAGE_SCHEMA_KEY = "prairie.storageSchemaVersion";
 /** Bump only when additive migrations are required. Never wipe on bump. */
-export const STORAGE_SCHEMA_VERSION = 1;
+export const STORAGE_SCHEMA_VERSION = 2;
 
 export const LAST_SERVER_URL_KEY = "prairie.lastServerUrl";
 export const SESSION_KEY = "prairie.session";
 export const PLAYBACK_SETTINGS_KEY = "prairie.playbackSettings";
+export const SERVER_REGISTRY_KEY = "prairie.serverRegistry";
 
 /** Keys that must survive app updates. Cleared only by explicit user logout. */
 export const PRESERVED_STORAGE_KEYS = [
   SESSION_KEY,
   PLAYBACK_SETTINGS_KEY,
   LAST_SERVER_URL_KEY,
+  SERVER_REGISTRY_KEY,
   STORAGE_SCHEMA_KEY,
 ] as const;
 
@@ -82,6 +84,14 @@ export function ensureStorageSchema(
     } catch {
       /* leave keys untouched */
     }
+    storage.setItem(STORAGE_SCHEMA_KEY, "1");
+    current = 1;
+  }
+
+  // v1 → v2: registry key introduced. Migration of session/last URL into
+  // prairie.serverRegistry is performed by migrateFromLegacy on boot
+  // (avoids a persist ↔ registry import cycle at call sites).
+  if (current < 2) {
     storage.setItem(STORAGE_SCHEMA_KEY, String(STORAGE_SCHEMA_VERSION));
     return STORAGE_SCHEMA_VERSION;
   }

@@ -26,6 +26,7 @@ export default defineConfig({
       include: [
         "src/api/**/*.ts",
         "src/storage/**/*.ts",
+        "src/discovery/**/*.ts",
         "src/focus/**/*.ts",
         "src/settings/playbackSettings.ts",
         "src/settings/subtitleAppearance.ts",

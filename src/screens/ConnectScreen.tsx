@@ -7,9 +7,16 @@ import type { AuthTokens } from "../storage/session";
 interface ConnectScreenProps {
   onAuthenticated: (auth: AuthTokens) => void;
   initialServerUrl?: string;
+  onOpenServers?: () => void;
+  onScanLan?: () => void;
 }
 
-export function ConnectScreen({ onAuthenticated, initialServerUrl = "" }: ConnectScreenProps) {
+export function ConnectScreen({
+  onAuthenticated,
+  initialServerUrl = "",
+  onOpenServers,
+  onScanLan,
+}: ConnectScreenProps) {
   const [serverUrl, setServerUrl] = useState(initialServerUrl);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -110,9 +117,21 @@ export function ConnectScreen({ onAuthenticated, initialServerUrl = "" }: Connec
             </p>
           ) : null}
 
-          <FocusButton type="submit" className="connect-submit" disabled={busy}>
-            {busy ? "Connecting…" : "Connect"}
-          </FocusButton>
+          <div className="connect-actions">
+            <FocusButton type="submit" className="connect-submit" disabled={busy}>
+              {busy ? "Connecting…" : "Connect"}
+            </FocusButton>
+            {onOpenServers ? (
+              <FocusButton type="button" variant="ghost" disabled={busy} onClick={onOpenServers}>
+                Servers
+              </FocusButton>
+            ) : null}
+            {onScanLan ? (
+              <FocusButton type="button" variant="ghost" disabled={busy} onClick={onScanLan}>
+                Scan LAN
+              </FocusButton>
+            ) : null}
+          </div>
         </form>
       </div>
     </section>
