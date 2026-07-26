@@ -133,6 +133,8 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   let activeDownloadCancel: (() => void) | null = null;
   let activeLocalSubtitlePath: string | null = null;
   let prepareTimer: number | null = null;
+  /** True when an external path was set in IDLE and track select must wait for READY+. */
+  let pendingTrackSelect = false;
   const allowedServerUrl = options.allowedServerUrl ?? null;
 
   const forgetLocalSubtitle = () => {
@@ -203,18 +205,22 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     activeDownloadCancel = null;
   };
 
-  const applyExternalSubtitlePath = (localPath: string) => {
-    if (!avplay.setExternalSubtitlePath) {
-      throw new Error("AVPlay setExternalSubtitlePath is unavailable on this firmware");
-    }
-    avplay.setExternalSubtitlePath(localPath);
-    // Keep native drawing silenced — overlay handles presentation + styling.
+  const avplayState = (): string => {
     try {
-      avplay.setSilentSubtitle?.(true);
+      return avplay.getState();
     } catch {
-      /* ignore */
+      return "";
     }
-    overlayEnabled = true;
+  };
+
+  /** getTotalTrackInfo / setSelectTrack are only valid in READY / PLAYING / PAUSED. */
+  const selectExternalTextTrack = () => {
+    const state = avplayState();
+    if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") {
+      pendingTrackSelect = true;
+      return;
+    }
+    pendingTrackSelect = false;
     try {
       const tracks = avplay.getTotalTrackInfo?.() ?? [];
       const index = pickExternalTextTrackIndex(tracks);
@@ -224,6 +230,22 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     } catch {
       /* some streams expose the external track without enumeration */
     }
+  };
+
+  const applyExternalSubtitlePath = (localPath: string) => {
+    if (!avplay.setExternalSubtitlePath) {
+      throw new Error("AVPlay setExternalSubtitlePath is unavailable on this firmware");
+    }
+    // Path attach is valid in IDLE (pre-prepare) and during playback.
+    avplay.setExternalSubtitlePath(localPath);
+    // Keep native drawing silenced — overlay handles presentation + styling.
+    try {
+      avplay.setSilentSubtitle?.(true);
+    } catch {
+      /* ignore */
+    }
+    overlayEnabled = true;
+    selectExternalTextTrack();
   };
 
   const downloadAndApply = async (url: string, label?: string): Promise<void> => {
@@ -242,23 +264,27 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     applyExternalSubtitlePath(localPath);
   };
 
+  const onPrepared = () => {
+    if (destroyed) return;
+    ready = true;
+    if (pendingTrackSelect && overlayEnabled) {
+      selectExternalTextTrack();
+    }
+    if (playWhenReady) safePlay();
+  };
+
   const prepareAndPlay = () => {
     if (destroyed || prepareStarted) return;
     prepareStarted = true;
     try {
       if (typeof avplay.prepareAsync === "function") {
         avplay.prepareAsync(
-          () => {
-            if (destroyed) return;
-            ready = true;
-            if (playWhenReady) safePlay();
-          },
+          () => onPrepared(),
           (err) => options.onError?.(String(err)),
         );
       } else {
         avplay.prepare();
-        ready = true;
-        if (playWhenReady) safePlay();
+        onPrepared();
       }
     } catch (err) {
       options.onError?.(err instanceof Error ? err.message : String(err));
@@ -268,11 +294,12 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   /**
    * Delay prepare one tick so PlayerHost.onReady → setTextTrack can queue a
    * pending subtitle, then attach it in IDLE before prepare (Samsung-recommended).
+   * Drain pendingSubtitle in a loop so a newer selection during download is not lost.
    */
   const beginStartup = () => {
     if (destroyed || prepareStarted) return;
     void (async () => {
-      if (pendingSubtitle) {
+      while (pendingSubtitle && !destroyed) {
         const next = pendingSubtitle;
         pendingSubtitle = null;
         try {
@@ -331,6 +358,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
 
       if (!url) {
         pendingSubtitle = null;
+        pendingTrackSelect = false;
         overlayEnabled = false;
         forgetLocalSubtitle();
         clearSubtitleOverlay(overlay);
@@ -362,6 +390,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       ready = false;
       playWhenReady = false;
       pendingSubtitle = null;
+      pendingTrackSelect = false;
       overlayEnabled = false;
       trackGeneration += 1;
       cancelActiveDownload();

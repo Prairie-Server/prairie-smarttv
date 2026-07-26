@@ -32,6 +32,12 @@ export interface SubtitleDownloadHandle {
 export interface SubtitleDownloadOptions {
   /** Connected Prairie server — downloads must match this origin. */
   allowedServerUrl?: string | null;
+  /**
+   * Codec/format hint from playback metadata (e.g. "webvtt", "srt", "smi").
+   * Used when the URL path has no subtitle extension — AVPlay selects a parser
+   * from the local filename extension and does not sniff contents.
+   */
+  format?: string | null;
   api?: TizenDownloadApi | null;
 }
 
@@ -41,21 +47,52 @@ function getTizenDownload(): TizenDownloadApi | null {
   return tizen;
 }
 
-function extensionFromUrl(url: string): string {
+const KNOWN_SUBTITLE_EXT = /\.(smi|sami|srt|vtt|ttml|dfxp)$/i;
+
+/** Map a codec/format string (or query value) to a local file extension. */
+export function extensionFromSubtitleFormat(format: string | null | undefined): string | null {
+  if (!format) return null;
+  const raw = format.trim().toLowerCase();
+  if (!raw) return null;
+  if (KNOWN_SUBTITLE_EXT.test(raw.startsWith(".") ? raw : `.${raw}`)) {
+    const withDot = raw.startsWith(".") ? raw : `.${raw}`;
+    return withDot.toLowerCase();
+  }
+  if (raw.includes("webvtt") || raw === "vtt") return ".vtt";
+  if (raw.includes("subrip") || raw === "srt") return ".srt";
+  if (raw.includes("sami") || raw === "smi") return ".smi";
+  if (raw.includes("ttml") || raw.includes("dfxp") || raw.includes("smpte")) {
+    return raw.includes("dfxp") ? ".dfxp" : ".ttml";
+  }
+  return null;
+}
+
+function extensionFromUrl(url: string, format?: string | null): string {
   try {
-    const path = new URL(url, "https://local.invalid").pathname;
-    const base = path.split("/").pop() || "";
-    const match = base.match(/\.(smi|sami|srt|vtt|ttml|dfxp)$/i);
+    const parsed = new URL(url, "https://local.invalid");
+    const base = parsed.pathname.split("/").pop() || "";
+    const match = base.match(KNOWN_SUBTITLE_EXT);
     if (match) return match[0]!.toLowerCase();
+    const fromQuery =
+      extensionFromSubtitleFormat(parsed.searchParams.get("format")) ||
+      extensionFromSubtitleFormat(parsed.searchParams.get("codec"));
+    if (fromQuery) return fromQuery;
   } catch {
     /* fall through */
   }
-  return ".smi";
+  const fromFormat = extensionFromSubtitleFormat(format);
+  if (fromFormat) return fromFormat;
+  // Prairie text-subtitle endpoints without an extension serve WebVTT.
+  return ".vtt";
 }
 
 /** Unique local filename so concurrent downloads cannot overwrite each other. */
-export function subtitleLocalFileName(url: string, label?: string): string {
-  const ext = extensionFromUrl(url);
+export function subtitleLocalFileName(
+  url: string,
+  label?: string,
+  format?: string | null,
+): string {
+  const ext = extensionFromUrl(url, format);
   const safe = (label || "subtitle").replace(/[^\w.-]+/g, "_").slice(0, 24) || "subtitle";
   const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return `${safe}_${stamp}${ext}`;
@@ -168,7 +205,7 @@ export function downloadSubtitleToLocalPath(
     };
   }
 
-  const fileName = subtitleLocalFileName(url, label);
+  const fileName = subtitleLocalFileName(url, label, normalized.format);
   const request = new api.DownloadRequest(url, "wgt-private-tmp", fileName);
   let downloadId: number | null = null;
   let settled = false;

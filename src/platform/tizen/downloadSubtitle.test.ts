@@ -36,9 +36,18 @@ describe("subtitleLocalFileName", () => {
     expect(subtitleLocalFileName("https://example/subs/en.srt")).toMatch(/\.srt$/);
   });
 
-  it("falls back to .smi when the URL has no extension", () => {
+  it("uses format metadata when the URL has no extension", () => {
+    expect(subtitleLocalFileName("https://example/api/v1/sub/1", "English", "srt")).toMatch(
+      /^English_.+\.srt$/,
+    );
+    expect(
+      subtitleLocalFileName("https://example/api/v1/sub/1?format=smi", "English"),
+    ).toMatch(/^English_.+\.smi$/);
+  });
+
+  it("defaults extensionless Prairie subtitle URLs to .vtt", () => {
     expect(subtitleLocalFileName("https://example/api/v1/sub/1", "English")).toMatch(
-      /^English_.+\.smi$/,
+      /^English_.+\.vtt$/,
     );
   });
 });

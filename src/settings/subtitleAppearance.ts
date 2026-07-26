@@ -96,21 +96,23 @@ export function subtitleAppearanceCssVars(
   const bottom = POSITION_BOTTOM_PCT[normalized.position];
 
   let textShadow = "none";
-  if (normalized.backgroundStyle === "shadow" || normalized.textOutline) {
-    const outline = normalized.textOutlineColor;
-    textShadow = [
-      `0 0 2px ${outline}`,
-      `0 0 4px ${outline}`,
-      `1px 1px 0 ${outline}`,
-      `-1px -1px 0 ${outline}`,
-    ].join(", ");
-  } else if (normalized.backgroundStyle === "outline") {
+  // Explicit "Outline" background style wins over the textOutline toggle so the
+  // picker is not shadowed by the default outline-on setting.
+  if (normalized.backgroundStyle === "outline") {
     const outline = normalized.textOutlineColor;
     textShadow = [
       `1px 0 0 ${outline}`,
       `-1px 0 0 ${outline}`,
       `0 1px 0 ${outline}`,
       `0 -1px 0 ${outline}`,
+    ].join(", ");
+  } else if (normalized.backgroundStyle === "shadow" || normalized.textOutline) {
+    const outline = normalized.textOutlineColor;
+    textShadow = [
+      `0 0 2px ${outline}`,
+      `0 0 4px ${outline}`,
+      `1px 1px 0 ${outline}`,
+      `-1px -1px 0 ${outline}`,
     ].join(", ");
   }
 

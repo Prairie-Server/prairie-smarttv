@@ -59,7 +59,17 @@ describe("subtitleAppearance", () => {
       textOutline: false,
       textOutlineColor: "#112233",
     });
-    expect(outline["--prairie-sub-shadow"]).toContain("#112233");
+    expect(outline["--prairie-sub-shadow"]).toContain("1px 0 0 #112233");
+
+    // Explicit Outline wins even when the textOutline toggle is on (default).
+    const outlineWithToggle = subtitleAppearanceCssVars({
+      ...DEFAULT_SUBTITLE_APPEARANCE,
+      backgroundStyle: "outline",
+      textOutline: true,
+      textOutlineColor: "#112233",
+    });
+    expect(outlineWithToggle["--prairie-sub-shadow"]).toContain("1px 0 0 #112233");
+    expect(outlineWithToggle["--prairie-sub-shadow"]).not.toContain("0 0 2px");
 
     const shadow = subtitleAppearanceCssVars({
       ...DEFAULT_SUBTITLE_APPEARANCE,
