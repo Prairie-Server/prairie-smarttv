@@ -9,6 +9,7 @@ import {
   type SeasonSummary,
 } from "../api/catalog";
 import { fetchWatchDetail, selectPlaybackFileId, type WatchDetail } from "../api/watch";
+import { ArtworkImage } from "../components/ArtworkImage";
 import { FocusButton } from "../components/FocusButton";
 import type { PlayerLaunch } from "./PlayerScreen";
 import type { PrairieSession } from "../storage/session";
@@ -116,7 +117,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
     <section className="screen detail-screen">
       <div className="detail-hero">
         {detail?.backdrop_url || detail?.poster_url ? (
-          <img
+          <ArtworkImage
             className="detail-hero__art"
             src={detail.backdrop_url || detail.poster_url || ""}
             alt=""
