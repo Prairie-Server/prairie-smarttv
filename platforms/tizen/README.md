@@ -45,6 +45,12 @@ An unsigned `.wgt` is a zip of the dist folder. TVs will not install it **as-is*
 - **Do** publish the **unsigned** release artifacts (already produced by CI).
 - End users: Developer Mode on → Apps2Samsung → Custom WGT (or catalog entry) → install.
 
+**Partner signing is required.** Prairie declares `avplay` (same as Moonfin). With a Public distributor cert, install fails as:
+
+`install error [118, -4], "operation not allowed"`
+
+Fix: Apps2Samsung → **Settings → enable Partner signing** → install again (Samsung account login may be needed so it can mint a Partner cert for your TV’s DUID). On Tizen 6.0+ (e.g. 6.5) use `Prairie-*-tizen-unsigned.wgt`; use `*-tizen-legacy-unsigned.wgt` only on 5.5 sets.
+
 Catalog listing (optional): add a provider in Apps2Samsung’s [`third-party-apps.json`](https://github.com/Apps2Samsung/Apps2Samsung/blob/main/third-party-apps.json) pointing at `https://api.github.com/repos/Prairie-Server/prairie-smarttv/releases` (same pattern as Moonfin/Litefin). Until then, users can load the GitHub Release `.wgt` via **Custom WGT/TPK**.
 
 ### Samsung Seller Office (real store)
