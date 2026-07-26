@@ -21,7 +21,8 @@
     "build:webos": "node scripts/build-web.mjs --platform webos",
     "package:tizen": "node scripts/package-store.mjs tizen",
     "package:webos": "node scripts/package-store.mjs webos",
-    "package:store": "node scripts/package-store.mjs all"
+    "package:store": "node scripts/package-store.mjs all",
+    "stamp-version": "node scripts/stamp-version.mjs"
   },
   "dependencies": {
     "@fontsource/fraunces": "^5.2.5",
