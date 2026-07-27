@@ -94,7 +94,10 @@ function revealIndex(container: HTMLElement, index: number): HTMLElement | null 
     const revealed = handler(index);
     if (revealed) return revealed;
   }
-  const matches = container.querySelectorAll<HTMLElement>(`[data-focus-index="${index}"]`);
+  // Array.from: legacy TV WebKit builds ship NodeList without Symbol.iterator.
+  const matches = Array.from(
+    container.querySelectorAll<HTMLElement>(`[data-focus-index="${index}"]`),
+  );
   for (const el of matches) {
     if (closestFocusContainer(el) === container) return el;
   }

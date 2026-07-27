@@ -61,6 +61,29 @@ describe("detailMetadata", () => {
     expect(isSeriesType(null)).toBe(false);
   });
 
+  it("tolerates payloads missing type, job, or name", () => {
+    // A throw in any of these took the whole detail screen down (dead frame).
+    expect(typeLabel(undefined)).toBe("Title");
+    expect(typeLabel("")).toBe("Title");
+    expect(sourceTokens(movie({ type: undefined as unknown as string }))).toEqual([
+      "Title",
+      "Sci-Fi",
+      "Adventure",
+    ]);
+
+    const noJob = movie({
+      crew: [{ name: "Nameless" } as unknown as NonNullable<ItemDetail["crew"]>[number]],
+    });
+    expect(() => featuredCrew(noJob)).not.toThrow();
+    expect(featuredCrew(noJob)).toHaveLength(1);
+    expect(crewLine(noJob)).toBeNull();
+
+    const noName = movie({
+      cast: [{ character: "Role" } as unknown as NonNullable<ItemDetail["cast"]>[number]],
+    });
+    expect(starringText(noName)).toBeNull();
+  });
+
   it("formats runtimes", () => {
     expect(formatRuntimeMinutes(45)).toBe("45m");
     expect(formatRuntimeMinutes(60)).toBe("1h");

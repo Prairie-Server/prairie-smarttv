@@ -1,12 +1,13 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type ImgHTMLAttributes,
 } from "react";
-import { artworkCandidates, artworkSized } from "../lib/artworkUrl";
+import { artworkSizedCandidates } from "../lib/artworkUrl";
 import { resolveArtworkUrl } from "../lib/resolveArtworkUrl";
 import { useServerUrl } from "../serverUrlContext";
 
@@ -49,9 +50,13 @@ export function ArtworkImage({
 }: ArtworkImageProps) {
   const contextServerUrl = useServerUrl();
   const serverUrl = serverUrlProp?.trim() || contextServerUrl;
-  const sized = artworkSized(src, widthHint);
-  const normalizedSrc = resolveArtworkUrl(sized, serverUrl) || undefined;
-  const candidates = artworkCandidates(normalizedSrc);
+  const normalizedSrc = resolveArtworkUrl(src, serverUrl) || undefined;
+  // Candidate lists cost a localStorage read + UA sniff per call; TV screens
+  // mount dozens of cards, so keep it out of the per-render path.
+  const candidates = useMemo(
+    () => artworkSizedCandidates(normalizedSrc, widthHint),
+    [normalizedSrc, widthHint],
+  );
   const [failedCount, setFailedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const prevNormalizedSrc = useRef<string | undefined>(undefined);

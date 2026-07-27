@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   artworkCandidates,
   artworkSized,
+  artworkSizedCandidates,
   artworkWidthVariant,
   isSignedArtworkURL,
   webPAVIFSibling,
@@ -109,5 +110,33 @@ describe("artworkCandidates", () => {
   it("returns only the signed URL without inventing siblings", () => {
     const signed = "https://cdn.example.com/art/original.rev.webp?X-Amz-Signature=abc";
     expect(artworkCandidates(signed)).toEqual([signed]);
+  });
+});
+
+describe("artworkSizedCandidates", () => {
+  beforeEach(() => {
+    resetImageFormatsCacheForTests();
+    localStorage.setItem("prairie.imageFormats", "webp,png");
+  });
+
+  it("tries the width variant first, then the canonical ladder", () => {
+    // A width rung the server never generated must not dead-end on siblings
+    // of a missing object — the original has to remain reachable.
+    expect(artworkSizedCandidates("/art/original.rev.webp", 300)).toEqual([
+      "/art/w300.rev.webp",
+      "/art/w300.rev.png",
+      "/art/original.rev.webp",
+      "/art/original.rev.png",
+    ]);
+  });
+
+  it("falls back to the plain ladder when no rewrite applies", () => {
+    expect(artworkSizedCandidates("/art/cover.jpg", 300)).toEqual(["/art/cover.jpg"]);
+    expect(artworkSizedCandidates("/art/original.rev.webp", null)).toEqual([
+      "/art/original.rev.webp",
+      "/art/original.rev.png",
+    ]);
+    expect(artworkSizedCandidates("", 300)).toEqual([]);
+    expect(artworkSizedCandidates(null, 300)).toEqual([]);
   });
 });

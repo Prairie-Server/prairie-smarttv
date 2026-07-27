@@ -1,6 +1,6 @@
 import { memo, type KeyboardEvent } from "react";
 import { Play } from "lucide-react";
-import { LANDSCAPE_WIDTH } from "../lib/artworkUrl";
+import { BACKDROP_CARD_WIDTH } from "../lib/artworkUrl";
 import { ArtworkImage } from "./ArtworkImage";
 
 interface LandscapeCardProps {
@@ -36,7 +36,7 @@ function LandscapeCardInner({
     }
   }
 
-  const src = imageUrl?.trim() ?? "";
+  const src = typeof imageUrl === "string" ? imageUrl.trim() : "";
 
   return (
     <button
@@ -53,7 +53,7 @@ function LandscapeCardInner({
             src={src}
             alt=""
             placeholderLabel={title}
-            widthHint={LANDSCAPE_WIDTH}
+            widthHint={BACKDROP_CARD_WIDTH}
             width={352}
             height={198}
             loading={imageLoading}

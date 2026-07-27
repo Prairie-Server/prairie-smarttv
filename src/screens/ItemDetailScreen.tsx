@@ -17,7 +17,7 @@ import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { useBackKey } from "../focus/useBackKey";
-import { LANDSCAPE_WIDTH, LOGO_WIDTH, POSTER_WIDTH } from "../lib/artworkUrl";
+import { BACKDROP_HERO_WIDTH, LOGO_WIDTH, POSTER_WIDTH, STILL_WIDTH } from "../lib/artworkUrl";
 import {
   crewLine,
   episodeProgressRatio,
@@ -47,10 +47,15 @@ interface ItemDetailScreenProps {
   onOpenItem: (contentId: string) => void;
 }
 
+/** Artwork fields are strings by contract; tolerate anything else rather than throwing. */
+function urlText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function episodeStill(episode: EpisodeSummary): string | null {
-  const still = episode.still_url?.trim();
+  const still = urlText(episode.still_url);
   if (still) return still;
-  const poster = episode.poster_url?.trim();
+  const poster = urlText(episode.poster_url);
   return poster || null;
 }
 
@@ -104,6 +109,7 @@ export function ItemDetailScreen({
   const [busyAction, setBusyAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const playButtonRef = useRef<HTMLButtonElement | null>(null);
+  const backButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const handleBack = useCallback(() => {
     onBack();
@@ -210,6 +216,19 @@ export function ItemDetailScreen({
     };
   }, [session, contentId, seasonNumber, detail]);
 
+  // Back is the only control that exists before detail arrives, so park focus
+  // there while loading — a bare OK press must never land on <body>.
+  useEffect(() => {
+    if (detail) return;
+    const node = backButtonRef.current;
+    if (!node) return;
+    const active = document.activeElement;
+    const alreadyFocused =
+      active instanceof HTMLElement && active !== document.body && document.body.contains(active);
+    if (alreadyFocused) return;
+    node.focus({ preventScroll: true });
+  }, [detail]);
+
   // Defensive: ensure Play receives focus once the hero is ready so OK cannot
   // land on <body> before autoFocus paints.
   useEffect(() => {
@@ -217,8 +236,9 @@ export function ItemDetailScreen({
     const node = playButtonRef.current;
     if (!node) return;
     if (document.activeElement === node) return;
-    const tag = document.activeElement?.tagName?.toLowerCase();
-    if (tag === "button" || tag === "input" || tag === "a") return;
+    const active = document.activeElement;
+    // Keep the user's place if they already moved focus (including Back).
+    if (active instanceof HTMLElement && active !== document.body && active.tabIndex >= 0) return;
     node.focus({ preventScroll: true });
   }, [detail, loading]);
 
@@ -318,9 +338,9 @@ export function ItemDetailScreen({
   }
 
   const isSeries = isSeriesType(detail?.type);
-  const heroBackdropUrl = detail?.backdrop_url?.trim();
-  const heroPosterUrl = detail?.poster_url?.trim();
-  const heroLogoUrl = detail?.logo_url?.trim();
+  const heroBackdropUrl = urlText(detail?.backdrop_url);
+  const heroPosterUrl = urlText(detail?.poster_url);
+  const heroLogoUrl = urlText(detail?.logo_url);
   const heroSrc = heroBackdropUrl || heroPosterUrl;
   const nextUp = useMemo(() => pickNextUpEpisode(episodes), [episodes]);
   const facts = detail
@@ -373,13 +393,25 @@ export function ItemDetailScreen({
     <section className="screen detail-screen">
       <div className="detail-hero">
         {heroSrc ? (
-          <ArtworkImage className="detail-hero__art" src={heroSrc} alt="" />
+          <ArtworkImage
+            className="detail-hero__art"
+            src={heroSrc}
+            alt=""
+            widthHint={heroBackdropUrl ? BACKDROP_HERO_WIDTH : POSTER_WIDTH}
+          />
         ) : (
           <div className="detail-hero__art detail-hero__art--empty" />
         )}
         <div className="detail-hero__shade" />
         <div className="detail-hero__content">
-          <button type="button" className="detail-back" onClick={handleBack} aria-label="Back">
+          <button
+            ref={backButtonRef}
+            type="button"
+            className="detail-back"
+            onClick={handleBack}
+            aria-label="Back"
+            autoFocus={!detail}
+          >
             <ArrowLeft size={22} aria-hidden="true" />
             <span>Back</span>
           </button>
@@ -577,7 +609,7 @@ export function ItemDetailScreen({
                             src={still}
                             alt=""
                             placeholderLabel={episode.title}
-                            widthHint={LANDSCAPE_WIDTH}
+                            widthHint={STILL_WIDTH}
                             width={280}
                             height={158}
                             loading={index < 3 ? "eager" : "lazy"}
@@ -649,9 +681,9 @@ export function ItemDetailScreen({
                 </div>
               </div>
               <div className="cast-rail">
-                {cast.slice(0, 16).map((member) => (
+                {cast.slice(0, 16).map((member, index) => (
                   <div
-                    key={`${member.person_id ?? member.name}-${member.character ?? ""}`}
+                    key={`${member.person_id ?? member.name ?? index}-${member.character ?? ""}`}
                     className="cast-card"
                   >
                     <div className="cast-card__photo" aria-hidden="true">
@@ -662,7 +694,9 @@ export function ItemDetailScreen({
                           placeholderLabel={member.name}
                         />
                       ) : (
-                        <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
+                        <div className="cast-card__photo-empty">
+                          {(member.name ?? "?").slice(0, 1)}
+                        </div>
                       )}
                     </div>
                     <p className="cast-card__name">{member.name}</p>
@@ -686,9 +720,9 @@ export function ItemDetailScreen({
                 </div>
               </div>
               <div className="cast-rail">
-                {crew.map((member) => (
+                {crew.map((member, index) => (
                   <div
-                    key={`${member.person_id ?? member.name}-${member.job}`}
+                    key={`${member.person_id ?? member.name ?? index}-${member.job ?? ""}`}
                     className="cast-card"
                   >
                     <div className="cast-card__photo" aria-hidden="true">
@@ -699,7 +733,9 @@ export function ItemDetailScreen({
                           placeholderLabel={member.name}
                         />
                       ) : (
-                        <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
+                        <div className="cast-card__photo-empty">
+                          {(member.name ?? "?").slice(0, 1)}
+                        </div>
                       )}
                     </div>
                     <p className="cast-card__name">{member.name}</p>

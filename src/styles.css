@@ -2834,3 +2834,25 @@ html[data-perf="balanced"] .episode-card:focus {
   box-shadow: none;
   outline: 3px solid var(--prairie-ring);
 }
+
+/* Recoverable render-failure fallback. The stack is shown on screen because
+ * packaged TV builds have no reachable dev console. */
+.error-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 80rem;
+}
+
+.error-screen__stack {
+  max-height: 26rem;
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(243, 239, 230, 0.72);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

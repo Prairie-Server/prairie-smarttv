@@ -9,10 +9,22 @@
 
 import { getImageFormats, orderRasterCandidates } from "./imageFormats";
 
-/** Poster/still ladder used for ~155 CSS-px TV cards (× DPR ≈ 300–500). */
+/**
+ * Width rungs must exist in the server ladder (internal/artworkkey.VariantWidths),
+ * otherwise the request 404s and the card falls back to a slower candidate:
+ *   poster / still / profile -> w500, w300
+ *   backdrop                 -> w1920, w1280, w300
+ *   logo                     -> w500
+ */
+
+/** Poster cards (~155 CSS-px design width). */
 export const POSTER_WIDTH = 300;
-/** Landscape / backdrop cards (~352 CSS-px). */
-export const LANDSCAPE_WIDTH = 500;
+/** Episode stills (~280 CSS-px, upscaled on 4K panels). */
+export const STILL_WIDTH = 500;
+/** Backdrop-fed landscape cards (~352 CSS-px); backdrops have no w500 rung. */
+export const BACKDROP_CARD_WIDTH = 300;
+/** Full-bleed hero backdrop — 1920 instead of the unbounded original. */
+export const BACKDROP_HERO_WIDTH = 1920;
 /** Title logos on detail hero. */
 export const LOGO_WIDTH = 500;
 
@@ -103,7 +115,7 @@ export function artworkSized(
   objectPath: string | null | undefined,
   width: number | null | undefined,
 ): string {
-  const trimmed = objectPath?.trim() ?? "";
+  const trimmed = typeof objectPath === "string" ? objectPath.trim() : "";
   if (!trimmed) return "";
   if (width == null || !Number.isFinite(width) || width <= 0) return trimmed;
   return artworkWidthVariant(trimmed, width) || trimmed;
@@ -124,6 +136,29 @@ export function artworkCandidates(objectPath: string | null | undefined): string
   const avif = webPAVIFSibling(trimmed);
   const png = webPPNGSibling(trimmed);
   return orderRasterCandidates({ avif, webp: trimmed, png }, getImageFormats());
+}
+
+/**
+ * Candidates for a width-sized request, with the unsized ladder appended.
+ * A width rung the server never generated (or a variant pruned by GC) then
+ * degrades to the canonical artwork instead of showing a permanent placeholder.
+ */
+export function artworkSizedCandidates(
+  objectPath: string | null | undefined,
+  width: number | null | undefined,
+): string[] {
+  const trimmed = objectPath?.trim() ?? "";
+  if (!trimmed) return [];
+  const sized = artworkSized(trimmed, width);
+  if (sized === trimmed) return artworkCandidates(trimmed);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const url of [...artworkCandidates(sized), ...artworkCandidates(trimmed)]) {
+    if (seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
 }
 
 /** Best immediate artwork URL without trial-and-error format probing. */
