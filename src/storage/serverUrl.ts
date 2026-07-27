@@ -1,8 +1,6 @@
 import { normalizeServerUrl } from "./persist";
 
-export type ValidatedServerUrl =
-  | { ok: true; url: string }
-  | { ok: false; message: string };
+export type ValidatedServerUrl = { ok: true; url: string } | { ok: false; message: string };
 
 function isDigits(value: string): boolean {
   if (value.length === 0) return false;
@@ -59,7 +57,12 @@ export function isPrivateOrLocalHost(hostPart: string): boolean {
   // IPv6 literals (URL.hostname strips brackets).
   if (host.includes(":")) {
     // Link-local: fe80::/10  → fe8*, fe9*, fea*, feb*
-    return host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb");
+    return (
+      host.startsWith("fe8") ||
+      host.startsWith("fe9") ||
+      host.startsWith("fea") ||
+      host.startsWith("feb")
+    );
   }
 
   return false;
@@ -106,4 +109,3 @@ export function validateServerUrl(raw: string): ValidatedServerUrl {
 
   return { ok: true, url: trimmed };
 }
-

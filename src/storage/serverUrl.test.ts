@@ -78,4 +78,3 @@ describe("validateServerUrl", () => {
     expect(validateServerUrl("https://?server=x").ok).toBe(false);
   });
 });
-

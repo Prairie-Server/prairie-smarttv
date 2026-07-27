@@ -43,7 +43,8 @@ export function loadSession(
     // If we find legacy token fields in the session blob, migrate them into
     // sessionStorage for this runtime, then purge localStorage.
     const legacyAccessToken = typeof parsed.accessToken === "string" ? parsed.accessToken : "";
-    const legacyProfileToken = typeof parsed.profileToken === "string" ? parsed.profileToken : undefined;
+    const legacyProfileToken =
+      typeof parsed.profileToken === "string" ? parsed.profileToken : undefined;
 
     if (typeof parsed.accessToken === "string" || typeof parsed.profileToken === "string") {
       storage.setItem(
