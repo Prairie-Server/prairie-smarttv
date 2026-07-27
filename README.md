@@ -9,12 +9,12 @@ AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first
 - Connect to a Prairie server (username / password)
 - **Multi-server registry** + **LAN discovery** (`GET /api/v1/health` probes; Scan LAN / Servers)
 - **Profile picker** (PIN unlock when required)
-- **Home** rails from `/api/v1/home/sections`
-- **Libraries** browse with pagination (`/api/v1/user/libraries` + `/api/v1/catalog`)
-- **Collections** (library + personal) → catalog items
-- **Search** across the catalog
+- **Home** rails from `/api/v1/home/sections` with featured hero + continue-watching landscape cards
+- **Libraries** browse with sort chips, series/episode filter, pagination (`/api/v1/user/libraries` + `/api/v1/catalog`)
+- **Collections** (library + personal) → catalog items with load-more
+- **Search** across the catalog with pagination
 - **Live TV** channel list + guide now/next (tab hidden when the server has no enabled channels)
-- **Item detail** → seasons/episodes → Play via `/api/v1/watch/{id}` + `/playback/start` with resume
+- **Item detail** matching web/TV actions: Play/Resume/Start Over, favorite/watchlist/watched, seasons/episodes, cast, extras, details, more-like-this → Play via `/api/v1/watch/{id}` + `/playback/start` with resume
 - **Player chrome**: play/pause, ±15s seek, scrub readout, progress reporting, audio track switch, client-side subtitle selection, session teardown on exit
 - **Subtitle styling**: size, text/background color, opacity, box/shadow/outline, position (persisted; HTML5/webOS `::cue` + Tizen AVPlay overlay)
 - **Upgrade-safe persistence**: session + settings + last server URL survive app updates; logout keeps last server URL for reconnect
@@ -115,9 +115,11 @@ Live TV uses `/api/v1/livetv/...` session start/release (not VOD `playback/start
 4. `GET /api/v1/user/libraries` · `GET /api/v1/catalog`
 5. `GET /api/v1/library/{id}/collections` · `GET /api/v1/collections`
 6. `GET /api/v1/catalog/items/{id}` · seasons/episodes · `GET /api/v1/watch/{id}`
-7. `POST /api/v1/playback/start` → play `stream_url`
-8. `POST /api/v1/playback/{id}/progress` · `PATCH …/audio` · `DELETE …/{id}`
-9. `GET /api/v1/livetv/channels` · `GET …/guide` · `POST …/channels/{id}/session` · `DELETE …/sessions/{id}`
+7. `PUT/DELETE /api/v1/favorites/{id}` · `PUT/DELETE /api/v1/watchlist/{id}` · `POST/DELETE /api/v1/watched/{id}`
+8. `GET /api/v1/recommendations/similar/{id}`
+9. `POST /api/v1/playback/start` → play `stream_url`
+10. `POST /api/v1/playback/{id}/progress` · `PATCH …/audio` · `DELETE …/{id}`
+11. `GET /api/v1/livetv/channels` · `GET …/guide` · `POST …/channels/{id}/session` · `DELETE …/sessions/{id}`
 
 Session auth stores non-secret identity (`serverUrl`, username, profile id/name) in the `prairie.session` localStorage blob, and access/profile tokens in dedicated localStorage keys so the signed-in profile survives TV app updates and cold launches. Packaged WebViews clear `sessionStorage` on exit, so tokens are not kept there.
 

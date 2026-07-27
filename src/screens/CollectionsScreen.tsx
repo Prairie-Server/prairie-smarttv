@@ -61,7 +61,38 @@ export function CollectionsScreen({ session, onOpenCollection }: CollectionsScre
         <h1 className="browse-title">Collections</h1>
         <p className="muted">Library franchises and personal lists.</p>
       </div>
-      {loading ? <p className="muted">Loading…</p> : null}
+      {loading ? (
+        <>
+          <MediaRow title="" skeleton>
+            {Array.from({ length: 8 }).map((_, index) => (
+              <PosterCard
+                key={`col-lib-skel-${index}`}
+                title=""
+                subtitle={null}
+                posterUrl={null}
+                disabled
+                onSelect={() => {
+                  // Disabled skeleton; no-op.
+                }}
+              />
+            ))}
+          </MediaRow>
+          <MediaRow title="" skeleton>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <PosterCard
+                key={`col-user-skel-${index}`}
+                title=""
+                subtitle={null}
+                posterUrl={null}
+                disabled
+                onSelect={() => {
+                  // Disabled skeleton; no-op.
+                }}
+              />
+            ))}
+          </MediaRow>
+        </>
+      ) : null}
       {error ? (
         <p className="form-error" role="alert">
           {error}

@@ -2,20 +2,32 @@ import { apiRequest } from "./client";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
+export interface MediaItemUserState {
+  played?: boolean;
+  is_favorite?: boolean;
+  in_watchlist?: boolean;
+}
+
 export interface CatalogItem {
   content_id: string;
   type: string;
   title: string;
   year?: number | null;
+  runtime?: number | null;
+  genres?: string[];
+  content_rating?: string | null;
+  rating_imdb?: number | null;
+  overview?: string | null;
   poster_url?: string | null;
   backdrop_url?: string | null;
-  overview?: string | null;
+  logo_url?: string | null;
   series_id?: string | null;
   series_title?: string | null;
   season_number?: number | null;
   episode_number?: number | null;
   position_seconds?: number | null;
   duration_seconds?: number | null;
+  user_state?: MediaItemUserState | null;
 }
 
 export interface CatalogResponse {
@@ -69,8 +81,87 @@ export async function fetchCatalog(
   };
 }
 
+export interface CastMember {
+  name: string;
+  character?: string;
+  order?: number;
+  person_id?: string;
+  photo_url?: string | null;
+}
+
+export interface CrewMember {
+  name: string;
+  job: string;
+  person_id?: string;
+  photo_url?: string | null;
+}
+
+export interface LeafUserData {
+  played?: boolean;
+  is_in_progress?: boolean;
+  position_seconds?: number | null;
+  duration_seconds?: number | null;
+  last_file_id?: number | null;
+}
+
+export interface ItemAudioTrack {
+  title?: string;
+  embedded_title?: string;
+  language?: string;
+  codec?: string;
+  layout?: string;
+  channels?: number;
+  default?: boolean;
+}
+
+export interface ItemSubtitleTrack {
+  index?: number;
+  language?: string;
+  codec?: string;
+  title?: string;
+  forced?: boolean;
+  default?: boolean;
+  hearing_impaired?: boolean;
+}
+
+export interface ItemVersion {
+  file_id: number;
+  resolution?: string | null;
+  codec_video?: string | null;
+  codec_audio?: string | null;
+  hdr?: boolean | null;
+  container?: string | null;
+  duration?: number | null;
+  audio_tracks?: ItemAudioTrack[];
+  subtitle_tracks?: ItemSubtitleTrack[];
+}
+
+export interface ItemExtra {
+  content_id: string;
+  kind: string;
+  title?: string;
+  duration_seconds?: number;
+  file_id?: number;
+}
+
 export interface ItemDetail extends CatalogItem {
-  versions?: Array<{ file_id: number }>;
+  tagline?: string | null;
+  rating_rt_critic?: number | null;
+  rating_rt_audience?: number | null;
+  cast?: CastMember[];
+  crew?: CrewMember[];
+  studios?: string[];
+  networks?: string[];
+  countries?: string[];
+  release_date?: string | null;
+  first_air_date?: string | null;
+  last_air_date?: string | null;
+  show_status?: string | null;
+  season_count?: number | null;
+  episode_count?: number | null;
+  user_data?: LeafUserData | null;
+  versions?: ItemVersion[];
+  extras?: ItemExtra[];
 }
 
 export async function fetchItemDetail(
@@ -84,10 +175,21 @@ export async function fetchItemDetail(
   );
 }
 
+export interface SeasonUserData {
+  played?: boolean;
+  watched_count?: number;
+  unplayed_count?: number;
+  in_progress_count?: number;
+}
+
 export interface SeasonSummary {
+  content_id?: string;
   season_number: number;
   episode_count?: number;
   title?: string | null;
+  is_specials?: boolean;
+  poster_url?: string | null;
+  user_data?: SeasonUserData | null;
 }
 
 export interface EpisodeSummary {
@@ -98,6 +200,9 @@ export interface EpisodeSummary {
   overview?: string | null;
   poster_url?: string | null;
   still_url?: string | null;
+  runtime?: number | null;
+  air_date?: string | null;
+  user_data?: LeafUserData | null;
 }
 
 export async function fetchSeasons(

@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { Check } from "lucide-react";
 import { ArtworkImage } from "./ArtworkImage";
 
 interface PosterCardProps {
@@ -6,6 +7,8 @@ interface PosterCardProps {
   subtitle?: string | null;
   posterUrl?: string | null;
   progress?: number | null;
+  watched?: boolean;
+  favorite?: boolean;
   onSelect: () => void;
   autoFocus?: boolean;
   disabled?: boolean;
@@ -19,6 +22,8 @@ export function PosterCard({
   subtitle,
   posterUrl,
   progress,
+  watched = false,
+  favorite = false,
   onSelect,
   autoFocus,
   disabled,
@@ -59,6 +64,12 @@ export function PosterCard({
         ) : (
           <div className="poster-card__placeholder">{title.slice(0, 1) || "\u00a0"}</div>
         )}
+        {watched ? (
+          <span className="poster-card__watched" title="Watched">
+            <Check size={16} strokeWidth={3} />
+          </span>
+        ) : null}
+        {favorite && !watched ? <span className="poster-card__favorite" title="Favorite" /> : null}
         {progress != null && progress > 0.02 && progress < 0.95 ? (
           <div className="poster-card__progress">
             <span style={{ width: `${Math.round(progress * 100)}%` }} />
