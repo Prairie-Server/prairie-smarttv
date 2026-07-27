@@ -2,7 +2,7 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="http://prairieserver.org/prairie-smarttv"
-        version="0.1.0"
+        version="0.1.1"
         viewmodes="maximized">
   <!-- Package id must be 10 alphanumeric chars (Tizen Studio / TV install rule). -->
   <!-- required_version is the install floor only — keep low like Litefin/Moonfin so Public Apps2Samsung certs work. -->
