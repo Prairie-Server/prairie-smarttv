@@ -241,10 +241,10 @@ button:focus,
 /* Server list / LAN discovery */
 .server-list-screen {
   position: relative;
-  display: grid;
-  gap: 1.25rem;
-  align-content: start;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
 }
 
 .server-list-atmosphere {
@@ -252,31 +252,44 @@ button:focus,
   inset: 0;
   background:
     linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
-    radial-gradient(circle at 20% 20%, rgba(80, 120, 170, 0.16), transparent 42%);
+    radial-gradient(circle at 50% 35%, rgba(80, 120, 170, 0.18), transparent 48%);
   animation: dusk-drift 14s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
-.server-list-hero {
+.server-list-stage {
   position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  width: min(920px, 100%);
+  display: grid;
+  gap: 1.25rem;
+  justify-items: center;
+  text-align: center;
+  padding-block: 0.5rem;
+}
+
+.server-list-hero {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  width: 100%;
 }
 
 .server-list-mark {
   display: block;
-  width: 96px;
-  height: 96px;
-  flex: 0 0 auto;
+  width: 112px;
+  height: 112px;
   border-radius: 0;
   object-fit: cover;
 }
 
 .server-list-hero__copy {
-  flex: 1 1 16rem;
-  min-width: 0;
+  display: grid;
+  justify-items: center;
+  width: min(36rem, 100%);
+}
+
+.server-list-hero__copy .lede {
+  margin-inline: auto;
 }
 
 .server-list-header {
@@ -288,23 +301,23 @@ button:focus,
 }
 
 .server-list-status {
-  position: relative;
   margin: 0;
   color: var(--prairie-amber);
   font-weight: 600;
 }
 
 .server-list-actions {
-  position: relative;
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.75rem;
 }
 
 .server-list-section {
-  position: relative;
   display: grid;
   gap: 0.75rem;
+  width: 100%;
+  text-align: left;
 }
 
 .server-list-section__title {
@@ -314,12 +327,17 @@ button:focus,
   text-transform: uppercase;
   color: var(--prairie-muted);
   font-weight: 600;
+  text-align: center;
 }
 
 .server-list-grid {
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.server-list-empty {
+  margin: 0;
 }
 
 .server-card {
