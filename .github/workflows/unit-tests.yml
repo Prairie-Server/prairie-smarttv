@@ -36,7 +36,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Format check
+      - name: Oxfmt check
         run: npm run format:check
 
       - name: Typecheck and unit tests with coverage
