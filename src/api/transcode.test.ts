@@ -5,7 +5,9 @@ import {
   needsHlsBootstrap,
   preparePlayableSession,
   startTranscode,
+  TranscodeStartupTimeoutError,
 } from "./transcode";
+import { waitForHlsManifest } from "../platform/tizen/waitForHlsManifest";
 import type { PlaybackSessionResponse } from "../player/types";
 import type { PrairieSession } from "../storage/session";
 
@@ -46,6 +48,30 @@ function manifestResponse(overrides: Record<string, unknown> = {}) {
     }),
     { status: 200 },
   );
+}
+
+const READY_PLAYLIST = "#EXTM3U\n#EXTINF:2.0,\nsegment/seg_00000.ts\n";
+
+/** Fetch mock that answers start + readiness polls for HLS bootstrap. */
+function hlsReadyFetch(
+  startHandler: (url: string, init?: RequestInit) => Response | Promise<Response>,
+) {
+  return vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes("/playback/transcode/start")) {
+      return startHandler(href, init);
+    }
+    if (href.includes("/progress")) {
+      return new Response(null, { status: 204 });
+    }
+    if (href.includes("master.m3u8") || href.includes(".m3u8")) {
+      return new Response(READY_PLAYLIST, { status: 200 });
+    }
+    if (href.includes("seg_") || init?.method === "HEAD") {
+      return new Response(null, { status: 200 });
+    }
+    return new Response("unexpected", { status: 500 });
+  });
 }
 
 describe("needsHlsBootstrap", () => {
@@ -132,8 +158,7 @@ describe("preparePlayableSession", () => {
   });
 
   it("bootstraps HLS and plays manifest_url for remux", async () => {
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(url)).toContain("/api/v1/playback/transcode/start");
+    const fetchImpl = hlsReadyFetch(async (_url, init) => {
       expect(init?.method).toBe("POST");
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("copy");
@@ -150,7 +175,7 @@ describe("preparePlayableSession", () => {
   });
 
   it("remuxes with AAC audio when playback_info.transcode_audio is set", async () => {
-    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = hlsReadyFetch(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("copy");
       expect(body.target_codec_audio).toBe("aac");
@@ -167,7 +192,7 @@ describe("preparePlayableSession", () => {
   });
 
   it("bootstraps full encode for transcode and marks can_seek_anywhere", async () => {
-    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = hlsReadyFetch(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("h264");
       return manifestResponse({
@@ -189,7 +214,7 @@ describe("preparePlayableSession", () => {
 
   it("falls back to h264 encode when remux copy is rejected with 422", async () => {
     const bodies: unknown[] = [];
-    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = hlsReadyFetch(async (_url, init) => {
       bodies.push(JSON.parse(String(init?.body)));
       if (bodies.length === 1) {
         return new Response(JSON.stringify({ error: { message: "no_alternate" } }), {
@@ -203,7 +228,6 @@ describe("preparePlayableSession", () => {
     });
 
     const prepared = await preparePlayableSession(session, started("remux"), 8, fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(bodies[0]).toMatchObject({ target_codec_video: "copy" });
     expect(bodies[1]).toMatchObject({
       target_codec_video: "h264",
@@ -229,7 +253,7 @@ describe("preparePlayableSession", () => {
   });
 
   it("uses seekSeconds when player_start_seconds is omitted", async () => {
-    const fetchImpl = vi.fn(async () =>
+    const fetchImpl = hlsReadyFetch(async () =>
       manifestResponse({
         player_start_seconds: undefined,
         can_seek_anywhere: undefined,
@@ -241,5 +265,25 @@ describe("preparePlayableSession", () => {
     const prepared = await preparePlayableSession(session, base, 44, fetchImpl);
     expect(prepared.playerStartSeconds).toBe(44);
     expect(prepared.session.position).toBe(12);
+  });
+
+  it("surfaces TranscodeStartupTimeoutError when the first segment never appears", async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes(".m3u8")) {
+        return new Response(READY_PLAYLIST, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    await expect(
+      waitForHlsManifest("https://prairie.example/api/v1/playback/transcode/s1/master.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 30,
+        requireSegment: true,
+        throwOnTimeout: true,
+      }),
+    ).rejects.toBeInstanceOf(TranscodeStartupTimeoutError);
   });
 });
