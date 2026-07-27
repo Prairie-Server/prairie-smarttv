@@ -8,7 +8,6 @@
 import { renameSync, writeFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import prettier from "prettier";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -25,12 +24,8 @@ function writeAtomic(path, contents) {
   renameSync(tmp, path);
 }
 
-async function formatJson(path, value) {
-  const raw = `${JSON.stringify(value, null, 2)}\n`;
-  return prettier.format(raw, {
-    ...(await prettier.resolveConfig(path)),
-    filepath: path,
-  });
+function formatJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function stampConfigXml(configPath) {
@@ -56,15 +51,10 @@ const nextTizenLegacyConfig = stampConfigXml(tizenLegacyConfigPath);
 pkg.version = version;
 appinfo.version = version;
 
-const [nextPkg, nextAppinfo] = await Promise.all([
-  formatJson(pkgPath, pkg),
-  formatJson(appinfoPath, appinfo),
-]);
-
-writeAtomic(pkgPath, nextPkg);
+writeAtomic(pkgPath, formatJson(pkg));
 writeAtomic(tizenConfigPath, nextTizenConfig);
 writeAtomic(tizenLegacyConfigPath, nextTizenLegacyConfig);
-writeAtomic(appinfoPath, nextAppinfo);
+writeAtomic(appinfoPath, formatJson(appinfo));
 
 console.log(
   `Stamped version ${version} into package.json, tizen/config.xml, tizen-legacy/config.xml, and appinfo.json`,
