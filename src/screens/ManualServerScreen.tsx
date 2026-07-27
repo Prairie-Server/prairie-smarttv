@@ -23,32 +23,32 @@ export function ManualServerScreen({
     if (busy) return;
     setError(null);
 
-    const rawCandidates = buildManualUrlCandidates(serverUrl);
-    if (!rawCandidates.length) {
+    const candidates = buildManualUrlCandidates(serverUrl);
+    if (!candidates.length) {
       setError("Enter a valid Prairie server address");
       return;
     }
 
-    // Apply the public-HTTP restriction while still allowing bare host:port
-    // entries to try https first, then http (for LAN).
-    const candidates: string[] = [];
-    let firstValidationError: string | null = null;
-    for (const candidate of rawCandidates) {
+    // Validate any fully-qualified candidate before probing (incl. cleartext policy).
+    const allowed: string[] = [];
+    for (const candidate of candidates) {
       const validated = validateServerUrl(candidate);
-      if (validated.ok) {
-        candidates.push(validated.url);
-      } else if (!firstValidationError) {
-        firstValidationError = validated.message;
+      if (!validated.ok) {
+        // Keep the first actionable policy error for the user.
+        if (allowed.length === 0) {
+          setError(validated.message);
+        }
+        continue;
       }
+      allowed.push(validated.url);
     }
-    if (!candidates.length) {
-      setError(firstValidationError ?? "Enter a valid Prairie server address");
+    if (!allowed.length) {
       return;
     }
 
     setBusy(true);
     try {
-      const result = await checkServerCandidates(candidates);
+      const result = await checkServerCandidates(allowed);
       if (!result.ok) {
         setError(result.message);
         return;

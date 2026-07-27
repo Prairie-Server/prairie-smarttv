@@ -61,6 +61,7 @@ describe("session persistence", () => {
         refreshToken: "legacy-ref",
         username: "ada",
         profileId: "p1",
+        profileToken: "legacy-pin",
       }),
     });
     const tokensStorage = memoryStorage();
@@ -69,12 +70,15 @@ describe("session persistence", () => {
       accessToken: "tok",
       username: "ada",
       profileId: "p1",
-      profileToken: undefined,
+      profileToken: "legacy-pin",
       profileName: undefined,
     });
+    expect(tokensStorage.getItem("prairie.session.accessToken")).toBe("tok");
+    expect(tokensStorage.getItem("prairie.session.profileToken")).toBe("legacy-pin");
     const raw = JSON.parse(storage.getItem("prairie.session")!);
     expect(raw.accessToken).toBeUndefined();
     expect(raw.refreshToken).toBeUndefined();
+    expect(raw.profileToken).toBeUndefined();
   });
 
   it("migrates a legacy profileToken into sessionStorage", () => {
@@ -124,6 +128,22 @@ describe("session persistence", () => {
     ).toBeNull();
     expect(
       loadSession(memoryStorage({ "prairie.session": "{not-json" }), memoryStorage()),
+    ).toBeNull();
+  });
+
+  it("returns null when no access token is available after migration", () => {
+    expect(
+      loadSession(
+        memoryStorage({
+          "prairie.session": JSON.stringify({
+            serverUrl: "https://prairie.example",
+            username: "ada",
+            profileId: "p1",
+            profileToken: "pin-only",
+          }),
+        }),
+        memoryStorage(),
+      ),
     ).toBeNull();
   });
 

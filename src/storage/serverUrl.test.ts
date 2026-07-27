@@ -25,6 +25,22 @@ describe("isPrivateOrLocalHost", () => {
     expect(isPrivateOrLocalHost("172.32.0.2")).toBe(false);
     expect(isPrivateOrLocalHost("10.attacker.example")).toBe(false);
   });
+
+  it("covers IPv4 literal edge cases and bracketed IPv6", () => {
+    expect(isPrivateOrLocalHost("")).toBe(false);
+    expect(isPrivateOrLocalHost("   ")).toBe(false);
+    expect(isPrivateOrLocalHost("[]")).toBe(false);
+    expect(isPrivateOrLocalHost("[::1]")).toBe(true);
+    expect(isPrivateOrLocalHost("[fe90::1]")).toBe(true);
+    expect(isPrivateOrLocalHost("[fea0::1]")).toBe(true);
+    expect(isPrivateOrLocalHost("[feb0::1]")).toBe(true);
+    expect(isPrivateOrLocalHost("[2001:db8::1]")).toBe(false);
+    expect(isPrivateOrLocalHost("1.2.3")).toBe(false);
+    expect(isPrivateOrLocalHost("1..2.3")).toBe(false);
+    expect(isPrivateOrLocalHost("1.2.3.256")).toBe(false);
+    expect(isPrivateOrLocalHost("1.2.3.a")).toBe(false);
+    expect(isPrivateOrLocalHost("1.2.3.9999")).toBe(false);
+  });
 });
 
 describe("validateServerUrl", () => {
@@ -38,6 +54,8 @@ describe("validateServerUrl", () => {
     const result = validateServerUrl("https://user:pass@prairie.example.com");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toMatch(/credentials/i);
+    expect(validateServerUrl("https://user@prairie.example.com").ok).toBe(false);
+    expect(validateServerUrl("https://:pass@prairie.example.com").ok).toBe(false);
   });
 
   it("allows HTTP only for private/LAN hosts", () => {
@@ -78,23 +96,40 @@ describe("validateServerUrl", () => {
     expect(validateServerUrl("https://?server=x").ok).toBe(false);
   });
 
-  it("rejects empty, non-http(s), and empty-host inputs", () => {
-    const empty = validateServerUrl("   ");
-    expect(empty.ok).toBe(false);
-    if (!empty.ok) expect(empty.message).toMatch(/Prairie server URL/i);
-
-    const ftp = validateServerUrl("ftp://prairie.example.com");
-    expect(ftp.ok).toBe(false);
-    if (!ftp.ok) expect(ftp.message).toMatch(/http or https/i);
-
-    // URL may parse, but hostname can still be empty for some authority-less forms.
-    const noHost = validateServerUrl("https:///");
-    expect(noHost.ok).toBe(false);
+  it("rejects empty, whitespace-only, and non-http(s) URLs", () => {
+    expect(validateServerUrl("")).toEqual({
+      ok: false,
+      message: "Enter your Prairie server URL",
+    });
+    expect(validateServerUrl("   ")).toEqual({
+      ok: false,
+      message: "Enter your Prairie server URL",
+    });
+    expect(validateServerUrl("ftp://prairie.example")).toEqual({
+      ok: false,
+      message: "Server URL must use http or https",
+    });
+    expect(validateServerUrl("file:///tmp/prairie")).toEqual({
+      ok: false,
+      message: "Server URL must use http or https",
+    });
   });
 
-  it("treats bracketed IPv6 hosts as private/local when applicable", () => {
-    expect(isPrivateOrLocalHost("[::1]")).toBe(true);
-    expect(isPrivateOrLocalHost("[fe80::abcd]")).toBe(true);
-    expect(isPrivateOrLocalHost("")).toBe(false);
+  it("rejects URLs that parse without a hostname", () => {
+    const RealURL = globalThis.URL;
+    globalThis.URL = class extends RealURL {
+      constructor(url: string | URL, base?: string | URL) {
+        super(url as string, base);
+        Object.defineProperty(this, "hostname", { get: () => "" });
+      }
+    } as typeof URL;
+    try {
+      expect(validateServerUrl("https://prairie.example")).toEqual({
+        ok: false,
+        message: "Server URL must be a valid http(s) address",
+      });
+    } finally {
+      globalThis.URL = RealURL;
+    }
   });
 });
