@@ -4,6 +4,8 @@ import {
   listProfiles,
   login,
   pickDefaultProfile,
+  pollDeviceLogin,
+  startDeviceLogin,
   verifyProfilePin,
 } from "./auth";
 
@@ -65,6 +67,42 @@ describe("auth API helpers", () => {
     );
     expect(result.access_token).toBe("a");
     expect(result.user.username).toBe("ada");
+  });
+
+  it("starts and polls device login", async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/auth/device/start")) {
+        expect(init?.method).toBe("POST");
+        return new Response(
+          JSON.stringify({
+            device_code: "secret",
+            user_code: "ABCD-EFGH",
+            match_code: "amber harbor",
+            verification_uri: "https://prairie.example/activate",
+            verification_uri_complete: "https://prairie.example/activate?token=t",
+            expires_at: "2026-07-27T00:00:00Z",
+            expires_in: 600,
+            interval: 3,
+            device_name: "Prairie Smart TV",
+            device_platform: "tizen",
+          }),
+          { status: 201 },
+        );
+      }
+      expect(href).toContain("/auth/device/poll");
+      expect(JSON.parse(String(init?.body))).toEqual({ device_code: "secret" });
+      return new Response(JSON.stringify({ status: "pending", poll_after: 3 }), { status: 200 });
+    });
+
+    const start = await startDeviceLogin(
+      "https://prairie.example",
+      { device_name: "Prairie Smart TV", device_platform: "tizen" },
+      fetchImpl,
+    );
+    expect(start.user_code).toBe("ABCD-EFGH");
+    const poll = await pollDeviceLogin("https://prairie.example", "secret", fetchImpl);
+    expect(poll.status).toBe("pending");
   });
 
   it("lists profiles and defaults missing arrays", async () => {
