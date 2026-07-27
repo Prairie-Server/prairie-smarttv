@@ -62,6 +62,16 @@ function resolveSubtitleUrl(
   return buildStreamUrl(serverUrl, track.url, accessToken);
 }
 
+function sourceResolutionForFile(
+  detail: WatchDetail | null | undefined,
+  fileId: number,
+): string | undefined {
+  if (!detail) return undefined;
+  return (
+    selectFileVersion(detail, fileId)?.resolution ?? detail.versions[0]?.resolution ?? undefined
+  );
+}
+
 export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const settings = useMemo(() => loadPlaybackSettings(), []);
   const platform = useMemo(() => detectPlatform(), []);
@@ -150,9 +160,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       hlsFallbackTriedRef.current = false;
       pendingResumeRef.current = launch.startPositionSeconds ?? null;
       try {
-        if (!launch.watch && launch.contentId) {
-          const detail = await fetchWatchDetail(session, launch.contentId);
-          if (!cancelled) setWatch(detail);
+        let watchDetail = launch.watch ?? null;
+        if (!watchDetail && launch.contentId) {
+          watchDetail = await fetchWatchDetail(session, launch.contentId);
+          if (!cancelled) setWatch(watchDetail);
         }
         // Advertise probed codecs and let Prairie choose Direct / Remux(+AAC) /
         // Transcode. Do not force full video transcode just because audio is TrueHD.
@@ -178,7 +189,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         const seekAt = launch.startPositionSeconds ?? started.position ?? 0;
         let prepared;
         try {
-          prepared = await preparePlayableSession(session, started, seekAt);
+          prepared = await preparePlayableSession(session, started, seekAt, {
+            sourceResolution: sourceResolutionForFile(watchDetail, started.media_file_id),
+            maxResolution: deviceCaps.max_resolution,
+          });
         } catch (prepErr) {
           void stopPlaybackSession(session, started.session_id).catch(() => undefined);
           throw prepErr;
@@ -297,7 +311,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         maxResolution: deviceCaps.max_resolution,
         hdr: deviceCaps.hdr,
       });
-      const prepared = await preparePlayableSession(session, started, seekAt);
+      const prepared = await preparePlayableSession(session, started, seekAt, {
+        sourceResolution: sourceResolutionForFile(watch, started.media_file_id),
+        maxResolution: deviceCaps.max_resolution,
+      });
       if (exitedRef.current) {
         void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
         return false;
@@ -363,7 +380,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         maxResolution: deviceCaps.max_resolution,
         hdr: deviceCaps.hdr,
       });
-      const prepared = await preparePlayableSession(session, started, seekAt);
+      const prepared = await preparePlayableSession(session, started, seekAt, {
+        sourceResolution: sourceResolutionForFile(watch, started.media_file_id),
+        maxResolution: deviceCaps.max_resolution,
+      });
       if (exitedRef.current) {
         void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
         return;
@@ -487,7 +507,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         position,
       };
       const seekAt = updated.player_start_seconds ?? position;
-      const prepared = await preparePlayableSession(session, nextSession, seekAt);
+      const prepared = await preparePlayableSession(session, nextSession, seekAt, {
+        sourceResolution: sourceResolutionForFile(watch, nextSession.media_file_id),
+        maxResolution: deviceCaps.max_resolution,
+      });
       setPlayback(prepared.session);
       pendingResumeRef.current = prepared.playerStartSeconds;
       setStreamUrl(prepared.streamUrl);
