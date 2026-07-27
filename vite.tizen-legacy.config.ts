@@ -29,6 +29,11 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  resolve: {
+    alias: {
+      "hls.js": join(rootDir, "node_modules/hls.js/dist/hls.light.mjs"),
+    },
+  },
   build: {
     outDir: "dist-tizen-legacy-web",
     emptyOutDir: true,

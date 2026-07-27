@@ -5,7 +5,12 @@ vi.mock("./avplay", () => ({
 }));
 
 import { isAvPlayAvailable } from "./avplay";
-import { probeSupportedAudioCodecs, probeTvPlaybackCapabilities } from "./deviceCapabilities";
+import {
+  probeAv1Support,
+  probeSupportedAudioCodecs,
+  probeTvPlaybackCapabilities,
+  tizenPlatformVersion,
+} from "./deviceCapabilities";
 
 function stubWindow(partial: {
   innerWidth: number;
@@ -166,5 +171,120 @@ describe("probeTvPlaybackCapabilities", () => {
     ]);
     expect(probeSupportedAudioCodecs({ tizenMajor: 3, systemInfo: {} })).toContain("dts");
     expect(probeSupportedAudioCodecs({ tizenMajor: 3, systemInfo: null })).toContain("dts");
+  });
+});
+
+describe("AV1 advertisement", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(isAvPlayAvailable).mockReturnValue(false);
+  });
+
+  it("advertises av1 when the platform probe says the panel decodes it", () => {
+    // Without this the server always re-encodes AV1 sources to h264.
+    expect(
+      probeAv1Support({
+        systemInfo: { isSupportedVideoCodec: (codec) => codec === "AV1" },
+        tizenVersion: 6.5,
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts the alternate AV01 spelling", () => {
+    expect(
+      probeAv1Support({
+        systemInfo: { isSupportedVideoCodec: (codec) => codec === "AV01" },
+        tizenVersion: 6.0,
+      }),
+    ).toBe(true);
+  });
+
+  it("trusts a negative platform probe", () => {
+    expect(
+      probeAv1Support({
+        systemInfo: { isSupportedVideoCodec: () => false },
+        tizenVersion: 6.5,
+        canPlayAv1: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses AV1 on panels older than Tizen 5.5", () => {
+    expect(
+      probeAv1Support({
+        systemInfo: { isSupportedVideoCodec: () => true },
+        tizenVersion: 5.0,
+      }),
+    ).toBe(false);
+  });
+
+  it("falls back to media capabilities when the probe is missing", () => {
+    expect(probeAv1Support({ systemInfo: {}, tizenVersion: 6.5, canPlayAv1: true })).toBe(true);
+    expect(probeAv1Support({ systemInfo: null, tizenVersion: 6.5, canPlayAv1: true })).toBe(true);
+    expect(probeAv1Support({ systemInfo: null, tizenVersion: 6.5, canPlayAv1: false })).toBe(false);
+  });
+
+  it("stays out of the list off-device where the version is unknown", () => {
+    expect(probeAv1Support({ systemInfo: null, tizenVersion: 0, canPlayAv1: true })).toBe(false);
+  });
+
+  it("survives probes that throw", () => {
+    expect(
+      probeAv1Support({
+        systemInfo: {
+          isSupportedVideoCodec: () => {
+            throw new Error("not implemented");
+          },
+        },
+        tizenVersion: 6.5,
+        canPlayAv1: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("includes av1 in the advertised codec list", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
+    vi.stubGlobal("screen", { width: 3840, height: 2160 });
+    stubWindow({ innerWidth: 1920, innerHeight: 1080 });
+    const caps = probeTvPlaybackCapabilities({
+      avplayAvailable: true,
+      systemInfo: { isSupportedVideoCodec: (codec) => codec === "AV1" || codec === "HEVC" },
+      tizenVersion: 6.5,
+    });
+    expect(caps.codecs_video).toEqual(["h264", "hevc", "av1"]);
+  });
+
+  it("keeps hevc from the version heuristic when the video probe is absent", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
+    vi.stubGlobal("screen", { width: 1920, height: 1080 });
+    stubWindow({ innerWidth: 1920, innerHeight: 1080 });
+    const caps = probeTvPlaybackCapabilities({
+      avplayAvailable: true,
+      systemInfo: {},
+      tizenVersion: 6.5,
+      canPlayAv1: false,
+    });
+    expect(caps.codecs_video).toEqual(["h264", "hevc"]);
+  });
+
+  it("drops hevc when the platform probe denies it", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
+    vi.stubGlobal("screen", { width: 1920, height: 1080 });
+    stubWindow({ innerWidth: 1920, innerHeight: 1080 });
+    const caps = probeTvPlaybackCapabilities({
+      avplayAvailable: true,
+      systemInfo: { isSupportedVideoCodec: () => false },
+      tizenVersion: 6.5,
+    });
+    expect(caps.codecs_video).toEqual(["h264"]);
+  });
+});
+
+describe("tizenPlatformVersion", () => {
+  it("parses major and minor versions", () => {
+    expect(tizenPlatformVersion("Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5)")).toBe(6.5);
+    expect(tizenPlatformVersion("Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5)")).toBe(5.5);
+    expect(tizenPlatformVersion("Tizen/4.0")).toBe(4);
+    expect(tizenPlatformVersion("Mozilla/5.0 (Macintosh)")).toBe(0);
   });
 });

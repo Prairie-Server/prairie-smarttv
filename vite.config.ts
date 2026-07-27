@@ -15,6 +15,12 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  resolve: {
+    // TV packages ship the light build: MSE + HLS demux without DRM/CMCD/EME.
+    alias: {
+      "hls.js": join(rootDir, "node_modules/hls.js/dist/hls.light.mjs"),
+    },
+  },
   build: {
     outDir: "dist",
     // Sourcemaps stay out of the TV package; it is read from flash on launch.
