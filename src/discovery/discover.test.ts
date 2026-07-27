@@ -74,10 +74,9 @@ describe("discover", () => {
     expect(urls).toContain("https://prairie.local:8443");
     expect(urls.filter((url) => url === "http://prairie.local:8080")).toHaveLength(1);
 
-    expect(collectScanCidrs([" 10.0.0.0/24 ", "", "192.168.1.0/24"], ["192.168.1.20", "bad"])).toEqual([
-      "192.168.1.0/24",
-      ...COMMON_CIDRS.filter((cidr) => cidr !== "192.168.1.0/24"),
-    ]);
+    expect(
+      collectScanCidrs([" 10.0.0.0/24 ", "", "192.168.1.0/24"], ["192.168.1.20", "bad"]),
+    ).toEqual(["192.168.1.0/24", ...COMMON_CIDRS.filter((cidr) => cidr !== "192.168.1.0/24")]);
   });
 
   it("expands a /24 on the Prairie listen port only for deep scan", () => {
