@@ -56,8 +56,11 @@ export function displayName(entry: Pick<ServerEntry, "url" | "fetchedName">): st
   return name || entry.url;
 }
 
-export function loadRegistry(storage: Pick<Storage, "getItem"> = localStorage): ServerRegistry {
+export function loadRegistry(
+  storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+): ServerRegistry {
   const registry = emptyRegistry();
+  let hadPersistedTokens = false;
   try {
     const raw = storage.getItem(SERVER_REGISTRY_KEY);
     if (!raw?.trim()) return registry;
@@ -68,7 +71,13 @@ export function loadRegistry(storage: Pick<Storage, "getItem"> = localStorage): 
     if (Array.isArray(parsed.entries)) {
       for (const entry of parsed.entries) {
         const normalized = normalizeEntry(entry);
-        if (normalized) registry.entries.push(normalized);
+        if (normalized) {
+          // Token material must never persist in localStorage.
+          if (normalized.accessToken || normalized.profileToken) hadPersistedTokens = true;
+          normalized.accessToken = "";
+          normalized.profileToken = "";
+          registry.entries.push(normalized);
+        }
       }
     }
     if (Array.isArray(parsed.scanCidrs)) {
@@ -79,6 +88,12 @@ export function loadRegistry(storage: Pick<Storage, "getItem"> = localStorage): 
   } catch {
     /* corrupt blob → empty registry */
   }
+
+  if (hadPersistedTokens) {
+    // Purge legacy token material from localStorage.
+    saveRegistry(registry, storage);
+  }
+
   return registry;
 }
 
@@ -93,7 +108,12 @@ export function saveRegistry(
   };
   for (const entry of registry.entries) {
     const normalized = normalizeEntry(entry);
-    if (normalized) payload.entries.push(normalized);
+    if (normalized) {
+      // Never persist token material in localStorage.
+      normalized.accessToken = "";
+      normalized.profileToken = "";
+      payload.entries.push(normalized);
+    }
   }
   storage.setItem(SERVER_REGISTRY_KEY, JSON.stringify(payload));
 }
@@ -208,8 +228,6 @@ export function clearTokens(registry: ServerRegistry, serverId: string): ServerR
     ...registry.entries[idx]!,
     accessToken: "",
     profileToken: "",
-    profileId: "",
-    profileName: "",
   };
   return registry;
 }

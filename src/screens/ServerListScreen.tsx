@@ -13,8 +13,8 @@ import {
 import { loadLastServerUrl } from "../storage/persist";
 
 export interface ServerListScreenProps {
-  onSelectSaved: (entry: ServerEntry) => void;
-  onSelectDiscovery: (hit: DiscoveryHit) => void;
+  onSelectSaved: (entry: ServerEntry) => void | Promise<void>;
+  onSelectDiscovery: (hit: DiscoveryHit) => void | Promise<void>;
   onAddManual: () => void;
   onBack?: () => void;
   /** Start a LAN scan when the screen mounts (default true — launch behavior). */
@@ -77,6 +77,7 @@ export function ServerListScreen({
   const [registry, setRegistry] = useState(() => loadRegistry());
   const [discovered, setDiscovered] = useState<DiscoveryHit[]>([]);
   const [busy, setBusy] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorText, setErrorText] = useState("");
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -86,6 +87,7 @@ export function ServerListScreen({
   const saved = sortedEntries(registry);
   const savedUrls = new Set(saved.map((e) => e.url));
   const freshHits = discovered.filter((hit) => !savedUrls.has(hit.url));
+  const controlsLocked = busy || connecting;
 
   useEffect(() => {
     return () => {
@@ -159,11 +161,27 @@ export function ServerListScreen({
   }
 
   function handleRemove() {
-    if (!focusedId) return;
+    if (!focusedId || controlsLocked) return;
     const next = removeServer(loadRegistry(), focusedId);
     saveRegistry(next);
     setRegistry(next);
     setFocusedId(null);
+  }
+
+  async function runSelect(label: string, action: () => void | Promise<void>) {
+    if (controlsLocked) return;
+    abortRef.current?.abort();
+    setConnecting(true);
+    setErrorText("");
+    setStatusText(`Connecting to ${label}…`);
+    try {
+      await action();
+    } catch (err) {
+      setErrorText(err instanceof Error ? err.message : "Could not reach that server.");
+      setStatusText("");
+    } finally {
+      setConnecting(false);
+    }
   }
 
   return (
@@ -201,15 +219,19 @@ export function ServerListScreen({
         <div className="server-list-actions">
           <FocusButton
             onClick={() => void startScan(true)}
-            disabled={busy}
+            disabled={controlsLocked}
             autoFocus={!saved.length}
           >
-            {busy ? "Scanning…" : "Scan again"}
+            {busy ? "Scanning…" : connecting ? "Connecting…" : "Scan again"}
           </FocusButton>
-          <FocusButton variant="ghost" onClick={onAddManual} disabled={busy}>
+          <FocusButton variant="ghost" onClick={onAddManual} disabled={controlsLocked}>
             Add manually
           </FocusButton>
-          <FocusButton variant="ghost" onClick={handleRemove} disabled={busy || !focusedId}>
+          <FocusButton
+            variant="ghost"
+            onClick={handleRemove}
+            disabled={controlsLocked || !focusedId}
+          >
             Remove
           </FocusButton>
         </div>
@@ -228,8 +250,8 @@ export function ServerListScreen({
                   }`}
                   autoFocus={index === 0}
                   onFocus={() => setFocusedId(entry.id)}
-                  onClick={() => onSelectSaved(entry)}
-                  disabled={busy}
+                  onClick={() => void runSelect(displayName(entry), () => onSelectSaved(entry))}
+                  disabled={controlsLocked}
                 >
                   <span className="server-card__name">{displayName(entry)}</span>
                   <span className="server-card__meta">
@@ -253,8 +275,10 @@ export function ServerListScreen({
                   type="button"
                   role="listitem"
                   className="server-card focusable"
-                  onClick={() => onSelectDiscovery(hit)}
-                  disabled={busy}
+                  onClick={() =>
+                    void runSelect(hit.serverName.trim() || hit.url, () => onSelectDiscovery(hit))
+                  }
+                  disabled={controlsLocked}
                 >
                   <span className="server-card__name">{hit.serverName.trim() || hit.url}</span>
                   <span className="server-card__meta">Found · {hit.url}</span>

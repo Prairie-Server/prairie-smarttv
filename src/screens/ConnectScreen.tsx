@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { fetchSetupStatus, login } from "../api/auth";
+import { networkFailureMessage } from "../api/checkServer";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
+import { validateServerUrl } from "../storage/serverUrl";
 import type { AuthTokens } from "../storage/session";
 
 interface ConnectScreenProps {
@@ -33,22 +35,12 @@ export function ConnectScreen({
     setError(null);
     setBusy(true);
     try {
-      if (!trimmedUrl) {
-        throw new Error("No server selected");
-      }
-      let parsed: URL;
-      try {
-        parsed = new URL(trimmedUrl);
-      } catch {
-        throw new Error("Server URL must be a valid http(s) address");
-      }
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new Error("Server URL must use http or https");
-      }
-      if (parsed.username || parsed.password) {
-        throw new Error("Server URL must not include credentials");
-      }
-      const setup = await fetchSetupStatus(trimmedUrl);
+      if (!trimmedUrl) throw new Error("No server selected");
+
+      const validated = validateServerUrl(trimmedUrl);
+      if (!validated.ok) throw new Error(validated.message);
+
+      const setup = await fetchSetupStatus(validated.url);
       if (setup.needs_setup) {
         // Do not echo the server URL here — the connect field already shows it,
         // and repeating it in an action prompt aids phishing of mistyped hosts.
@@ -56,19 +48,19 @@ export function ConnectScreen({
           "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.",
         );
       }
-      const auth = await login(trimmedUrl, { username: username.trim(), password });
+      const auth = await login(validated.url, { username: username.trim(), password });
       onAuthenticated({
-        serverUrl: trimmedUrl,
+        serverUrl: validated.url,
         accessToken: auth.access_token,
         username: auth.user.username,
       });
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else if (err instanceof Error) {
-        setError(err.message);
+      // Prefer ApiError bodies for auth/setup HTTP failures; remap transport
+      // errors ("Failed to fetch") so wrong http/https is actionable on TV.
+      if (err instanceof ApiError && err.code !== "timeout") {
+        setError(err.message || "Could not connect");
       } else {
-        setError("Could not connect");
+        setError(networkFailureMessage(err));
       }
     } finally {
       setBusy(false);
