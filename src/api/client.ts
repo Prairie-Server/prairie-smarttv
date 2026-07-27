@@ -1,4 +1,6 @@
 import { imageFormatsHeaderValue } from "../lib/imageFormats";
+import { refreshAccessToken } from "./auth";
+import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, updateSessionTokens } from "../storage/session";
 
 export class ApiError extends Error {
   status: number;
@@ -17,6 +19,7 @@ export class ApiError extends Error {
 export interface ApiClientOptions {
   serverUrl: string;
   accessToken?: string | null;
+  refreshToken?: string | null;
   /** Active household profile — required by most /api/v1 browse routes. */
   profileId?: string | null;
   /** PIN-verified profile token when the profile has a PIN. */
@@ -27,8 +30,11 @@ export interface ApiClientOptions {
   /**
    * Called when the server rejects the session (401, or 403 with auth codes).
    * Not invoked for auth/login so bad credentials do not recurse.
+   * Also skipped when a refresh token successfully renews the session.
    */
   onUnauthorized?: () => void;
+  /** Fired after a successful access-token refresh so React state can catch up. */
+  onTokensRefreshed?: (tokens: { accessToken: string; refreshToken?: string }) => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -43,6 +49,9 @@ const AUTH_FORBIDDEN_CODES = new Set([
   "session_expired",
 ]);
 
+/** Single-flight refresh so concurrent 401s share one round-trip. */
+let refreshInFlight: Promise<boolean> | null = null;
+
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.replace(/\/+$/, "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -52,7 +61,12 @@ function joinUrl(base: string, path: string): string {
 /** Paths that must not trigger onUnauthorized (bad login must not clear/loop). */
 export function isAuthLoginPath(path: string): boolean {
   const bare = path.split("?")[0]?.replace(/\/+$/, "") ?? "";
-  return bare === "/api/v1/auth/login" || bare.endsWith("/auth/login");
+  return (
+    bare === "/api/v1/auth/login" ||
+    bare.endsWith("/auth/login") ||
+    bare === "/api/v1/auth/refresh" ||
+    bare.endsWith("/auth/refresh")
+  );
 }
 
 function shouldNotifyUnauthorized(status: number, code?: string): boolean {
@@ -61,18 +75,60 @@ function shouldNotifyUnauthorized(status: number, code?: string): boolean {
   return false;
 }
 
-export async function apiRequest<T>(
+function readRefreshToken(options: ApiClientOptions): string | null {
+  if (options.refreshToken) return options.refreshToken;
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function tryRefreshSession(options: ApiClientOptions): Promise<boolean> {
+  const refreshToken = readRefreshToken(options);
+  if (!refreshToken) return false;
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const pair = await refreshAccessToken(options.serverUrl, refreshToken, options.fetchImpl);
+        if (!pair?.access_token) return false;
+        updateSessionTokens({
+          accessToken: pair.access_token,
+          refreshToken: pair.refresh_token,
+        });
+        try {
+          options.onTokensRefreshed?.({
+            accessToken: pair.access_token,
+            refreshToken: pair.refresh_token,
+          });
+        } catch {
+          /* ignore listener errors */
+        }
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+
+  return refreshInFlight;
+}
+
+function buildHeaders(
   options: ApiClientOptions,
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  init: RequestInit,
+  accessToken?: string | null,
+): Headers {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json");
   }
-  if (options.accessToken) {
-    headers.set("Authorization", `Bearer ${options.accessToken}`);
+  const token = accessToken ?? options.accessToken;
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
   if (options.profileId) {
     headers.set("X-Profile-Id", options.profileId);
@@ -83,6 +139,17 @@ export async function apiRequest<T>(
   headers.set("X-Prairie-Device-Platform", "smarttv");
   headers.set("X-Prairie-Device-Name", "Prairie Smart TV");
   headers.set("X-Prairie-Image-Formats", imageFormatsHeaderValue());
+  return headers;
+}
+
+async function performFetch(
+  options: ApiClientOptions,
+  path: string,
+  init: RequestInit,
+  accessToken?: string | null,
+): Promise<Response> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const headers = buildHeaders(options, init, accessToken);
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
@@ -101,9 +168,8 @@ export async function apiRequest<T>(
     }
   }
 
-  let response: Response;
   try {
-    response = await fetchImpl(joinUrl(options.serverUrl, path), {
+    return await fetchImpl(joinUrl(options.serverUrl, path), {
       ...init,
       headers,
       signal: controller.signal,
@@ -117,34 +183,77 @@ export async function apiRequest<T>(
     clearTimeout(timeoutId);
     init.signal?.removeEventListener("abort", onCallerAbort);
   }
+}
+
+async function parseError(response: Response): Promise<{
+  body: unknown;
+  message: string;
+  code?: string;
+}> {
+  let body: unknown;
+  let message = response.statusText || `HTTP ${response.status}`;
+  let code: string | undefined;
+  try {
+    body = await response.json();
+    if (body && typeof body === "object") {
+      const record = body as Record<string, unknown>;
+      if (typeof record.message === "string") message = record.message;
+      else if (typeof record.error === "string") message = record.error;
+      if (typeof record.code === "string") code = record.code;
+    }
+  } catch {
+    /* ignore non-JSON */
+  }
+  return { body, message, code };
+}
+
+export async function apiRequest<T>(
+  options: ApiClientOptions,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  let response = await performFetch(options, path, init);
 
   if (!response.ok) {
-    let body: unknown;
-    let message = response.statusText || `HTTP ${response.status}`;
-    let code: string | undefined;
-    try {
-      body = await response.json();
-      if (body && typeof body === "object") {
-        const record = body as Record<string, unknown>;
-        if (typeof record.message === "string") message = record.message;
-        else if (typeof record.error === "string") message = record.error;
-        if (typeof record.code === "string") code = record.code;
+    const peek = await parseError(response);
+    const authFailure =
+      shouldNotifyUnauthorized(response.status, peek.code) && !isAuthLoginPath(path);
+
+    if (authFailure) {
+      const refreshed = await tryRefreshSession(options);
+      if (refreshed) {
+        let nextAccess: string | null = null;
+        try {
+          nextAccess = localStorage.getItem(ACCESS_TOKEN_KEY);
+        } catch {
+          nextAccess = null;
+        }
+        response = await performFetch(options, path, init, nextAccess);
+        if (response.ok) {
+          if (response.status === 204) return undefined as T;
+          return (await response.json()) as T;
+        }
+        const retryError = await parseError(response);
+        if (options.onUnauthorized && shouldNotifyUnauthorized(response.status, retryError.code)) {
+          try {
+            options.onUnauthorized();
+          } catch {
+            /* logout handlers must not mask the ApiError */
+          }
+        }
+        throw new ApiError(retryError.message, response.status, retryError.code, retryError.body);
       }
-    } catch {
-      /* ignore non-JSON */
-    }
-    if (
-      options.onUnauthorized &&
-      shouldNotifyUnauthorized(response.status, code) &&
-      !isAuthLoginPath(path)
-    ) {
-      try {
-        options.onUnauthorized();
-      } catch {
-        /* logout handlers must not mask the ApiError */
+
+      if (options.onUnauthorized) {
+        try {
+          options.onUnauthorized();
+        } catch {
+          /* logout handlers must not mask the ApiError */
+        }
       }
     }
-    throw new ApiError(message, response.status, code, body);
+
+    throw new ApiError(peek.message, response.status, peek.code, peek.body);
   }
 
   if (response.status === 204) {

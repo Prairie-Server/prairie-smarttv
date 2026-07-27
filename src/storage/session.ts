@@ -3,8 +3,9 @@ import { scheduleDurablePersist } from "./durableStorage";
 
 export { SESSION_KEY, normalizeServerUrl };
 
-const ACCESS_TOKEN_KEY = "prairie.session.accessToken";
-const PROFILE_TOKEN_KEY = "prairie.session.profileToken";
+export const ACCESS_TOKEN_KEY = "prairie.session.accessToken";
+export const REFRESH_TOKEN_KEY = "prairie.session.refreshToken";
+export const PROFILE_TOKEN_KEY = "prairie.session.profileToken";
 
 /** Tokens after login, before a household profile is chosen. */
 export interface AuthTokens {
@@ -18,6 +19,7 @@ export interface AuthTokens {
 export interface PrairieSession extends AuthTokens {
   profileId: string;
   profileName?: string;
+  profileAvatarUrl?: string | null;
   profileToken?: string;
 }
 
@@ -35,7 +37,7 @@ function migrateSessionStorageTokens(tokensStorage: Pick<Storage, "getItem" | "s
   if (typeof sessionStorage === "undefined") return;
   if (tokensStorage === sessionStorage) return;
   try {
-    for (const key of [ACCESS_TOKEN_KEY, PROFILE_TOKEN_KEY]) {
+    for (const key of [ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, PROFILE_TOKEN_KEY]) {
       if (tokensStorage.getItem(key)) continue;
       const fromSession = sessionStorage.getItem(key);
       if (!fromSession) continue;
@@ -66,16 +68,23 @@ export function loadSession(
       username: parsed.username,
       profileId: parsed.profileId,
       profileName: parsed.profileName,
+      profileAvatarUrl: parsed.profileAvatarUrl ?? null,
     };
 
     // Tokens must never live inside the identity blob.
     // If we find legacy token fields in the session JSON, migrate them into
     // dedicated token keys, then purge the blob.
     const legacyAccessToken = typeof parsed.accessToken === "string" ? parsed.accessToken : "";
+    const legacyRefreshToken =
+      typeof parsed.refreshToken === "string" ? parsed.refreshToken : undefined;
     const legacyProfileToken =
       typeof parsed.profileToken === "string" ? parsed.profileToken : undefined;
 
-    if (typeof parsed.accessToken === "string" || typeof parsed.profileToken === "string") {
+    if (
+      typeof parsed.accessToken === "string" ||
+      typeof parsed.refreshToken === "string" ||
+      typeof parsed.profileToken === "string"
+    ) {
       storage.setItem(
         SESSION_KEY,
         JSON.stringify({
@@ -83,6 +92,7 @@ export function loadSession(
           username: identity.username,
           profileId: identity.profileId,
           profileName: identity.profileName,
+          profileAvatarUrl: identity.profileAvatarUrl,
         }),
       );
     }
@@ -94,17 +104,22 @@ export function loadSession(
     }
     if (!accessToken) return null;
 
+    let refreshToken = tokensStorage.getItem(REFRESH_TOKEN_KEY) ?? undefined;
+    if (refreshToken === undefined && legacyRefreshToken) {
+      tokensStorage.setItem(REFRESH_TOKEN_KEY, legacyRefreshToken);
+      refreshToken = legacyRefreshToken;
+    }
+
     let profileToken = tokensStorage.getItem(PROFILE_TOKEN_KEY) ?? undefined;
     if (profileToken === undefined && legacyProfileToken) {
       tokensStorage.setItem(PROFILE_TOKEN_KEY, legacyProfileToken);
       profileToken = legacyProfileToken;
     }
 
-    // refreshToken is optional for forward-compat but intentionally not restored —
-    // unused refresh tokens must not linger until refresh ships.
     return {
       ...identity,
       accessToken,
+      refreshToken,
       profileToken,
     };
   } catch {
@@ -117,11 +132,8 @@ export function saveSession(
   storage: Pick<Storage, "setItem"> = localStorage,
   tokensStorage: Pick<Storage, "setItem" | "removeItem"> = defaultTokensStorage(),
 ): PrairieSession {
-  // Never write refreshToken to durable storage until token refresh is implemented.
-  const { refreshToken: _omitRefresh, ...withoutRefresh } = session;
-
   const normalizedServerUrl = normalizeServerUrl(session.serverUrl);
-  const normalized: PrairieSession = { ...withoutRefresh, serverUrl: normalizedServerUrl };
+  const normalized: PrairieSession = { ...session, serverUrl: normalizedServerUrl };
 
   // Store non-secret identity in the session blob.
   storage.setItem(
@@ -131,11 +143,21 @@ export function saveSession(
       username: normalized.username,
       profileId: normalized.profileId,
       profileName: normalized.profileName,
+      profileAvatarUrl: normalized.profileAvatarUrl ?? null,
     }),
   );
 
   // Store tokens in dedicated durable keys (localStorage by default).
   tokensStorage.setItem(ACCESS_TOKEN_KEY, normalized.accessToken);
+  if (normalized.refreshToken) {
+    tokensStorage.setItem(REFRESH_TOKEN_KEY, normalized.refreshToken);
+  } else {
+    try {
+      tokensStorage.removeItem(REFRESH_TOKEN_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
   if (normalized.profileToken) {
     tokensStorage.setItem(PROFILE_TOKEN_KEY, normalized.profileToken);
   } else {
@@ -154,6 +176,28 @@ export function saveSession(
 }
 
 /**
+ * Update access/refresh tokens after a successful refresh without rewriting
+ * profile identity. Returns the merged session, or null if none is stored.
+ */
+export function updateSessionTokens(
+  tokens: { accessToken: string; refreshToken?: string },
+  storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+  tokensStorage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = defaultTokensStorage(),
+): PrairieSession | null {
+  const current = loadSession(storage, tokensStorage);
+  if (!current) return null;
+  return saveSession(
+    {
+      ...current,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken ?? current.refreshToken,
+    },
+    storage,
+    tokensStorage,
+  );
+}
+
+/**
  * Clears the active session tokens. Does NOT remove lastServerUrl or playback
  * settings — those must survive logout and app upgrades.
  */
@@ -163,10 +207,12 @@ export function clearSession(
 ): void {
   storage.removeItem(SESSION_KEY);
   tokensStorage.removeItem(ACCESS_TOKEN_KEY);
+  tokensStorage.removeItem(REFRESH_TOKEN_KEY);
   tokensStorage.removeItem(PROFILE_TOKEN_KEY);
   try {
     if (typeof sessionStorage !== "undefined") {
       sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+      sessionStorage.removeItem(REFRESH_TOKEN_KEY);
       sessionStorage.removeItem(PROFILE_TOKEN_KEY);
     }
   } catch {

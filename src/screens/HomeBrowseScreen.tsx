@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { fetchHomeSections, type HomeSection } from "../api/home";
+import type { LiveTvChannel } from "../api/livetv";
 import { HomeHero } from "../components/HomeHero";
 import { LandscapeCard } from "../components/LandscapeCard";
+import { LiveTvOnNowRow } from "../components/LiveTvOnNowRow";
 import { MediaRow } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { catalogItemProgress, catalogItemSubtitle, usesLandscapeCards } from "../lib/browseCards";
@@ -12,12 +14,19 @@ import type { PrairieSession } from "../storage/session";
 interface HomeBrowseScreenProps {
   session: PrairieSession;
   onOpenItem: (contentId: string) => void;
+  onOpenLiveChannel?: (channel: LiveTvChannel) => void;
+  showOnNow?: boolean;
 }
 
 const SKELETON_ROW_COUNT = 4;
 const SKELETON_CARD_COUNT = 8;
 
-export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps) {
+export function HomeBrowseScreen({
+  session,
+  onOpenItem,
+  onOpenLiveChannel,
+  showOnNow = false,
+}: HomeBrowseScreenProps) {
   const [sections, setSections] = useState<HomeSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +105,10 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
           onIndexChange={setHeroIndex}
           onOpenItem={onOpenItem}
         />
+      ) : null}
+
+      {!loading && showOnNow && onOpenLiveChannel ? (
+        <LiveTvOnNowRow session={session} onOpenChannel={onOpenLiveChannel} />
       ) : null}
 
       {!loading

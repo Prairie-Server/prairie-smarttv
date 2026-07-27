@@ -1,12 +1,14 @@
 import { FolderOpen, Home, Library, Search, Settings, Tv, Unplug, Users } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FocusButton } from "./FocusButton";
+import { ProfileAvatar } from "./ProfileAvatar";
 
 export type ShellTab = "home" | "libraries" | "collections" | "search" | "livetv";
 
 interface ShellNavProps {
   active: ShellTab;
   profileName?: string;
+  profileAvatarUrl?: string | null;
   showLiveTv?: boolean;
   onNavigate: (tab: ShellTab) => void;
   onProfiles: () => void;
@@ -24,12 +26,17 @@ const BASE_TABS: Array<{ id: ShellTab; label: string; icon: ReactNode }> = [
 export function ShellNav({
   active,
   profileName,
+  profileAvatarUrl,
   showLiveTv = false,
   onNavigate,
   onProfiles,
   onSettings,
   onDisconnect,
 }: ShellNavProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const firstItemRef = useRef<HTMLButtonElement>(null);
+
   const tabs = showLiveTv
     ? [
         ...BASE_TABS.slice(0, 3),
@@ -37,6 +44,37 @@ export function ShellNav({
         BASE_TABS[3]!,
       ]
     : BASE_TABS;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    firstItemRef.current?.focus();
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" || event.key === "Backspace") {
+        event.preventDefault();
+        setMenuOpen(false);
+      }
+    }
+    function onPointerDown(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [menuOpen]);
+
+  function runAndClose(action: () => void) {
+    setMenuOpen(false);
+    action();
+  }
 
   return (
     <header className="shell-nav">
@@ -60,16 +98,50 @@ export function ShellNav({
           </FocusButton>
         ))}
       </nav>
-      <div className="shell-nav__actions">
-        <FocusButton variant="ghost" icon={<Users />} onClick={onProfiles}>
-          Switch profile
-        </FocusButton>
-        <FocusButton variant="ghost" icon={<Settings />} onClick={onSettings}>
-          Settings
-        </FocusButton>
-        <FocusButton variant="ghost" icon={<Unplug />} onClick={onDisconnect}>
-          Disconnect
-        </FocusButton>
+      <div className="shell-nav__actions" ref={menuRef}>
+        <button
+          type="button"
+          className="shell-nav__avatar-btn focusable"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label={profileName ? `Profile menu for ${profileName}` : "Profile menu"}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <ProfileAvatar name={profileName} avatarUrl={profileAvatarUrl} size="md" />
+        </button>
+        {menuOpen ? (
+          <div className="shell-nav__menu" role="menu">
+            <p className="shell-nav__menu-label">{profileName ?? "Profile"}</p>
+            <button
+              ref={firstItemRef}
+              type="button"
+              role="menuitem"
+              className="shell-nav__menu-item focusable"
+              onClick={() => runAndClose(onProfiles)}
+            >
+              <Users size={18} aria-hidden />
+              Switch profile
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="shell-nav__menu-item focusable"
+              onClick={() => runAndClose(onSettings)}
+            >
+              <Settings size={18} aria-hidden />
+              Settings
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="shell-nav__menu-item focusable"
+              onClick={() => runAndClose(onDisconnect)}
+            >
+              <Unplug size={18} aria-hidden />
+              Disconnect
+            </button>
+          </div>
+        ) : null}
       </div>
     </header>
   );

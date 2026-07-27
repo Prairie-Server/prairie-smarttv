@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { clearSession, loadSession, normalizeServerUrl, saveSession } from "./session";
+import {
+  clearSession,
+  loadSession,
+  normalizeServerUrl,
+  saveSession,
+  updateSessionTokens,
+} from "./session";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -26,7 +32,7 @@ describe("normalizeServerUrl", () => {
 });
 
 describe("session persistence", () => {
-  it("round-trips a valid session without persisting refreshToken", () => {
+  it("round-trips a valid session including refreshToken", () => {
     const storage = memoryStorage();
     const tokensStorage = memoryStorage();
     const saved = saveSession(
@@ -37,23 +43,27 @@ describe("session persistence", () => {
         username: "ada",
         profileId: "p1",
         profileName: "Ada",
+        profileAvatarUrl: "https://prairie.example/avatar.png",
         profileToken: "pin",
       },
       storage,
       tokensStorage,
     );
     expect(saved.serverUrl).toBe("https://prairie.example");
-    expect(saved.refreshToken).toBeUndefined();
+    expect(saved.refreshToken).toBe("ref");
     const raw = JSON.parse(storage.getItem("prairie.session")!);
     expect(raw.refreshToken).toBeUndefined();
     expect(raw.accessToken).toBeUndefined();
     expect(raw.profileToken).toBeUndefined();
+    expect(raw.profileAvatarUrl).toBe("https://prairie.example/avatar.png");
     expect(loadSession(storage, tokensStorage)).toEqual({
       serverUrl: "https://prairie.example",
       accessToken: "tok",
+      refreshToken: "ref",
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: "https://prairie.example/avatar.png",
       profileToken: "pin",
     });
   });
@@ -73,12 +83,15 @@ describe("session persistence", () => {
     expect(loadSession(storage, tokensStorage)).toEqual({
       serverUrl: "https://prairie.example",
       accessToken: "tok",
+      refreshToken: "legacy-ref",
       username: "ada",
       profileId: "p1",
       profileToken: "legacy-pin",
       profileName: undefined,
+      profileAvatarUrl: null,
     });
     expect(tokensStorage.getItem("prairie.session.accessToken")).toBe("tok");
+    expect(tokensStorage.getItem("prairie.session.refreshToken")).toBe("legacy-ref");
     expect(tokensStorage.getItem("prairie.session.profileToken")).toBe("legacy-pin");
     const raw = JSON.parse(storage.getItem("prairie.session")!);
     expect(raw.accessToken).toBeUndefined();
@@ -104,6 +117,7 @@ describe("session persistence", () => {
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: null,
       profileToken: "legacy-pin",
     });
     expect(tokensStorage.getItem("prairie.session.profileToken")).toBe("legacy-pin");
@@ -131,6 +145,7 @@ describe("session persistence", () => {
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: null,
       profileToken: undefined,
     });
   });
@@ -212,6 +227,7 @@ describe("session persistence", () => {
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: null,
       profileToken: "pin-from-session",
     });
     expect(tokensStorage.getItem("prairie.session.accessToken")).toBe("from-session");
@@ -292,5 +308,57 @@ describe("session persistence", () => {
     clearSession();
     expect(localStorage.getItem("prairie.session")).toBeNull();
     expect(localStorage.getItem("prairie.session.accessToken")).toBeNull();
+  });
+
+  it("updates access/refresh tokens without rewriting identity", () => {
+    const storage = memoryStorage();
+    const tokensStorage = memoryStorage();
+    saveSession(
+      {
+        serverUrl: "https://prairie.example",
+        accessToken: "old",
+        refreshToken: "ref-old",
+        username: "ada",
+        profileId: "p1",
+        profileName: "Ada",
+      },
+      storage,
+      tokensStorage,
+    );
+
+    expect(
+      updateSessionTokens({ accessToken: "new", refreshToken: "ref-new" }, storage, tokensStorage),
+    ).toMatchObject({
+      accessToken: "new",
+      refreshToken: "ref-new",
+      profileId: "p1",
+      username: "ada",
+    });
+
+    expect(updateSessionTokens({ accessToken: "newer" }, storage, tokensStorage)).toMatchObject({
+      accessToken: "newer",
+      refreshToken: "ref-new",
+    });
+
+    expect(updateSessionTokens({ accessToken: "x" }, memoryStorage(), memoryStorage())).toBeNull();
+  });
+
+  it("clears refresh tokens from sessionStorage on logout", () => {
+    const storage = memoryStorage();
+    saveSession(
+      {
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        refreshToken: "ref",
+        username: "ada",
+        profileId: "p1",
+      },
+      storage,
+      storage,
+    );
+    sessionStorage.setItem("prairie.session.refreshToken", "leftover-ref");
+    clearSession(storage, storage);
+    expect(sessionStorage.getItem("prairie.session.refreshToken")).toBeNull();
+    expect(storage.getItem("prairie.session.refreshToken")).toBeNull();
   });
 });

@@ -99,6 +99,11 @@ export function ServerListScreen({
   useEffect(() => {
     if (!autoScan || didAutoScan.current) return;
     didAutoScan.current = true;
+    // Prefer saved servers — skip LAN discovery until the user asks to scan.
+    if (sortedEntries(loadRegistry()).length > 0) {
+      setStatusText("Select a saved server, or scan to find others nearby.");
+      return;
+    }
     void startScan(true);
   }, [autoScan]);
 

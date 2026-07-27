@@ -77,7 +77,8 @@ code {
 
 .screen {
   min-height: 100%;
-  padding: clamp(1.5rem, 4vw, 3rem);
+  /* Extra inline inset so TV overscan / panel chrome does not clip the left edge. */
+  padding: clamp(1.5rem, 4vw, 3rem) clamp(1.75rem, 4.5vw, 3.5rem);
 }
 
 .eyebrow {
@@ -286,7 +287,7 @@ button:focus,
   position: relative;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .connect-atmosphere {
@@ -309,10 +310,10 @@ button:focus,
 }
 
 .connect-panel--split {
-  width: min(980px, 100%);
+  width: min(1180px, 100%);
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: clamp(1.25rem, 3vw, 2rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.25rem, 3vw, 2.25rem);
   align-items: start;
 }
 
@@ -347,8 +348,12 @@ button:focus,
 
 .quick-connect-codes {
   display: grid;
-  gap: 1rem;
-  margin-top: 1.25rem;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.quick-connect-status {
+  white-space: nowrap;
 }
 
 .quick-connect-qr {
@@ -1451,8 +1456,8 @@ button:focus,
   gap: 1.25rem;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  padding: clamp(1rem, 2.5vw, 1.5rem) clamp(1.5rem, 4vw, 3rem);
+  flex-wrap: nowrap;
+  padding: clamp(1rem, 2.5vw, 1.5rem) clamp(1.75rem, 4.5vw, 3.5rem);
   border-bottom: 1px solid rgba(243, 239, 230, 0.08);
   background: rgba(12, 16, 22, 0.72);
   position: sticky;
@@ -1489,13 +1494,91 @@ button:focus,
 }
 
 .shell-nav__tabs,
-.shell-nav__actions,
 .row-actions,
 .season-tabs {
   display: flex;
   gap: 0.65rem;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.shell-nav__tabs {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 0;
+}
+
+.shell-nav__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.shell-nav__avatar-btn {
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid rgba(224, 168, 74, 0.35);
+  background: rgba(28, 36, 48, 0.9);
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.shell-nav__avatar-btn:focus {
+  outline: none;
+  border-color: var(--prairie-ring);
+  box-shadow: 0 0 0 3px rgba(240, 197, 116, 0.35);
+  transform: scale(1.06);
+}
+
+.shell-nav__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  z-index: 12;
+  min-width: 13.5rem;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.55rem;
+  border-radius: 14px;
+  border: 1px solid rgba(224, 168, 74, 0.35);
+  background: rgba(16, 21, 28, 0.98);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+
+.shell-nav__menu-label {
+  margin: 0;
+  padding: 0.35rem 0.7rem 0.55rem;
+  font-size: 0.85rem;
+  color: var(--prairie-muted);
+  border-bottom: 1px solid rgba(243, 239, 230, 0.08);
+}
+
+.shell-nav__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 0.75rem 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.shell-nav__menu-item:focus {
+  outline: none;
+  background: rgba(224, 168, 74, 0.18);
+  border-color: rgba(224, 168, 74, 0.45);
 }
 
 .shell-nav__tab {
@@ -1561,7 +1644,7 @@ button:focus,
 .home-hero {
   position: relative;
   min-height: min(62vh, 560px);
-  margin: 0 calc(-1 * clamp(1.5rem, 4vw, 3rem));
+  margin: 0 calc(-1 * clamp(1.75rem, 4.5vw, 3.5rem));
   display: grid;
   align-items: end;
   overflow: hidden;
@@ -1802,7 +1885,7 @@ button:focus,
 }
 
 .browse-pane {
-  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1.5rem, 4vw, 3rem) 3rem;
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1.75rem, 4.5vw, 3.5rem) 3rem;
   display: grid;
   gap: 1.75rem;
   align-content: start;
@@ -1834,14 +1917,12 @@ button:focus,
   display: grid;
   gap: 0.85rem;
   min-height: 18.25rem;
-  contain: layout style;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 18.25rem;
+  /* Avoid paint/size containment that clips scaled focus rings on the left. */
+  overflow: visible;
 }
 
 .media-row--landscape {
   min-height: 14.5rem;
-  contain-intrinsic-size: auto 14.5rem;
 }
 
 .media-row__title {
@@ -1864,10 +1945,10 @@ button:focus,
   /* Gap is set inline from MediaRow metrics so virtualization spacers stay aligned. */
   gap: 0.9rem;
   overflow-x: auto;
-  /* Room for focus scale/ring so the first poster is not clipped on the left. */
-  padding: 0.45rem 0.75rem 0.85rem;
-  margin-inline: -0.75rem;
-  scroll-padding-inline: 0.75rem;
+  overflow-y: visible;
+  /* Room for focus scale/ring — keep padding inside the pane (no negative margin). */
+  padding: 0.65rem 0.35rem 1rem;
+  scroll-padding-inline: 0.35rem;
   scroll-snap-type: x mandatory;
 }
 
@@ -2100,16 +2181,64 @@ button:focus,
 }
 
 .profile-card__avatar {
-  width: 3.2rem;
-  height: 3.2rem;
-  border-radius: 50%;
-  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0 auto 0.6rem;
+}
+
+.profile-avatar {
+  display: inline-grid;
   place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
   background: rgba(224, 168, 74, 0.18);
   color: var(--prairie-amber);
   font-weight: 700;
-  font-size: 1.15rem;
-  margin: 0 auto 0.6rem;
+  flex-shrink: 0;
+}
+
+.profile-avatar--sm {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.85rem;
+}
+
+.profile-avatar--md {
+  width: 100%;
+  height: 100%;
+  font-size: 1.1rem;
+}
+
+.profile-avatar--lg {
+  width: 4.5rem;
+  height: 4.5rem;
+  font-size: 1.6rem;
+}
+
+.profile-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-avatar__initial {
+  line-height: 1;
+}
+
+.on-now-card__live {
+  position: absolute;
+  left: 0.45rem;
+  top: 0.45rem;
+  z-index: 1;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(224, 70, 70, 0.92);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .profile-card {
