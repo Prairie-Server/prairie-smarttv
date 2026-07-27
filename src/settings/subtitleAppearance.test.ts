@@ -21,6 +21,9 @@ describe("subtitleAppearance", () => {
     expect(normalized.backgroundOpacity).toBe(100);
     expect(normalized.fontSize).toBe("large");
     expect(normalized.textOutline).toBe(false);
+
+    const defaults = normalizeSubtitleAppearance(null);
+    expect(defaults).toEqual(DEFAULT_SUBTITLE_APPEARANCE);
   });
 
   it("builds CSS variables for box style", () => {
@@ -50,6 +53,8 @@ describe("subtitleAppearance", () => {
 
   it("converts hex to rgba", () => {
     expect(hexToRgba("#ff0000", 0.25)).toBe("rgba(255, 0, 0, 0.25)");
+    expect(hexToRgba("00ff00", 2)).toBe("rgba(0, 255, 0, 1)");
+    expect(hexToRgba("0000ff", -1)).toBe("rgba(0, 0, 255, 0)");
   });
 
   it("builds outline and shadow text styles", () => {
@@ -80,10 +85,14 @@ describe("subtitleAppearance", () => {
 
     const plain = subtitleAppearanceCssVars({
       ...DEFAULT_SUBTITLE_APPEARANCE,
-      backgroundStyle: "none",
       textOutline: false,
+      // @ts-expect-error intentional bad enum
+      position: "middle",
+      // @ts-expect-error intentional bad enum
+      backgroundStyle: "transparent",
     });
     expect(plain["--prairie-sub-shadow"]).toBe("none");
+    expect(plain["--prairie-sub-bottom"]).toBe("6%");
   });
 
   it("clamps non-finite opacity to the default", () => {

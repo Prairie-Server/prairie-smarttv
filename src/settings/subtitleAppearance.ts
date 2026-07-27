@@ -57,7 +57,7 @@ function asEnum<T extends string>(value: unknown, allowed: readonly T[], fallbac
 export function normalizeSubtitleAppearance(
   input: Partial<SubtitleAppearance> | null | undefined,
 ): SubtitleAppearance {
-  const merged = { ...DEFAULT_SUBTITLE_APPEARANCE, ...(input ?? {}) };
+  const merged = { ...DEFAULT_SUBTITLE_APPEARANCE, ...input };
   const opacity =
     typeof merged.backgroundOpacity === "number" && Number.isFinite(merged.backgroundOpacity)
       ? Math.min(100, Math.max(0, Math.round(merged.backgroundOpacity)))

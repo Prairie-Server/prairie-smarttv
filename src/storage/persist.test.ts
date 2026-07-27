@@ -76,6 +76,8 @@ describe("persist / upgrade safety", () => {
     const dedicated = memoryStorage({ [LAST_SERVER_URL_KEY]: "https://a.example/" });
     expect(loadLastServerUrl(dedicated)).toBe("https://a.example");
 
+    expect(loadLastServerUrl(memoryStorage())).toBe("");
+
     const fromSession = memoryStorage({
       [SESSION_KEY]: JSON.stringify({ serverUrl: "https://b.example" }),
     });
@@ -118,6 +120,14 @@ describe("persist / upgrade safety", () => {
     });
     expect(ensureStorageSchema(storage)).toBe(2);
     expect(storage.getItem(LAST_SERVER_URL_KEY)).toBe("https://d.example");
+  });
+
+  it("leaves last server URL unset when v0 session has no server URL", () => {
+    const storage = memoryStorage({
+      [SESSION_KEY]: JSON.stringify({ accessToken: "tok" }),
+    });
+    expect(ensureStorageSchema(storage)).toBe(2);
+    expect(storage.getItem(LAST_SERVER_URL_KEY)).toBeNull();
   });
 
   it("leaves a current schema version unchanged", () => {

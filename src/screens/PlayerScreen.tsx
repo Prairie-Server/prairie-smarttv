@@ -118,7 +118,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       pendingResumeRef.current = launch.startPositionSeconds ?? null;

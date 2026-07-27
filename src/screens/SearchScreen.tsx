@@ -23,7 +23,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
       return;
     }
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       try {

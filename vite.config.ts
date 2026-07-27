@@ -29,7 +29,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.test.ts"],
-    // Gate logic modules at 90% across statements/branches/functions/lines.
+    // Gate logic modules at 95% across statements/branches/functions/lines.
     // UI screens and native AVPlay/Starfish adapters stay excluded.
     coverage: {
       provider: "v8",
@@ -53,10 +53,10 @@ export default defineConfig({
       ],
       exclude: ["src/**/*.test.ts"],
       thresholds: {
-        statements: 90,
-        branches: 90,
-        functions: 90,
-        lines: 90,
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
       },
     },
   },

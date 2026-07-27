@@ -13,16 +13,23 @@ export function createSubtitleOverlay(container: HTMLElement): HTMLDivElement {
   return root;
 }
 
-/** Normalize AVPlay subtitle payload (string or line array) into display HTML. */
+/** Normalize AVPlay subtitle payload (string or line array) into display text. */
 export function formatAvPlaySubtitleText(text: unknown): string {
   if (text == null) return "";
   if (Array.isArray(text)) {
-    return text
-      .map((line) => String(line ?? "").trim())
-      .filter(Boolean)
-      .join("\n");
+    return text.map(stringifyCuePart).filter(Boolean).join("\n");
   }
-  return String(text);
+  return stringifyCuePart(text);
+}
+
+function stringifyCuePart(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value).trim();
+  }
+  // Objects/symbols are not meaningful AVPlay cue payloads.
+  return "";
 }
 
 export function setSubtitleOverlayText(root: HTMLElement | null, text: unknown): void {
