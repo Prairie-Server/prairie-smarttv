@@ -1,6 +1,7 @@
 import { ApiError, apiRequest, buildStreamUrl } from "./client";
 import { reportPlaybackProgress } from "./playbackSession";
 import { sessionClient } from "./sessionClient";
+import { resolveTargetResolution, targetBitrateKbpsForResolution } from "./targetResolution";
 import {
   TranscodeStartupTimeoutError,
   waitForHlsManifest,
@@ -20,24 +21,33 @@ export function needsHlsBootstrap(playMethod: string | null | undefined): boolea
   return method === "remux" || method === "transcode";
 }
 
-export function buildTranscodeStartRequest(input: {
+export interface TranscodeStartInput {
   sessionId: string;
   seekSeconds: number;
   playMethod: string;
   /** When remuxing, re-encode audio to AAC if the TV cannot Direct Play it. */
   transcodeAudio?: boolean;
-}): TranscodeStartRequest {
+  /** Source file resolution from watch detail (`2160p`, `4K`, …). */
+  sourceResolution?: string | null;
+  /** Device capability max (`deviceCaps.max_resolution`). */
+  maxResolution?: string | null;
+}
+
+export function buildTranscodeStartRequest(input: TranscodeStartInput): TranscodeStartRequest {
   const isRemux = input.playMethod.trim().toLowerCase() === "remux";
   const remuxAudio = input.transcodeAudio ? "aac" : "copy";
+  const targetResolution = isRemux
+    ? ""
+    : resolveTargetResolution(input.sourceResolution, input.maxResolution);
   return {
     session_id: input.sessionId,
     seek_seconds: Math.max(0, input.seekSeconds),
-    // Remux = container remux (video copy); audio copy unless Prairie asked for AAC.
-    // Transcode = conservative 1080p h264/aac ladder default (matches Apple fallback).
-    target_resolution: isRemux ? "" : "1080p",
+    // Remux = container remux (video copy at native resolution).
+    // Transcode = h264/aac at min(source, device max) — keep 4K when the TV can.
+    target_resolution: targetResolution,
     target_codec_video: isRemux ? "copy" : "h264",
     target_codec_audio: isRemux ? remuxAudio : "aac",
-    target_bitrate_kbps: isRemux ? 0 : 6000,
+    target_bitrate_kbps: isRemux ? 0 : targetBitrateKbpsForResolution(targetResolution),
     segment_duration: 2,
     subtitle_track_index: -1,
     subtitle_burn_in: false,
@@ -69,6 +79,12 @@ export interface PreparedPlayback {
 /** How long to wait for the first HLS segment after /transcode/start. */
 export const TRANSCODE_STARTUP_TIMEOUT_MS = 90_000;
 
+export interface PreparePlayableOptions {
+  fetchImpl?: typeof fetch;
+  sourceResolution?: string | null;
+  maxResolution?: string | null;
+}
+
 /**
  * Mirror web/Apple/Android legacy: after /playback/start, remux and transcode
  * must POST /playback/transcode/start and play `manifest_url` (not the
@@ -82,8 +98,9 @@ export async function preparePlayableSession(
   session: PrairieSession,
   started: PlaybackSessionResponse,
   seekSeconds: number,
-  fetchImpl?: typeof fetch,
+  options: PreparePlayableOptions = {},
 ): Promise<PreparedPlayback> {
+  const fetchImpl = options.fetchImpl;
   if (!needsHlsBootstrap(started.play_method)) {
     return {
       session: started,
@@ -92,35 +109,30 @@ export async function preparePlayableSession(
     };
   }
 
+  const startInput: TranscodeStartInput = {
+    sessionId: started.session_id,
+    seekSeconds,
+    playMethod: started.play_method,
+    transcodeAudio: started.playback_info?.transcode_audio === true,
+    sourceResolution: options.sourceResolution,
+    maxResolution: options.maxResolution,
+  };
+
   let transcode: TranscodeStartResponse;
   try {
-    transcode = await startTranscode(
-      session,
-      buildTranscodeStartRequest({
-        sessionId: started.session_id,
-        seekSeconds,
-        playMethod: started.play_method,
-        transcodeAudio: started.playback_info?.transcode_audio === true,
-      }),
-      fetchImpl,
-    );
+    transcode = await startTranscode(session, buildTranscodeStartRequest(startInput), fetchImpl);
   } catch (err) {
-    // Older servers may reject remux copy (422). Fall back to a real encode.
+    // Older servers may reject remux copy (422). Fall back to a real encode at
+    // the same resolution cap the TV advertised (not a hardcoded 1080p).
     const isRemux = started.play_method.trim().toLowerCase() === "remux";
     if (!isRemux || !(err instanceof ApiError) || err.status !== 422) throw err;
     transcode = await startTranscode(
       session,
-      {
-        session_id: started.session_id,
-        seek_seconds: Math.max(0, seekSeconds),
-        target_resolution: "1080p",
-        target_codec_video: "h264",
-        target_codec_audio: "aac",
-        target_bitrate_kbps: 6000,
-        segment_duration: 2,
-        subtitle_track_index: -1,
-        subtitle_burn_in: false,
-      },
+      buildTranscodeStartRequest({
+        ...startInput,
+        playMethod: "transcode",
+        transcodeAudio: false,
+      }),
       fetchImpl,
     );
   }

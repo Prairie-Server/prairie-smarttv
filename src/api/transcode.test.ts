@@ -125,6 +125,29 @@ describe("buildTranscodeStartRequest", () => {
     expect(body.target_bitrate_kbps).toBe(6000);
     expect(body.seek_seconds).toBe(0);
   });
+
+  it("keeps 4K when source and panel are 4K", () => {
+    const body = buildTranscodeStartRequest({
+      sessionId: "s1",
+      seekSeconds: 0,
+      playMethod: "transcode",
+      sourceResolution: "2160p",
+      maxResolution: "2160p",
+    });
+    expect(body.target_resolution).toBe("2160p");
+    expect(body.target_bitrate_kbps).toBe(20_000);
+  });
+
+  it("caps a 4K source to a 1080p panel", () => {
+    const body = buildTranscodeStartRequest({
+      sessionId: "s1",
+      seekSeconds: 0,
+      playMethod: "transcode",
+      sourceResolution: "4K",
+      maxResolution: "1080p",
+    });
+    expect(body.target_resolution).toBe("1080p");
+  });
 });
 
 describe("startTranscode", () => {
@@ -151,7 +174,7 @@ describe("startTranscode", () => {
 describe("preparePlayableSession", () => {
   it("returns stream_url for direct play without a second request", async () => {
     const fetchImpl = vi.fn();
-    const prepared = await preparePlayableSession(session, started("direct"), 12, fetchImpl);
+    const prepared = await preparePlayableSession(session, started("direct"), 12, { fetchImpl });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(prepared.streamUrl).toContain("/api/v1/stream/placeholder");
     expect(prepared.streamUrl).toContain("token=tok");
@@ -166,7 +189,7 @@ describe("preparePlayableSession", () => {
       return manifestResponse();
     });
 
-    const prepared = await preparePlayableSession(session, started("remux"), 12, fetchImpl);
+    const prepared = await preparePlayableSession(session, started("remux"), 12, { fetchImpl });
     expect(prepared.session.stream_url).toContain("master.m3u8");
     expect(prepared.streamUrl).toContain("master.m3u8");
     expect(prepared.streamUrl).toContain("token=tok");
@@ -186,7 +209,7 @@ describe("preparePlayableSession", () => {
       ...started("remux"),
       playback_info: { stream_type: "progressive", transcode_audio: true },
     };
-    const prepared = await preparePlayableSession(session, remuxAudio, 12, fetchImpl);
+    const prepared = await preparePlayableSession(session, remuxAudio, 12, { fetchImpl });
     expect(prepared.session.play_method).toBe("remux");
     expect(prepared.session.playback_info?.transcode_audio).toBe(false);
   });
@@ -195,6 +218,7 @@ describe("preparePlayableSession", () => {
     const fetchImpl = hlsReadyFetch(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("h264");
+      expect(body.target_resolution).toBe("2160p");
       return manifestResponse({
         can_seek_anywhere: true,
         player_start_seconds: 90,
@@ -203,7 +227,11 @@ describe("preparePlayableSession", () => {
       });
     });
 
-    const prepared = await preparePlayableSession(session, started("transcode"), 90, fetchImpl);
+    const prepared = await preparePlayableSession(session, started("transcode"), 90, {
+      fetchImpl,
+      sourceResolution: "2160p",
+      maxResolution: "2160p",
+    });
     expect(prepared.session.play_method).toBe("transcode");
     expect(prepared.session.session_id).toBe("s1");
     expect(prepared.session.duration_seconds).toBe(3600);
@@ -227,11 +255,15 @@ describe("preparePlayableSession", () => {
       });
     });
 
-    const prepared = await preparePlayableSession(session, started("remux"), 8, fetchImpl);
+    const prepared = await preparePlayableSession(session, started("remux"), 8, {
+      fetchImpl,
+      sourceResolution: "2160p",
+      maxResolution: "2160p",
+    });
     expect(bodies[0]).toMatchObject({ target_codec_video: "copy" });
     expect(bodies[1]).toMatchObject({
       target_codec_video: "h264",
-      target_resolution: "1080p",
+      target_resolution: "2160p",
     });
     expect(prepared.session.play_method).toBe("transcode");
     expect(prepared.playerStartSeconds).toBe(8);
@@ -240,14 +272,14 @@ describe("preparePlayableSession", () => {
   it("rethrows non-422 remux failures", async () => {
     const fetchImpl = vi.fn(async () => new Response("boom", { status: 500 }));
     await expect(
-      preparePlayableSession(session, started("remux"), 0, fetchImpl),
+      preparePlayableSession(session, started("remux"), 0, { fetchImpl }),
     ).rejects.toBeInstanceOf(ApiError);
   });
 
   it("rethrows transcode failures without attempting copy fallback", async () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 422 }));
     await expect(
-      preparePlayableSession(session, started("transcode"), 0, fetchImpl),
+      preparePlayableSession(session, started("transcode"), 0, { fetchImpl }),
     ).rejects.toBeInstanceOf(ApiError);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -262,7 +294,7 @@ describe("preparePlayableSession", () => {
     );
     const base = started("remux");
     delete (base as { duration_seconds?: number }).duration_seconds;
-    const prepared = await preparePlayableSession(session, base, 44, fetchImpl);
+    const prepared = await preparePlayableSession(session, base, 44, { fetchImpl });
     expect(prepared.playerStartSeconds).toBe(44);
     expect(prepared.session.position).toBe(12);
   });
