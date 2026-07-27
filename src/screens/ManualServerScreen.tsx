@@ -1,6 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { buildManualUrlCandidates, checkServerCandidates } from "../api/checkServer";
 import { FocusButton } from "../components/FocusButton";
+<<<<<<< HEAD
+=======
+import { validateServerUrl } from "../storage/serverUrl";
+>>>>>>> 5c77d98 (fix(security): keep session tokens out of localStorage and restrict public HTTP)
 
 export interface ManualServerScreenProps {
   initialUrl?: string;
@@ -21,6 +25,7 @@ export function ManualServerScreen({
     event.preventDefault();
     if (busy) return;
     setError(null);
+<<<<<<< HEAD
 
     const candidates = buildManualUrlCandidates(serverUrl);
     if (!candidates.length) {
@@ -63,6 +68,14 @@ export function ManualServerScreen({
     } finally {
       setBusy(false);
     }
+=======
+    const validated = validateServerUrl(serverUrl);
+    if (!validated.ok) {
+      setError(validated.message);
+      return;
+    }
+    onContinue(validated.url);
+>>>>>>> 5c77d98 (fix(security): keep session tokens out of localStorage and restrict public HTTP)
   }
 
   return (
