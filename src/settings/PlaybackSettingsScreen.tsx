@@ -1,7 +1,7 @@
 import { ArrowLeft, FileText, Radar } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FocusButton } from "../components/FocusButton";
-import { SettingsBlock, SettingsChoiceRow, SettingsToggleRow } from "../components/SettingsRows";
+import { SettingsChoiceRow, SettingsToggleRow } from "../components/SettingsRows";
 import { isBackKey } from "../focus/spatialFocus";
 import { detectPlatform } from "../platform/detect";
 import type { PlayerBackendPreference } from "../platform/types";
@@ -33,6 +33,7 @@ interface PlaybackSettingsScreenProps {
 }
 
 type StreamMethodChoice = "auto" | "direct" | "transcode";
+type SettingsSectionId = "servers" | "playback" | "subtitles" | "about";
 
 const BACKEND_OPTIONS: { value: PlayerBackendPreference; label: string }[] = [
   { value: "auto", label: "Auto" },
@@ -82,6 +83,18 @@ function streamMethodFromSettings(settings: PlaybackSettings): StreamMethodChoic
 }
 
 export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSettingsScreenProps) {
+  const sections = useMemo(() => {
+    const items: Array<{ id: SettingsSectionId; label: string }> = [];
+    if (onSwitchServer) items.push({ id: "servers", label: "Servers" });
+    items.push(
+      { id: "playback", label: "Playback" },
+      { id: "subtitles", label: "Subtitles" },
+      { id: "about", label: "About" },
+    );
+    return items;
+  }, [onSwitchServer]);
+
+  const [section, setSection] = useState<SettingsSectionId>(() => sections[0]?.id ?? "playback");
   const [settings, setSettings] = useState<PlaybackSettings>(() => loadPlaybackSettings());
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ kind: "checking" });
   const [changelogFallbackUrl, setChangelogFallbackUrl] = useState<string | null>(null);
@@ -90,6 +103,13 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
   const previewVars = subtitleAppearanceCssVars(appearance);
   const latestLabel = latestVersionLabel(updateStatus);
   const changelogUrl = changelogUrlOrNull(updateStatus);
+  const activeSection = sections.find((item) => item.id === section) ?? sections[0];
+
+  useEffect(() => {
+    if (!sections.some((item) => item.id === section)) {
+      setSection(sections[0]?.id ?? "playback");
+    }
+  }, [section, sections]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,51 +161,45 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
     }
   }
 
-  return (
-    <section className="screen settings-screen">
-      <header className="settings-header">
-        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack} autoFocus>
-          Back
+  let pane: ReactNode = null;
+  if (section === "servers" && onSwitchServer) {
+    pane = (
+      <>
+        <p className="muted settings-note">Switch servers or scan the LAN for new ones.</p>
+        <FocusButton
+          variant="ghost"
+          className="settings-action"
+          icon={<Radar />}
+          onClick={onSwitchServer}
+        >
+          Servers / Scan LAN
         </FocusButton>
-        <div className="settings-header__titles">
-          <p className="eyebrow">Preferences</p>
-          <h1>Settings</h1>
-          <p className="muted settings-header__lede">Platform: {platform}</p>
-        </div>
-      </header>
-
-      <div className="settings-column">
-        {onSwitchServer ? (
-          <SettingsBlock title="Servers" note="Switch servers or scan the LAN for new ones.">
-            <FocusButton
-              variant="ghost"
-              className="settings-action"
-              icon={<Radar />}
-              onClick={onSwitchServer}
-            >
-              Servers / Scan LAN
-            </FocusButton>
-          </SettingsBlock>
-        ) : null}
-
-        <SettingsBlock title="Playback">
-          <SettingsChoiceRow
-            label="Player backend"
-            hint="Auto uses native on Tizen/webOS"
-            value={settings.playerBackend}
-            options={BACKEND_OPTIONS}
-            onChange={(playerBackend) => update({ playerBackend })}
-          />
-          <SettingsChoiceRow
-            label="Stream method"
-            hint="Auto prefers remux when possible"
-            value={streamMethodFromSettings(settings)}
-            options={STREAM_OPTIONS}
-            onChange={setStreamMethod}
-          />
-        </SettingsBlock>
-
-        <SettingsBlock title="Subtitles" note="Applied on HTML5, webOS, and Tizen overlay.">
+      </>
+    );
+  } else if (section === "playback") {
+    pane = (
+      <div className="settings-block__rows">
+        <SettingsChoiceRow
+          label="Player backend"
+          hint="Auto uses native on Tizen/webOS"
+          value={settings.playerBackend}
+          options={BACKEND_OPTIONS}
+          onChange={(playerBackend) => update({ playerBackend })}
+        />
+        <SettingsChoiceRow
+          label="Stream method"
+          hint="Auto prefers remux when possible"
+          value={streamMethodFromSettings(settings)}
+          options={STREAM_OPTIONS}
+          onChange={setStreamMethod}
+        />
+      </div>
+    );
+  } else if (section === "subtitles") {
+    pane = (
+      <>
+        <p className="muted settings-note">Applied on HTML5, webOS, and Tizen overlay.</p>
+        <div className="settings-block__rows">
           <SettingsChoiceRow
             label="Size"
             value={appearance.fontSize}
@@ -234,52 +248,89 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
             checked={appearance.textOutline}
             onChange={(textOutline) => updateAppearance({ textOutline })}
           />
-
-          <div className="subtitle-preview" aria-hidden="true">
-            <span
-              className="subtitle-preview__cue"
-              style={{
-                color: previewVars["--prairie-sub-color"],
-                background: previewVars["--prairie-sub-bg"],
-                fontSize: previewVars["--prairie-sub-size"],
-                textShadow: previewVars["--prairie-sub-shadow"],
-              }}
+        </div>
+        <div className="subtitle-preview" aria-hidden="true">
+          <span
+            className="subtitle-preview__cue"
+            style={{
+              color: previewVars["--prairie-sub-color"],
+              background: previewVars["--prairie-sub-bg"],
+              fontSize: previewVars["--prairie-sub-size"],
+              textShadow: previewVars["--prairie-sub-shadow"],
+            }}
+          >
+            Sample subtitle text
+          </span>
+        </div>
+      </>
+    );
+  } else {
+    pane = (
+      <div className="settings-about">
+        <p>
+          Platform <strong>{platform}</strong>
+        </p>
+        <p>
+          Version <strong>{__APP_VERSION__}</strong>
+        </p>
+        <p>
+          Update status <strong>{statusLabel(updateStatus)}</strong>
+        </p>
+        {latestLabel ? (
+          <p>
+            Latest <strong>{latestLabel}</strong>
+          </p>
+        ) : null}
+        {changelogUrl ? (
+          <>
+            <FocusButton
+              variant="ghost"
+              className="settings-action"
+              icon={<FileText />}
+              onClick={() => openChangelog(changelogUrl)}
             >
-              Sample subtitle text
-            </span>
-          </div>
-        </SettingsBlock>
+              Changelog
+            </FocusButton>
+            {changelogFallbackUrl ? (
+              <p className="muted settings-note">{changelogFallbackUrl}</p>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    );
+  }
 
-        <SettingsBlock title="About">
-          <div className="settings-about">
-            <p>
-              Version <strong>{__APP_VERSION__}</strong>
-            </p>
-            <p>
-              Update status <strong>{statusLabel(updateStatus)}</strong>
-            </p>
-            {latestLabel ? (
-              <p>
-                Latest <strong>{latestLabel}</strong>
-              </p>
-            ) : null}
-            {changelogUrl ? (
-              <>
-                <FocusButton
-                  variant="ghost"
-                  className="settings-action"
-                  icon={<FileText />}
-                  onClick={() => openChangelog(changelogUrl)}
-                >
-                  Changelog
-                </FocusButton>
-                {changelogFallbackUrl ? (
-                  <p className="muted settings-note">{changelogFallbackUrl}</p>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        </SettingsBlock>
+  return (
+    <section className="screen settings-screen">
+      <header className="settings-header">
+        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack} autoFocus>
+          Back
+        </FocusButton>
+        <div className="settings-header__titles">
+          <p className="eyebrow">Preferences</p>
+          <h1>Settings</h1>
+        </div>
+      </header>
+
+      <div className="settings-shell">
+        <nav className="settings-sidebar" aria-label="Settings sections">
+          {sections.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`settings-nav-item${item.id === section ? " is-active" : ""}`}
+              aria-current={item.id === section ? "page" : undefined}
+              onClick={() => setSection(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="settings-pane" key={section}>
+          <h2 className="settings-pane__title">{activeSection?.label ?? "Settings"}</h2>
+          {pane}
+        </div>
       </div>
     </section>
   );
