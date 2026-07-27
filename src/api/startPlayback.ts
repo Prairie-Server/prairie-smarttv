@@ -11,10 +11,14 @@ export async function startPlayback(
   fetchImpl?: typeof fetch,
 ): Promise<PlaybackSessionResponse> {
   const body = buildPlaybackStartRequest(input);
-  return apiRequest<PlaybackSessionResponse>(sessionClient(session, fetchImpl), "/api/v1/playback/start", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return apiRequest<PlaybackSessionResponse>(
+    sessionClient(session, fetchImpl),
+    "/api/v1/playback/start",
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 export function resolvePlaybackStreamUrl(

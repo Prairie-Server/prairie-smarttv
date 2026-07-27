@@ -30,10 +30,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
  * Up/Down always leave the field on TV remotes so users can reach Back / QR.
  * Left/Right keep caret motion until the selection is at the field edge.
  */
-export function shouldDeferToEditableCaret(
-  target: EventTarget | null,
-  key: ArrowKey,
-): boolean {
+export function shouldDeferToEditableCaret(target: EventTarget | null, key: ArrowKey): boolean {
   if (!isEditableTarget(target)) return false;
   if (key === "ArrowUp" || key === "ArrowDown") return false;
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
