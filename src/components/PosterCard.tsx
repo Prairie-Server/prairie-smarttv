@@ -8,6 +8,7 @@ interface PosterCardProps {
   progress?: number | null;
   onSelect: () => void;
   autoFocus?: boolean;
+  disabled?: boolean;
 }
 
 export function PosterCard({
@@ -17,13 +18,18 @@ export function PosterCard({
   progress,
   onSelect,
   autoFocus,
+  disabled,
 }: PosterCardProps) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (disabled) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onSelect();
     }
   }
+
+  const normalizedPosterUrl = posterUrl?.trim() ?? "";
+  const hasPosterUrl = normalizedPosterUrl.length > 0;
 
   return (
     <button
@@ -32,10 +38,11 @@ export function PosterCard({
       onClick={onSelect}
       onKeyDown={onKeyDown}
       autoFocus={autoFocus}
+      disabled={disabled}
     >
       <div className="poster-card__art" aria-hidden="true">
-        {posterUrl ? (
-          <ArtworkImage src={posterUrl} alt="" loading="lazy" />
+        {hasPosterUrl ? (
+          <ArtworkImage src={normalizedPosterUrl} alt="" loading="lazy" />
         ) : (
           <div className="poster-card__placeholder">{title.slice(0, 1)}</div>
         )}
