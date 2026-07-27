@@ -4,9 +4,12 @@ import {
   addOrUpdate,
   clearTokens,
   displayName,
+  emptyRegistry,
   entryIdFromUrl,
+  findByUrl,
   loadRegistry,
   migrateFromLegacy,
+  normalizeEntry,
   rememberSession,
   removeServer,
   saveRegistry,
@@ -155,5 +158,45 @@ describe("serverRegistry", () => {
     });
     const fromUrl = migrateFromLegacy(storage2);
     expect(fromUrl.entries[0]?.url).toBe("https://url-only.example.com");
+  });
+
+  it("normalizes entries and tolerates corrupt registry blobs", () => {
+    expect(normalizeEntry(null)).toBeNull();
+    expect(normalizeEntry({ url: "" })).toBeNull();
+    expect(normalizeEntry({ url: "https://ok.example", id: "  custom  " })?.id).toBe("  custom  ");
+    expect(emptyRegistry().entries).toEqual([]);
+
+    const storage = memoryStorage({
+      "prairie.serverRegistry": "{not-json",
+    });
+    expect(loadRegistry(storage).entries).toEqual([]);
+
+    const blank = memoryStorage({ "prairie.serverRegistry": "   " });
+    expect(loadRegistry(blank).entries).toEqual([]);
+
+    const mixed = memoryStorage({
+      "prairie.serverRegistry": JSON.stringify({
+        activeServerId: 12,
+        entries: [{ url: "https://keep.example" }, { url: "" }, null],
+        scanCidrs: [" 10.0.0.0/24 ", 5, ""],
+      }),
+    });
+    const loaded = loadRegistry(mixed);
+    expect(loaded.entries).toHaveLength(1);
+    expect(loaded.scanCidrs).toEqual(["10.0.0.0/24"]);
+    expect(findByUrl(loaded, "https://keep.example")?.url).toBe("https://keep.example");
+    expect(findByUrl(loaded, "https://missing.example")).toBeNull();
+
+    saveRegistry(
+      {
+        // @ts-expect-error intentional malformed
+        activeServerId: null,
+        entries: [{ url: "https://save.example" }, { url: "" }],
+        // @ts-expect-error intentional malformed
+        scanCidrs: null,
+      },
+      storage,
+    );
+    expect(JSON.parse(storage.getItem("prairie.serverRegistry")!).entries).toHaveLength(1);
   });
 });

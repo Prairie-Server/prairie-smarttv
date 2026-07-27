@@ -15,7 +15,9 @@ describe("subtitleOverlay", () => {
   it("formats string and array cue payloads", () => {
     expect(formatAvPlaySubtitleText("Hello")).toBe("Hello");
     expect(formatAvPlaySubtitleText(["Line 1", "Line 2"])).toBe("Line 1\nLine 2");
+    expect(formatAvPlaySubtitleText(["", null, "Keep"])).toBe("Keep");
     expect(formatAvPlaySubtitleText(null)).toBe("");
+    expect(formatAvPlaySubtitleText(undefined)).toBe("");
   });
 
   it("creates, updates, and destroys the overlay", () => {
@@ -30,6 +32,13 @@ describe("subtitleOverlay", () => {
 
     clearSubtitleOverlay(overlay);
     expect(overlay.hidden).toBe(true);
+
+    setSubtitleOverlayText(null, "ignored");
+    clearSubtitleOverlay(null);
+    destroySubtitleOverlay(null);
+
+    const bare = document.createElement("div");
+    setSubtitleOverlayText(bare, "no cue child");
 
     destroySubtitleOverlay(overlay);
     expect(host.querySelector(".prairie-avplay-subtitle")).toBeNull();

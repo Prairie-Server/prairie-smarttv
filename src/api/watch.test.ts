@@ -60,6 +60,15 @@ describe("selectPlaybackFileId", () => {
         }),
       ),
     ).toBe(3);
+
+    expect(
+      selectPlaybackFileId(
+        watch({
+          versions: [{ file_id: 3 }],
+        }),
+        0,
+      ),
+    ).toBe(3);
   });
 });
 
@@ -97,8 +106,12 @@ describe("watch helpers", () => {
     expect(selectFileVersion(detail, 3)?.file_id).toBe(3);
     expect(selectFileVersion(detail, 9)).toBeNull();
     expect(formatAudioLabel({ language: "eng", channels: 6 }, 0)).toContain("eng");
+    expect(formatAudioLabel({ title: "Commentary", embedded_title: "ignored" }, 0)).toContain(
+      "Commentary",
+    );
     expect(formatAudioLabel({}, 1)).toBe("Audio 2");
     expect(formatSubtitleLabel({ language: "spa", forced: true })).toContain("Forced");
     expect(formatSubtitleLabel({ title: "English", hearing_impaired: true })).toContain("HI");
+    expect(formatSubtitleLabel({})).toBe("Subtitle");
   });
 });

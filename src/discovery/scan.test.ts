@@ -54,4 +54,23 @@ describe("runLanDiscovery", () => {
 
     expect(calls).toBeLessThan(40);
   });
+
+  it("skips probes when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    const hits = await runLanDiscovery({
+      extraCidrs: ["192.168.1.0/24"],
+      deepScan: false,
+      maxHostsPerCidr: 4,
+      concurrency: 2,
+      timeoutMs: 50,
+      localIps: [],
+      signal: controller.signal,
+      fetchImpl,
+      onHit: () => undefined,
+    });
+    expect(hits).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

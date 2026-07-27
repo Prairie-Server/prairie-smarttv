@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -43,7 +43,7 @@ jobs:
         run: |
           npm run typecheck
           npm run build
-          # Vitest thresholds: 75% stmts/branches/funcs/lines on logic modules
+          # Vitest thresholds: 90% stmts/branches/funcs/lines on logic modules
           # (src/api/**, src/storage/**, playback settings, player selection,
           # platform detect). See vite.config.ts coverage.include.
           npm run test:coverage
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload coverage summary
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: smarttv-coverage
           path: coverage

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiRequest, buildStreamUrl, isAuthLoginPath } from "./client";
+import { ApiError, apiRequest, buildStreamUrl, isAuthLoginPath, isSameServerOrigin } from "./client";
 
 describe("buildStreamUrl", () => {
   it("joins relative stream paths and appends token", () => {
@@ -208,5 +208,54 @@ describe("apiRequest", () => {
     });
     caller.abort();
     await expectation;
+  });
+
+  it("covers error body fallbacks and same-origin helpers", async () => {
+    expect(isSameServerOrigin("https://prairie.example", "https://prairie.example/x")).toBe(true);
+    expect(isSameServerOrigin("https://prairie.example", "https://other.example/x")).toBe(false);
+    expect(isSameServerOrigin(":::", "https://x")).toBe(false);
+
+    const errorField = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "nope" }), {
+          status: 500,
+          statusText: "",
+        }),
+    );
+    await expect(
+      apiRequest({ serverUrl: "https://prairie.example", fetchImpl: errorField }, "/api/v1/x"),
+    ).rejects.toMatchObject({ message: "nope", status: 500 });
+
+    const nonJson = vi.fn(async () => new Response("plain", { status: 502, statusText: "Bad" }));
+    await expect(
+      apiRequest({ serverUrl: "https://prairie.example", fetchImpl: nonJson }, "/api/v1/x"),
+    ).rejects.toMatchObject({ message: "Bad", status: 502 });
+
+    const onUnauthorized = vi.fn(() => {
+      throw new Error("handler boom");
+    });
+    const unauthorized = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "expired" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+    );
+    await expect(
+      apiRequest(
+        { serverUrl: "https://prairie.example", fetchImpl: unauthorized, onUnauthorized },
+        "/api/v1/home",
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+
+    const empty = vi.fn(async () => new Response(null, { status: 204 }));
+    await expect(
+      apiRequest({ serverUrl: "https://prairie.example", fetchImpl: empty }, "/api/v1/x"),
+    ).resolves.toBeUndefined();
+
+    expect(buildStreamUrl("https://prairie.example", "/stream", null)).toBe(
+      "https://prairie.example/stream",
+    );
   });
 });

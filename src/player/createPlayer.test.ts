@@ -65,4 +65,45 @@ describe("selectPlayerBackend", () => {
       }),
     ).toBe("avplay");
   });
+
+  it("native preference selects Starfish on webOS", () => {
+    expect(
+      selectPlayerBackend({
+        preference: "native",
+        platform: "webos",
+        avplayAvailable: false,
+        starfishAvailable: true,
+      }),
+    ).toBe("starfish");
+  });
+
+  it("native preference degrades to available backends off-platform", () => {
+    expect(
+      selectPlayerBackend({
+        preference: "native",
+        platform: "browser",
+        avplayAvailable: true,
+        starfishAvailable: false,
+      }),
+    ).toBe("avplay");
+    expect(
+      selectPlayerBackend({
+        preference: "native",
+        platform: "browser",
+        avplayAvailable: false,
+        starfishAvailable: true,
+      }),
+    ).toBe("starfish");
+  });
+
+  it("auto falls back to HTML5 on Tizen without AVPlay", () => {
+    expect(
+      selectPlayerBackend({
+        preference: "auto",
+        platform: "tizen",
+        avplayAvailable: false,
+        starfishAvailable: false,
+      }),
+    ).toBe("html5");
+  });
 });
