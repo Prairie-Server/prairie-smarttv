@@ -191,6 +191,7 @@ describe("serverRegistry", () => {
       {
         // @ts-expect-error intentional malformed
         activeServerId: null,
+        // @ts-expect-error intentional malformed
         entries: [{ url: "https://save.example" }, { url: "" }],
         // @ts-expect-error intentional malformed
         scanCidrs: null,

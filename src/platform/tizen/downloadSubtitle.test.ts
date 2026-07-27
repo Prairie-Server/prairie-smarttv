@@ -129,11 +129,10 @@ describe("deleteLocalSubtitleFile", () => {
 
   it("resolves and deletes when Tizen filesystem is available", () => {
     const deleteFile = vi.fn();
-    const resolve = vi.fn(
-      (_path: string, onsuccess: (file: { deleteFile?: typeof deleteFile }) => void) => {
-        onsuccess({ deleteFile });
-      },
-    );
+    type ResolveCb = (file: { deleteFile?: typeof deleteFile }) => void;
+    const resolve = vi.fn((_path: string, onsuccess: ResolveCb, _onerror?: () => void) => {
+      onsuccess({ deleteFile });
+    });
     vi.stubGlobal("window", {
       tizen: { filesystem: { resolve } },
     });
@@ -143,14 +142,16 @@ describe("deleteLocalSubtitleFile", () => {
 
     deleteLocalSubtitleFile("noslash");
     deleteLocalSubtitleFile("/onlydir/");
-    resolve.mockImplementation((_path, _ok, onerror) => onerror?.());
+    resolve.mockImplementation((_path: string, _ok: ResolveCb, onerror?: () => void) => {
+      onerror?.();
+    });
     expect(() => deleteLocalSubtitleFile("/wgt-private-tmp/track.vtt")).not.toThrow();
 
-    resolve.mockImplementation((_path, onsuccess) => {
+    resolve.mockImplementation((_path: string, onsuccess: ResolveCb) => {
       onsuccess({
-        deleteFile: () => {
+        deleteFile: vi.fn(() => {
           throw new Error("denied");
-        },
+        }),
       });
     });
     expect(() => deleteLocalSubtitleFile("/wgt-private-tmp/track.vtt")).not.toThrow();
