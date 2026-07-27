@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolvePlaybackStreamUrl, startPlayback } from "./startPlayback";
+import type { PrairieSession } from "../storage/session";
+
+const session: PrairieSession = {
+  serverUrl: "https://prairie.example",
+  accessToken: "tok",
+  profileId: "p1",
+  username: "ada",
+};
 
 describe("startPlayback", () => {
-  it("posts the playback start body", async () => {
+  it("posts the playback start body with profile headers", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toContain("/api/v1/playback/start");
       expect(init?.method).toBe("POST");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer tok");
+      expect(headers.get("X-Profile-Id")).toBe("p1");
       const body = JSON.parse(String(init?.body));
       expect(body.file_id).toBe(42);
       expect(body.profile_id).toBe("p1");
@@ -25,13 +36,8 @@ describe("startPlayback", () => {
       );
     });
 
-    const session = await startPlayback(
-      "https://prairie.example",
-      "tok",
-      { fileId: 42, profileId: "p1" },
-      fetchImpl,
-    );
-    expect(session.stream_url).toBe("/api/v1/stream/abc");
+    const playback = await startPlayback(session, { fileId: 42, profileId: "p1" }, fetchImpl);
+    expect(playback.stream_url).toBe("/api/v1/stream/abc");
   });
 });
 

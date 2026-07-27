@@ -1,26 +1,21 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { isBackKey } from "../focus/spatialFocus";
 
 interface SettingsRowProps {
   label: string;
   hint?: string;
   value: string;
-  onCycle: (direction: 1 | -1) => void;
+  onActivate: () => void;
   autoFocus?: boolean;
 }
 
-/** Full-width TV settings row: Enter / Left / Right cycle the value. */
-export function SettingsCycleRow({ label, hint, value, onCycle, autoFocus }: SettingsRowProps) {
+/** Full-width TV settings row that opens a choice list on Enter / click. */
+export function SettingsCycleRow({ label, hint, value, onActivate, autoFocus }: SettingsRowProps) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "ArrowLeft") {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       event.stopPropagation();
-      onCycle(-1);
-      return;
-    }
-    if (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      event.stopPropagation();
-      onCycle(1);
+      onActivate();
     }
   }
 
@@ -29,7 +24,7 @@ export function SettingsCycleRow({ label, hint, value, onCycle, autoFocus }: Set
       type="button"
       className="settings-row"
       autoFocus={autoFocus}
-      onClick={() => onCycle(1)}
+      onClick={onActivate}
       onKeyDown={onKeyDown}
     >
       <span className="settings-row__copy">
@@ -38,6 +33,7 @@ export function SettingsCycleRow({ label, hint, value, onCycle, autoFocus }: Set
       </span>
       <span className="settings-row__value" aria-hidden="true">
         {value}
+        <span className="settings-row__chevron">▾</span>
       </span>
     </button>
   );
@@ -82,16 +78,59 @@ export function SettingsChoiceRow<T extends string>({
   options,
   onChange,
 }: SettingsChoiceRowProps<T>) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
   const index = Math.max(
     0,
     options.findIndex((opt) => opt.value === value),
   );
   const current = options[index] ?? options[0];
 
-  function cycle(direction: 1 | -1) {
-    if (!options.length) return;
-    const nextIndex = (index + direction + options.length) % options.length;
-    onChange(options[nextIndex]!.value);
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (!isBackKey(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [open]);
+
+  if (open) {
+    return (
+      <div className="settings-dropdown" role="listbox" aria-label={label} id={listId}>
+        <div className="settings-dropdown__header">
+          <p className="settings-dropdown__label">{label}</p>
+          {hint ? <p className="muted settings-dropdown__hint">{hint}</p> : null}
+        </div>
+        <div className="settings-dropdown__options">
+          {options.map((opt, optIndex) => {
+            const selected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={`settings-dropdown__option${selected ? " is-selected" : ""}`}
+                autoFocus={selected || (optIndex === 0 && !current)}
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" className="settings-dropdown__cancel" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -99,7 +138,7 @@ export function SettingsChoiceRow<T extends string>({
       label={label}
       hint={hint}
       value={current?.label ?? String(value)}
-      onCycle={cycle}
+      onActivate={() => setOpen(true)}
     />
   );
 }

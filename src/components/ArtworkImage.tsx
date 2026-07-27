@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ImgHTMLAttributes,
+} from "react";
 import { artworkCandidates } from "../lib/artworkUrl";
 
 export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
@@ -13,6 +20,9 @@ export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
  * PNG when earlier formats are missing or fail to load (legacy Tizen / webOS,
  * missing siblings). Keeps a sized placeholder visible until the first
  * successful decode to avoid empty→image layout flashes.
+ *
+ * TV browsers often serve cached images with `complete === true` without firing
+ * `load`, so we also promote those to the loaded state in layout.
  */
 export function ArtworkImage({
   src,
@@ -29,22 +39,33 @@ export function ArtworkImage({
   const [failedCount, setFailedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const prevNormalizedSrc = useRef<string | undefined>(undefined);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const isSrcChange = prevNormalizedSrc.current !== normalizedSrc;
 
   // Update ref during render (safe, doesn't trigger rerenders).
   if (isSrcChange) prevNormalizedSrc.current = normalizedSrc;
 
   useEffect(() => {
-    // Reset the fallback chain when the canonical artwork URL changes.
     setFailedCount(0);
     setLoaded(false);
   }, [normalizedSrc]);
 
+  const effectiveFailedCount = isSrcChange ? 0 : failedCount;
+  const current =
+    normalizedSrc && candidates.length > 0
+      ? candidates[Math.min(effectiveFailedCount, candidates.length - 1)]!
+      : "";
+
+  useLayoutEffect(() => {
+    if (!current) return;
+    const img = imgRef.current;
+    if (img?.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+    }
+  }, [current]);
+
   if (!normalizedSrc || candidates.length === 0) return null;
 
-  const effectiveFailedCount = isSrcChange ? 0 : failedCount;
-  const index = Math.min(effectiveFailedCount, candidates.length - 1);
-  const current = candidates[index]!;
   const showPlaceholder = !loaded;
   const imgStyle: CSSProperties = {
     ...(typeof style === "object" && style ? style : null),
@@ -60,6 +81,7 @@ export function ArtworkImage({
       ) : null}
       <img
         {...rest}
+        ref={imgRef}
         className="artwork-image__img"
         src={current}
         alt={alt}
