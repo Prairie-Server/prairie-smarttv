@@ -138,7 +138,7 @@ export function ServerListScreen({
           <div className="server-list-hero__copy">
             <p className="eyebrow">Smart TV</p>
             <h1 className="brand-hero">Prairie</h1>
-            <p className="lede">Choose a saved server or one found on your LAN.</p>
+            <p className="lede">Choose a saved server, one found nearby, or add an address.</p>
           </div>
           {onBack ? (
             <FocusButton variant="ghost" onClick={onBack}>
