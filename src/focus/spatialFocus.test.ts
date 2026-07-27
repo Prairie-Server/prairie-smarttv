@@ -128,6 +128,38 @@ describe("spatialFocus", () => {
     expect(document.activeElement).toBe(back);
   });
 
+  it("defers caret motion for contentEditable, selections, and mid-field arrows", async () => {
+    const { shouldDeferToEditableCaret } = await import("./spatialFocus");
+
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+    document.body.append(editable);
+    expect(shouldDeferToEditableCaret(editable, "ArrowLeft")).toBe(true);
+    expect(shouldDeferToEditableCaret(editable, "ArrowUp")).toBe(false);
+
+    const select = document.createElement("select");
+    document.body.append(select);
+    expect(shouldDeferToEditableCaret(select, "ArrowRight")).toBe(true);
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = "hello";
+    input.setSelectionRange(1, 3);
+    expect(shouldDeferToEditableCaret(input, "ArrowLeft")).toBe(true);
+
+    input.setSelectionRange(5, 5);
+    expect(shouldDeferToEditableCaret(input, "ArrowRight")).toBe(false);
+    expect(shouldDeferToEditableCaret(input, "ArrowLeft")).toBe(true);
+
+    const number = document.createElement("input");
+    number.type = "number";
+    number.value = "12";
+    // happy-dom may report null selection on number inputs.
+    expect(shouldDeferToEditableCaret(number, "ArrowRight")).toBe(true);
+
+    expect(shouldDeferToEditableCaret(null, "ArrowLeft")).toBe(false);
+  });
+
   it("keeps spatial navigation on checkbox inputs (TV toggles)", () => {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
