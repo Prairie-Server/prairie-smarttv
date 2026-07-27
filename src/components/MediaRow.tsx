@@ -70,12 +70,7 @@ function stampFocusIndex(node: ReactNode, index: number): ReactNode {
 }
 
 export function MediaRow<T>(props: MediaRowProps<T>) {
-  const {
-    title,
-    skeleton = false,
-    variant = "poster",
-    className = "",
-  } = props;
+  const { title, skeleton = false, variant = "poster", className = "" } = props;
   const metrics = VARIANT_METRICS[variant];
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -123,7 +118,10 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
       flushSync(() => {
         setForcedRange({ start: nextStart, end: nextEnd });
       });
-      const targetLeft = Math.max(0, index * itemStride - Math.max(0, (el.clientWidth - metrics.itemWidth) / 2));
+      const targetLeft = Math.max(
+        0,
+        index * itemStride - Math.max(0, (el.clientWidth - metrics.itemWidth) / 2),
+      );
       if (Math.abs(el.scrollLeft - targetLeft) > 2) {
         el.scrollLeft = targetLeft;
         setScrollLeft(el.scrollLeft);
@@ -168,7 +166,9 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     }
     body = (
       <>
-        {padLeft > 0 ? <div className="media-row__spacer" style={{ width: padLeft }} aria-hidden /> : null}
+        {padLeft > 0 ? (
+          <div className="media-row__spacer" style={{ width: padLeft }} aria-hidden />
+        ) : null}
         {slice}
         {padRight > 0 ? (
           <div className="media-row__spacer" style={{ width: padRight }} aria-hidden />
@@ -179,7 +179,10 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     const childArray = Children.toArray(props.children);
     focusCount = childArray.length;
     body = childArray.map((child, index) => (
-      <div key={isValidElement(child) && child.key != null ? child.key : index} className="media-row__item">
+      <div
+        key={isValidElement(child) && child.key != null ? child.key : index}
+        className="media-row__item"
+      >
         {stampFocusIndex(child, index)}
       </div>
     ));

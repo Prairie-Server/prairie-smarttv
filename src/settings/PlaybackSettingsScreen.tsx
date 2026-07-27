@@ -113,7 +113,9 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
 
   const [section, setSection] = useState<SettingsSectionId>(() => sections[0]?.id ?? "playback");
   const [settings, setSettings] = useState<PlaybackSettings>(() => loadPlaybackSettings());
-  const [performanceMode, setPerformanceMode] = useState<PerformanceMode>(() => loadPerformanceMode());
+  const [performanceMode, setPerformanceMode] = useState<PerformanceMode>(() =>
+    loadPerformanceMode(),
+  );
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ kind: "checking" });
   const [changelogFallbackUrl, setChangelogFallbackUrl] = useState<string | null>(null);
   const platform = detectPlatform();

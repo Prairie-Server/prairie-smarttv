@@ -58,10 +58,7 @@ describe("performanceTier", () => {
   });
 
   it("strips AVIF on low tier and cycles modes", () => {
-    expect(preferredRasterFormatsForTier("low", ["avif", "webp", "png"])).toEqual([
-      "webp",
-      "png",
-    ]);
+    expect(preferredRasterFormatsForTier("low", ["avif", "webp", "png"])).toEqual(["webp", "png"]);
     expect(preferredRasterFormatsForTier("high", ["avif", "webp", "png"])).toEqual([
       "avif",
       "webp",
@@ -75,14 +72,16 @@ describe("performanceTier", () => {
   });
 
   it("loads object-shaped mode blobs and ignores corrupt storage", () => {
-    expect(loadPerformanceMode(memoryStorage({ "prairie.performanceMode": '{"mode":"balanced"}' }))).toBe(
-      "balanced",
-    );
-    expect(loadPerformanceMode(memoryStorage({ "prairie.performanceMode": '{"mode":"nope"}' }))).toBe(
+    expect(
+      loadPerformanceMode(memoryStorage({ "prairie.performanceMode": '{"mode":"balanced"}' })),
+    ).toBe("balanced");
+    expect(
+      loadPerformanceMode(memoryStorage({ "prairie.performanceMode": '{"mode":"nope"}' })),
+    ).toBe("auto");
+    expect(loadPerformanceMode(memoryStorage({ "prairie.performanceMode": "{" }))).toBe("auto");
+    expect(loadPerformanceMode(memoryStorage({ "prairie.performanceMode": '"nope"' }))).toBe(
       "auto",
     );
-    expect(loadPerformanceMode(memoryStorage({ "prairie.performanceMode": "{" }))).toBe("auto");
-    expect(loadPerformanceMode(memoryStorage({ "prairie.performanceMode": '"nope"' }))).toBe("auto");
     expect(savePerformanceMode("nope" as PerformanceMode, memoryStorage())).toBe("auto");
     expect(resolvePerformanceTier("nope" as PerformanceMode, "balanced")).toBe("balanced");
   });

@@ -8,11 +8,7 @@ export {
   shouldDeferToEditableCaret,
 } from "./spatialFocusKeys";
 
-import {
-  isArrowKey,
-  isEditableTarget,
-  shouldDeferToEditableCaret,
-} from "./spatialFocusKeys";
+import { isArrowKey, isEditableTarget, shouldDeferToEditableCaret } from "./spatialFocusKeys";
 
 /** Sync reveal when virtualized containers need to mount an off-window index. */
 export type FocusRevealHandler = (index: number) => HTMLElement | null;
@@ -20,7 +16,10 @@ export type FocusRevealHandler = (index: number) => HTMLElement | null;
 const revealHandlers = new WeakMap<HTMLElement, FocusRevealHandler>();
 const lastIndexByContainer = new WeakMap<HTMLElement, number>();
 
-export function registerFocusReveal(container: HTMLElement, handler: FocusRevealHandler): () => void {
+export function registerFocusReveal(
+  container: HTMLElement,
+  handler: FocusRevealHandler,
+): () => void {
   revealHandlers.set(container, handler);
   return () => {
     revealHandlers.delete(container);
