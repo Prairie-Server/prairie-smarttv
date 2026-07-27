@@ -17,16 +17,19 @@ export function buildTranscodeStartRequest(input: {
   sessionId: string;
   seekSeconds: number;
   playMethod: string;
+  /** When remuxing, re-encode audio to AAC if the TV cannot Direct Play it. */
+  transcodeAudio?: boolean;
 }): TranscodeStartRequest {
   const isRemux = input.playMethod.trim().toLowerCase() === "remux";
+  const remuxAudio = input.transcodeAudio ? "aac" : "copy";
   return {
     session_id: input.sessionId,
     seek_seconds: Math.max(0, input.seekSeconds),
-    // Remux = container remux with codec copy (TV can usually passthrough audio).
+    // Remux = container remux (video copy); audio copy unless Prairie asked for AAC.
     // Transcode = conservative 1080p h264/aac ladder default (matches Apple fallback).
     target_resolution: isRemux ? "" : "1080p",
     target_codec_video: isRemux ? "copy" : "h264",
-    target_codec_audio: isRemux ? "copy" : "aac",
+    target_codec_audio: isRemux ? remuxAudio : "aac",
     target_bitrate_kbps: isRemux ? 0 : 6000,
     segment_duration: 2,
     subtitle_track_index: -1,
@@ -83,6 +86,7 @@ export async function preparePlayableSession(
         sessionId: started.session_id,
         seekSeconds,
         playMethod: started.play_method,
+        transcodeAudio: started.playback_info?.transcode_audio === true,
       }),
       fetchImpl,
     );
@@ -119,6 +123,8 @@ export async function preparePlayableSession(
       ...started.playback_info,
       stream_type: "hls",
       can_seek_anywhere: transcode.can_seek_anywhere ?? started.playback_info?.can_seek_anywhere,
+      // After bootstrap, audio has already been converted when requested.
+      transcode_audio: false,
     },
   };
 

@@ -9,6 +9,23 @@ export interface TvPlaybackCapabilities {
   hdr: boolean;
 }
 
+export interface SystemInfoApi {
+  isSupportedAudioCodec?(codec: string): boolean;
+  isSupportedVideoCodec?(codec: string): boolean;
+}
+
+/** Samsung systeminfo codec name → Prairie `codecs_audio` token. */
+const AUDIO_CODEC_PROBES: ReadonlyArray<{ prairie: string; samsung: string }> = [
+  { prairie: "aac", samsung: "AAC" },
+  { prairie: "aac", samsung: "HE-AAC" },
+  { prairie: "ac3", samsung: "AC3" },
+  { prairie: "eac3", samsung: "E-AC3" },
+  { prairie: "truehd", samsung: "TrueHD" },
+  { prairie: "opus", samsung: "OPUS" },
+  { prairie: "ac4", samsung: "AC4" },
+  { prairie: "mp3", samsung: "MPEG" },
+];
+
 function tizenMajorVersion(): number {
   const ua = navigator.userAgent ?? "";
   const match = ua.match(/Tizen[/\s](\d+)/i);
@@ -39,12 +56,68 @@ function probeHdr(tizenMajor: number): boolean {
   return tizenMajor >= 4;
 }
 
+function getSystemInfo(): SystemInfoApi | null {
+  return window.webapis?.systeminfo ?? null;
+}
+
+/**
+ * Probe which audio codecs this TV can Direct Play / remux-copy.
+ * Prefer `webapis.systeminfo.isSupportedAudioCodec` (Tizen 6+); otherwise keep
+ * the conservative DEFAULT_TV_CAPABILITIES list (no TrueHD/DTS/FLAC).
+ */
+export function probeSupportedAudioCodecs(
+  input: {
+    systemInfo?: SystemInfoApi | null;
+    tizenMajor?: number;
+  } = {},
+): string[] {
+  const systemInfo = input.systemInfo === undefined ? getSystemInfo() : input.systemInfo;
+  const tizenMajor = input.tizenMajor ?? tizenMajorVersion();
+  const base = [...DEFAULT_TV_CAPABILITIES.codecs_audio];
+
+  if (systemInfo == null) {
+    if (tizenMajor > 0 && tizenMajor < 4) return [...base, "dts"];
+    return base;
+  }
+
+  const rawProbe = Reflect.get(systemInfo, "isSupportedAudioCodec");
+  if (typeof rawProbe !== "function") {
+    // Older Tizen sometimes Direct Plays DTS; modern firmwares usually do not.
+    if (tizenMajor > 0 && tizenMajor < 4) {
+      return [...base, "dts"];
+    }
+    return base;
+  }
+  const isSupportedAudioCodec = (codec: string): boolean =>
+    Boolean((rawProbe as (this: SystemInfoApi, name: string) => boolean).call(systemInfo, codec));
+
+  const supported = new Set<string>();
+  for (const { prairie, samsung } of AUDIO_CODEC_PROBES) {
+    try {
+      if (isSupportedAudioCodec(samsung)) supported.add(prairie);
+    } catch {
+      /* ignore individual probe failures */
+    }
+  }
+
+  // Always keep the baseline TV-safe set even if a probe falsely returns false.
+  for (const codec of base) supported.add(codec);
+
+  // DTS is not exposed via isSupportedAudioCodec; only advertise on old Tizen.
+  if (tizenMajor > 0 && tizenMajor < 4) supported.add("dts");
+
+  return [...supported];
+}
+
 /**
  * Probe what this TV can likely Direct Play. Falls back to DEFAULT_TV_CAPABILITIES
  * fields when the runtime cannot be inspected (unit tests / browser).
  */
 export function probeTvPlaybackCapabilities(
-  input: { avplayAvailable?: boolean } = {},
+  input: {
+    avplayAvailable?: boolean;
+    systemInfo?: SystemInfoApi | null;
+  } = {},
 ): TvPlaybackCapabilities {
   const avplay = input.avplayAvailable ?? isAvPlayAvailable();
   const tizenMajor = tizenMajorVersion();
@@ -55,7 +128,10 @@ export function probeTvPlaybackCapabilities(
     codecs_video.push("hevc");
   }
 
-  const codecs_audio = [...DEFAULT_TV_CAPABILITIES.codecs_audio];
+  const codecs_audio = probeSupportedAudioCodecs({
+    systemInfo: input.systemInfo,
+    tizenMajor,
+  });
   // Prefer progressive containers AVPlay handles well; keep mkv when native player exists.
   const containers = avplay ? ["mp4", "mpegts", "hls", "mkv"] : ["mp4", "mpegts", "hls"];
 

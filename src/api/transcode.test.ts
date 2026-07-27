@@ -76,6 +76,17 @@ describe("buildTranscodeStartRequest", () => {
     });
   });
 
+  it("re-encodes remux audio to AAC when Prairie sets transcode_audio", () => {
+    const body = buildTranscodeStartRequest({
+      sessionId: "s1",
+      seekSeconds: 10,
+      playMethod: "remux",
+      transcodeAudio: true,
+    });
+    expect(body.target_codec_video).toBe("copy");
+    expect(body.target_codec_audio).toBe("aac");
+  });
+
   it("uses h264/aac for transcode and clamps negative seek", () => {
     const body = buildTranscodeStartRequest({
       sessionId: "s1",
@@ -126,6 +137,7 @@ describe("preparePlayableSession", () => {
       expect(init?.method).toBe("POST");
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("copy");
+      expect(body.target_codec_audio).toBe("copy");
       return manifestResponse();
     });
 
@@ -135,6 +147,23 @@ describe("preparePlayableSession", () => {
     expect(prepared.streamUrl).toContain("token=tok");
     expect(prepared.playerStartSeconds).toBe(12);
     expect(prepared.session.play_method).toBe("remux");
+  });
+
+  it("remuxes with AAC audio when playback_info.transcode_audio is set", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.target_codec_video).toBe("copy");
+      expect(body.target_codec_audio).toBe("aac");
+      return manifestResponse();
+    });
+
+    const remuxAudio = {
+      ...started("remux"),
+      playback_info: { stream_type: "progressive", transcode_audio: true },
+    };
+    const prepared = await preparePlayableSession(session, remuxAudio, 12, fetchImpl);
+    expect(prepared.session.play_method).toBe("remux");
+    expect(prepared.session.playback_info?.transcode_audio).toBe(false);
   });
 
   it("bootstraps full encode for transcode and marks can_seek_anywhere", async () => {

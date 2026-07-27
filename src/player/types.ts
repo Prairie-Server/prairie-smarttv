@@ -75,6 +75,10 @@ export interface PlaybackSessionResponse {
   playback_info?: {
     stream_type?: string;
     can_seek_anywhere?: boolean;
+    /** Remux should re-encode audio (typically AAC) instead of copy. */
+    transcode_audio?: boolean;
+    video_codec?: string;
+    audio_codec?: string;
   };
 }
 

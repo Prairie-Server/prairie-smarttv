@@ -62,6 +62,10 @@ declare global {
     webapis?: {
       avplay?: AvPlayApi;
       tvinfo?: TvInfoApi;
+      systeminfo?: {
+        isSupportedAudioCodec?(codec: string): boolean;
+        isSupportedVideoCodec?(codec: string): boolean;
+      };
     };
     tizen?: {
       DownloadRequest: TizenDownloadRequestConstructor;
