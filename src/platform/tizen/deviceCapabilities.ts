@@ -26,7 +26,10 @@ function probeMaxResolution(): string {
 
 function probeHdr(tizenMajor: number): boolean {
   try {
-    if (typeof window.matchMedia === "function" && window.matchMedia("(dynamic-range: high)").matches) {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(dynamic-range: high)").matches
+    ) {
       return true;
     }
   } catch {

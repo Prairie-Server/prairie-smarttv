@@ -28,9 +28,9 @@ describe("waitForHlsManifest", () => {
   });
 
   it("uses default fetch and timing options when omitted", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("#EXTM3U\n", { status: 200 }),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("#EXTM3U\n", { status: 200 }));
     await expect(waitForHlsManifest("https://x/b.m3u8", { timeoutMs: 500 })).resolves.toBe(true);
     expect(fetchSpy).toHaveBeenCalled();
     fetchSpy.mockRestore();
