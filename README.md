@@ -119,7 +119,7 @@ Live TV uses `/api/v1/livetv/...` session start/release (not VOD `playback/start
 8. `POST /api/v1/playback/{id}/progress` · `PATCH …/audio` · `DELETE …/{id}`
 9. `GET /api/v1/livetv/channels` · `GET …/guide` · `POST …/channels/{id}/session` · `DELETE …/sessions/{id}`
 
-Session auth uses `sessionStorage` for tokens/profile PIN material and `localStorage` for non-secret identity like server URL and selected profile metadata.
+Session auth stores non-secret identity (`serverUrl`, username, profile id/name) in the `prairie.session` localStorage blob, and access/profile tokens in dedicated localStorage keys so the signed-in profile survives TV app updates and cold launches. Packaged WebViews clear `sessionStorage` on exit, so tokens are not kept there.
 
 ## Layout
 
