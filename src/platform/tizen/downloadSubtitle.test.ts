@@ -95,7 +95,10 @@ describe("assertAllowedSubtitleDownloadUrl", () => {
       assertAllowedSubtitleDownloadUrl("https://prairie.example/api/v1/subs/1.vtt", SERVER),
     ).not.toThrow();
     expect(() =>
-      assertAllowedSubtitleDownloadUrl("http://prairie.example/api/v1/subs/1.vtt", "http://prairie.example"),
+      assertAllowedSubtitleDownloadUrl(
+        "http://prairie.example/api/v1/subs/1.vtt",
+        "http://prairie.example",
+      ),
     ).not.toThrow();
   });
 
@@ -109,10 +112,12 @@ describe("assertAllowedSubtitleDownloadUrl", () => {
     expect(() => assertAllowedSubtitleDownloadUrl("https://prairie.example/a.vtt", null)).toThrow(
       /connected server/i,
     );
-    expect(() => assertAllowedSubtitleDownloadUrl("not-a-url", SERVER)).toThrow(/valid absolute URL/i);
-    expect(() =>
-      assertAllowedSubtitleDownloadUrl("https://prairie.example/a.vtt", ":::"),
-    ).toThrow(/Connected server URL is invalid/i);
+    expect(() => assertAllowedSubtitleDownloadUrl("not-a-url", SERVER)).toThrow(
+      /valid absolute URL/i,
+    );
+    expect(() => assertAllowedSubtitleDownloadUrl("https://prairie.example/a.vtt", ":::")).toThrow(
+      /Connected server URL is invalid/i,
+    );
   });
 });
 
