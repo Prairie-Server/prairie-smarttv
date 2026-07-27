@@ -19,13 +19,14 @@ export function parseAppVersion(raw: string | null | undefined): AppVersion | nu
     text = text.slice(1);
   }
   // Drop build metadata (`+2`) before detecting prerelease.
-  const withoutBuild = text.split("+", 1)[0] ?? text;
+  // split(..., 1) always yields at least one element for a non-empty string.
+  const withoutBuild = text.split("+", 1)[0] as string;
   const prerelease = withoutBuild.includes("-");
-  const core = withoutBuild.split("-", 1)[0] ?? withoutBuild;
+  const core = withoutBuild.split("-", 1)[0] as string;
   const parts = core.split(".");
   if (parts.length < 2) return null;
-  const major = Number.parseInt(parts[0] ?? "", 10);
-  const minor = Number.parseInt(parts[1] ?? "", 10);
+  const major = Number.parseInt(parts[0] as string, 10);
+  const minor = Number.parseInt(parts[1] as string, 10);
   if (!Number.isFinite(major) || !Number.isFinite(minor)) return null;
   // Missing or unparseable patch defaults to 0 (Android AppVersion parity).
   const patchParsed = parts[2] == null ? NaN : Number.parseInt(parts[2], 10);

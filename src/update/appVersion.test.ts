@@ -175,6 +175,15 @@ describe("resolveAppUpdateStatus", () => {
     ).toBe("https://example.com/r");
     expect(
       changelogUrlOrNull({
+        kind: "updateAvailable",
+        currentVersion: "1.0.0",
+        latestVersion: "1.1.0",
+        releaseUrl: null,
+        changelogUrl: null,
+      }),
+    ).toBeNull();
+    expect(
+      changelogUrlOrNull({
         kind: "upToDate",
         currentVersion: "1.0.0",
         latestVersion: "1.0.0",
@@ -186,5 +195,6 @@ describe("resolveAppUpdateStatus", () => {
         currentVersion: "1.0.0",
       }),
     ).toBeNull();
+    expect(releaseUrlOrNull({ kind: "upToDate", currentVersion: "1.0.0", latestVersion: "1.0.0" })).toBeNull();
   });
 });
