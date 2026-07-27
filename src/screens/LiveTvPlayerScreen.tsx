@@ -1,3 +1,4 @@
+import { ArrowLeft, Pause, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
@@ -124,7 +125,7 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
 
       <div className="player-chrome">
         <div className="player-top-bar">
-          <FocusButton variant="ghost" onClick={() => void handleExit()}>
+          <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={() => void handleExit()}>
             Back
           </FocusButton>
           <div className="player-meta">
@@ -141,12 +142,13 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
         <div className="player-controls">
           <FocusButton
             autoFocus
+            icon={playing ? <Pause /> : <Play />}
             onClick={() => setPlaying((p) => !p)}
             disabled={!streamUrl || Boolean(error)}
           >
             {playing ? "Pause" : "Play"}
           </FocusButton>
-          <FocusButton variant="ghost" onClick={() => void handleExit()}>
+          <FocusButton variant="ghost" icon={<Square />} onClick={() => void handleExit()}>
             Stop
           </FocusButton>
         </div>

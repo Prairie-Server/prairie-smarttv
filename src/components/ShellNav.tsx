@@ -1,3 +1,5 @@
+import { FolderOpen, Home, Library, Search, Settings, Tv, Unplug, Users } from "lucide-react";
+import type { ReactNode } from "react";
 import { FocusButton } from "./FocusButton";
 
 export type ShellTab = "home" | "libraries" | "collections" | "search" | "livetv";
@@ -12,11 +14,11 @@ interface ShellNavProps {
   onDisconnect: () => void;
 }
 
-const BASE_TABS: Array<{ id: ShellTab; label: string }> = [
-  { id: "home", label: "Home" },
-  { id: "libraries", label: "Libraries" },
-  { id: "collections", label: "Collections" },
-  { id: "search", label: "Search" },
+const BASE_TABS: Array<{ id: ShellTab; label: string; icon: ReactNode }> = [
+  { id: "home", label: "Home", icon: <Home /> },
+  { id: "libraries", label: "Libraries", icon: <Library /> },
+  { id: "collections", label: "Collections", icon: <FolderOpen /> },
+  { id: "search", label: "Search", icon: <Search /> },
 ];
 
 export function ShellNav({
@@ -29,7 +31,11 @@ export function ShellNav({
   onDisconnect,
 }: ShellNavProps) {
   const tabs = showLiveTv
-    ? [...BASE_TABS.slice(0, 3), { id: "livetv" as const, label: "Live TV" }, BASE_TABS[3]!]
+    ? [
+        ...BASE_TABS.slice(0, 3),
+        { id: "livetv" as const, label: "Live TV", icon: <Tv /> },
+        BASE_TABS[3]!,
+      ]
     : BASE_TABS;
 
   return (
@@ -45,6 +51,7 @@ export function ShellNav({
         {tabs.map((tab) => (
           <FocusButton
             key={tab.id}
+            icon={tab.icon}
             variant={active === tab.id ? "primary" : "ghost"}
             className={active === tab.id ? "shell-nav__tab is-active" : "shell-nav__tab"}
             onClick={() => onNavigate(tab.id)}
@@ -54,13 +61,13 @@ export function ShellNav({
         ))}
       </nav>
       <div className="shell-nav__actions">
-        <FocusButton variant="ghost" onClick={onProfiles}>
+        <FocusButton variant="ghost" icon={<Users />} onClick={onProfiles}>
           Switch profile
         </FocusButton>
-        <FocusButton variant="ghost" onClick={onSettings}>
+        <FocusButton variant="ghost" icon={<Settings />} onClick={onSettings}>
           Settings
         </FocusButton>
-        <FocusButton variant="ghost" onClick={onDisconnect}>
+        <FocusButton variant="ghost" icon={<Unplug />} onClick={onDisconnect}>
           Disconnect
         </FocusButton>
       </div>

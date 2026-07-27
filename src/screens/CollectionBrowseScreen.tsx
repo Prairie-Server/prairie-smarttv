@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
@@ -58,7 +59,7 @@ export function CollectionBrowseScreen({
           <p className="eyebrow">Collection</p>
           <h1 className="browse-title">{title}</h1>
         </div>
-        <FocusButton variant="ghost" onClick={onBack}>
+        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack}>
           Back
         </FocusButton>
       </div>

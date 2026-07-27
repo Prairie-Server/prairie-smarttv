@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Circle, Play } from "lucide-react";
 import { ApiError } from "../api/client";
 import {
   channelDisplayLabel,
@@ -212,6 +213,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                     <div className="row-actions">
                       <FocusButton
                         autoFocus={false}
+                        icon={<Circle />}
                         disabled={recordingBusy}
                         onClick={() => void handleRecord(now)}
                       >
@@ -227,6 +229,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                     <div className="row-actions">
                       <FocusButton
                         autoFocus={false}
+                        icon={<Circle />}
                         disabled={recordingBusy}
                         onClick={() => void handleRecord(next)}
                       >
@@ -237,7 +240,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                 </div>
               </div>
               <div className="row-actions">
-                <FocusButton autoFocus={false} onClick={() => onTune(selected)}>
+                <FocusButton autoFocus={false} icon={<Play />} onClick={() => onTune(selected)}>
                   Watch
                 </FocusButton>
               </div>

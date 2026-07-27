@@ -1,3 +1,4 @@
+import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
@@ -80,7 +81,7 @@ export function LibraryBrowseScreen({
           <p className="eyebrow">Library</p>
           <h1 className="browse-title">{libraryName}</h1>
         </div>
-        <FocusButton variant="ghost" onClick={onBack}>
+        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack}>
           Back
         </FocusButton>
       </div>
@@ -117,7 +118,9 @@ export function LibraryBrowseScreen({
       </div>
       {hasMore && !loading ? (
         <div className="row-actions">
-          <FocusButton onClick={() => void loadMore()}>Load more</FocusButton>
+          <FocusButton icon={<MoreHorizontal />} onClick={() => void loadMore()}>
+            Load more
+          </FocusButton>
         </div>
       ) : null}
     </section>

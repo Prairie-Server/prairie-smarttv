@@ -1,3 +1,4 @@
+import { ArrowLeft, Plus, Radar, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { FocusButton } from "../components/FocusButton";
 import type { DiscoveryHit } from "../discovery/discover";
@@ -203,7 +204,7 @@ export function ServerListScreen({
             <p className="lede">Choose a saved server, one found nearby, or add an address.</p>
           </div>
           {onBack ? (
-            <FocusButton variant="ghost" onClick={onBack}>
+            <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack}>
               Back
             </FocusButton>
           ) : null}
@@ -218,17 +219,24 @@ export function ServerListScreen({
 
         <div className="server-list-actions">
           <FocusButton
+            icon={<Radar />}
             onClick={() => void startScan(true)}
             disabled={controlsLocked}
             autoFocus={!saved.length}
           >
             {busy ? "Scanning…" : connecting ? "Connecting…" : "Scan again"}
           </FocusButton>
-          <FocusButton variant="ghost" onClick={onAddManual} disabled={controlsLocked}>
+          <FocusButton
+            variant="ghost"
+            icon={<Plus />}
+            onClick={onAddManual}
+            disabled={controlsLocked}
+          >
             Add manually
           </FocusButton>
           <FocusButton
             variant="ghost"
+            icon={<Trash2 />}
             onClick={handleRemove}
             disabled={controlsLocked || !selectedId}
           >

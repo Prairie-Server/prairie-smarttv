@@ -1,3 +1,4 @@
+import { ArrowLeft, FileText, Radar } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FocusButton } from "../components/FocusButton";
 import { SettingsBlock, SettingsChoiceRow, SettingsToggleRow } from "../components/SettingsRows";
@@ -143,7 +144,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
   return (
     <section className="screen settings-screen">
       <header className="settings-header">
-        <FocusButton variant="ghost" onClick={onBack} autoFocus>
+        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack} autoFocus>
           Back
         </FocusButton>
         <div className="settings-header__titles">
@@ -156,7 +157,12 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
       <div className="settings-column">
         {onSwitchServer ? (
           <SettingsBlock title="Servers" note="Switch servers or scan the LAN for new ones.">
-            <FocusButton variant="ghost" className="settings-action" onClick={onSwitchServer}>
+            <FocusButton
+              variant="ghost"
+              className="settings-action"
+              icon={<Radar />}
+              onClick={onSwitchServer}
+            >
               Servers / Scan LAN
             </FocusButton>
           </SettingsBlock>
@@ -262,6 +268,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
                 <FocusButton
                   variant="ghost"
                   className="settings-action"
+                  icon={<FileText />}
                   onClick={() => openChangelog(changelogUrl)}
                 >
                   Changelog
