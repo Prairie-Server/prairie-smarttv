@@ -57,7 +57,9 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
         liveSessionId.current = started.session_id;
         const raw = playableLiveUrl(started);
         if (!raw) throw new Error("Live TV session returned no stream URL");
-        setStreamUrl(resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken));
+        setStreamUrl(
+          resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken, session.profileId),
+        );
         setNote(started.note ?? null);
         setPlaying(true);
       } catch (err) {

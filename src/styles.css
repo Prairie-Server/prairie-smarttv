@@ -1223,6 +1223,93 @@ button:focus,
   border: 1px solid rgba(224, 168, 74, 0.28);
 }
 
+.livetv-tabs {
+  margin-bottom: 1rem;
+}
+
+.livetv-guide {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.livetv-guide-row {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+  background: rgba(28, 36, 48, 0.72);
+  border: 1px solid transparent;
+}
+
+.livetv-guide-row:focus-within {
+  border-color: rgba(240, 197, 116, 0.35);
+}
+
+.livetv-guide-row__channel {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.livetv-guide-row__programs {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.livetv-guide-row__actions {
+  flex-wrap: wrap;
+}
+
+.livetv-recordings {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.livetv-recordings-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.livetv-recordings-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.livetv-recording-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(28, 36, 48, 0.72);
+}
+
+.livetv-recording-row__body {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.livetv-recording-row__body strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+@media (min-width: 900px) {
+  .livetv-guide-row {
+    grid-template-columns: minmax(12rem, 0.9fr) minmax(0, 1.4fr) auto;
+    align-items: center;
+  }
+
+  .livetv-guide-row__programs {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+}
+
 @media (max-width: 900px) {
   .livetv-layout {
     grid-template-columns: 1fr;

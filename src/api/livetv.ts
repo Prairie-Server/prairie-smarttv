@@ -31,11 +31,14 @@ export interface LiveTvProgram {
   image_url?: string;
 }
 
+export type LiveTvTransport = "mpegts" | "hls";
+
 export interface LiveTvSessionStart {
   session_id: string;
   playback_ticket?: string;
   hls_url?: string;
   stream_url?: string;
+  transport?: LiveTvTransport;
   note?: string;
 }
 
@@ -55,9 +58,34 @@ export interface ScheduleLiveTvRecordingInput {
   program_id: string;
 }
 
+function looksLikeHlsUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return lower.includes(".m3u8") || lower.includes("live-hls");
+}
+
+/** True when the session exposes an HLS stream Smart TV can play. */
+export function isWatchableHls(start: LiveTvSessionStart): boolean {
+  const url = playableLiveUrl(start);
+  if (!url) return false;
+  return start.transport === "hls" || looksLikeHlsUrl(url);
+}
+
+/** Prefer HLS URLs; MPEG-TS proxy paths are returned only when no HLS is available. */
 export function playableLiveUrl(start: LiveTvSessionStart): string | null {
-  const url = (start.hls_url || start.stream_url || "").trim();
-  return url || null;
+  const hls = (start.hls_url || "").trim();
+  const stream = (start.stream_url || "").trim();
+
+  if (start.transport === "hls") {
+    return hls || stream || null;
+  }
+
+  if (hls && looksLikeHlsUrl(hls)) return hls;
+  if (stream && looksLikeHlsUrl(stream)) return stream;
+  if (hls) return hls;
+  if (start.transport === "mpegts") {
+    return stream || null;
+  }
+  return stream || null;
 }
 
 /**
@@ -69,6 +97,7 @@ export function resolveLivePlaybackUrl(
   serverUrl: string,
   streamPath: string,
   token: string | null,
+  profileId?: string | null,
 ): string {
   const trimmed = streamPath.trim();
   if (!trimmed) {
@@ -78,7 +107,7 @@ export function resolveLivePlaybackUrl(
   if (isAbsoluteHttp && !isSameServerOrigin(serverUrl, trimmed)) {
     throw new Error("Live TV requires a server-proxied stream");
   }
-  return buildStreamUrl(serverUrl, trimmed, token);
+  return buildStreamUrl(serverUrl, trimmed, token, profileId);
 }
 
 export async function fetchLiveTvChannels(
@@ -113,6 +142,10 @@ export async function fetchLiveTvGuide(
   if (!channelIds.length) return [];
   const params = new URLSearchParams();
   params.set("channels", channelIds.join(","));
+  const now = Date.now();
+  // Align with web: guide window starts at now (overlap still returns in-progress shows).
+  params.set("start", new Date(now).toISOString());
+  params.set("end", new Date(now + 6 * 60 * 60 * 1000).toISOString());
   const data = await apiRequest<{ programs?: LiveTvProgram[] }>(
     sessionClient(session, fetchImpl),
     `/api/v1/livetv/guide?${params.toString()}`,
@@ -144,6 +177,29 @@ export async function releaseLiveTvSession(
   );
 }
 
+export async function fetchLiveTvRecordings(
+  session: PrairieSession,
+  fetchImpl?: typeof fetch,
+): Promise<LiveTvRecording[]> {
+  try {
+    const data = await apiRequest<{ recordings?: LiveTvRecording[] }>(
+      sessionClient(session, fetchImpl),
+      "/api/v1/livetv/recordings",
+    );
+    return data.recordings ?? [];
+  } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "status" in err &&
+      (err as { status: number }).status === 404
+    ) {
+      return [];
+    }
+    throw err;
+  }
+}
+
 export async function scheduleLiveTvRecording(
   session: PrairieSession,
   input: ScheduleLiveTvRecordingInput,
@@ -157,6 +213,22 @@ export async function scheduleLiveTvRecording(
     sessionClient(session, fetchImpl),
     "/api/v1/livetv/recordings",
     { method: "POST", body: JSON.stringify({ program_id: programId }) },
+  );
+}
+
+export async function cancelLiveTvRecording(
+  session: PrairieSession,
+  recordingId: string,
+  fetchImpl?: typeof fetch,
+): Promise<void> {
+  const id = recordingId.trim();
+  if (!id) {
+    throw new Error("Missing recording id");
+  }
+  await apiRequest<unknown>(
+    sessionClient(session, fetchImpl),
+    `/api/v1/livetv/recordings/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
   );
 }
 
