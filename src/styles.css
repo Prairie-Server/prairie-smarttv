@@ -1951,6 +1951,14 @@ button:focus,
   padding: 0.65rem 0.35rem 1rem;
   scroll-padding-inline: 0.35rem;
   scroll-snap-type: x mandatory;
+  /* D-pad navigation drives scrollLeft programmatically — a visible scrollbar
+     is just remote-control noise on a TV screen, so hide it without losing
+     native scroll (used by reveal() in MediaRow.tsx). */
+  scrollbar-width: none;
+}
+
+.media-row__scroller::-webkit-scrollbar {
+  display: none;
 }
 
 .media-row__item {
