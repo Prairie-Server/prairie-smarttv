@@ -246,6 +246,18 @@ button:focus,
   margin-top: 1.25rem;
 }
 
+.quick-connect-qr {
+  width: fit-content;
+  margin: 0.25rem auto 0;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.quick-connect-qr svg {
+  display: block;
+}
+
 .quick-connect-label {
   font-size: 0.75rem;
   letter-spacing: 0.12em;
@@ -948,11 +960,22 @@ button:focus,
 .media-row {
   display: grid;
   gap: 0.85rem;
+  min-height: 17.5rem;
 }
 
 .media-row__title {
   margin: 0;
   font-size: 1.2rem;
+  line-height: 1.3;
+  min-height: 1.56rem;
+}
+
+.media-row__title--skeleton {
+  width: min(12rem, 40%);
+  border-radius: 6px;
+  background: linear-gradient(90deg, #243041 0%, #141820 40%, #243041 80%);
+  background-size: 200% 100%;
+  animation: shimmer 1.1s ease-in-out infinite;
 }
 
 .media-row__scroller {
@@ -1018,14 +1041,26 @@ button:focus,
   position: relative;
   aspect-ratio: 2 / 3;
   background: #10151c;
+  overflow: hidden;
 }
 
+.artwork-image {
+  position: absolute;
+  inset: 0;
+}
+
+.artwork-image__img,
 .poster-card__art img,
 .detail-hero__art {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.artwork-image__placeholder {
+  position: absolute;
+  inset: 0;
 }
 
 .poster-card__placeholder {
@@ -1073,6 +1108,7 @@ button:focus,
 
 .poster-card__meta {
   padding: 0.7rem 0.8rem 0.9rem;
+  min-height: 3.55rem;
 }
 
 .poster-card__title {
@@ -1080,6 +1116,11 @@ button:focus,
   font-weight: 600;
   font-size: 0.95rem;
   line-height: 1.3;
+  min-height: 1.25rem;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .poster-card__subtitle,
@@ -1087,6 +1128,12 @@ button:focus,
 .profile-card__meta {
   margin: 0.25rem 0 0;
   font-size: 0.82rem;
+  line-height: 1.25;
+  min-height: 1.025rem;
+}
+
+.poster-card__subtitle.is-empty {
+  visibility: hidden;
 }
 
 .library-card,
@@ -1143,9 +1190,26 @@ button:focus,
   display: grid;
   gap: 1.25rem;
   align-content: start;
-  justify-items: center;
+  justify-items: stretch;
   max-width: 1100px;
   margin-inline: auto;
+  width: min(1100px, 100%);
+}
+
+.profile-screen > .browse-header {
+  width: 100%;
+  justify-self: stretch;
+}
+
+.profile-screen > .profile-grid,
+.profile-screen > .pin-form,
+.profile-screen > .muted,
+.profile-screen > .form-error {
+  justify-self: center;
+}
+
+.profile-screen .browse-title {
+  font-size: clamp(1.75rem, 3.6vw, 2.4rem);
 }
 
 .browse-header {
@@ -1155,6 +1219,7 @@ button:focus,
   flex-wrap: wrap;
   align-items: flex-start;
   margin-bottom: 0.5rem;
+  width: 100%;
 }
 
 .pin-form,

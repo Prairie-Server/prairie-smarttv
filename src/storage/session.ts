@@ -20,11 +20,39 @@ export interface PrairieSession extends AuthTokens {
   profileToken?: string;
 }
 
+/**
+ * Packaged TV apps tear down the WebView on exit, which clears sessionStorage.
+ * Tokens therefore live in localStorage (separate keys from the identity blob)
+ * so profile + server survive updates and cold launches. Avoid putting secrets
+ * in the `prairie.session` JSON itself so identity stays easy to inspect.
+ */
+function defaultTokensStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  return localStorage;
+}
+
+function migrateSessionStorageTokens(tokensStorage: Pick<Storage, "getItem" | "setItem">): void {
+  if (typeof sessionStorage === "undefined") return;
+  if (tokensStorage === sessionStorage) return;
+  try {
+    for (const key of [ACCESS_TOKEN_KEY, PROFILE_TOKEN_KEY]) {
+      if (tokensStorage.getItem(key)) continue;
+      const fromSession = sessionStorage.getItem(key);
+      if (!fromSession) continue;
+      tokensStorage.setItem(key, fromSession);
+      sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore when sessionStorage is unavailable or blocked.
+  }
+}
+
 export function loadSession(
   storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
-  tokensStorage: Pick<Storage, "getItem" | "setItem"> = sessionStorage,
+  tokensStorage: Pick<Storage, "getItem" | "setItem"> = defaultTokensStorage(),
 ): PrairieSession | null {
   try {
+    migrateSessionStorageTokens(tokensStorage);
+
     const raw = storage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PrairieSession>;
@@ -39,9 +67,9 @@ export function loadSession(
       profileName: parsed.profileName,
     };
 
-    // Tokens must never persist in localStorage.
-    // If we find legacy token fields in the session blob, migrate them into
-    // sessionStorage for this runtime, then purge localStorage.
+    // Tokens must never live inside the identity blob.
+    // If we find legacy token fields in the session JSON, migrate them into
+    // dedicated token keys, then purge the blob.
     const legacyAccessToken = typeof parsed.accessToken === "string" ? parsed.accessToken : "";
     const legacyProfileToken =
       typeof parsed.profileToken === "string" ? parsed.profileToken : undefined;
@@ -72,7 +100,7 @@ export function loadSession(
     }
 
     // refreshToken is optional for forward-compat but intentionally not restored —
-    // unused refresh tokens must not linger in session memory until refresh ships.
+    // unused refresh tokens must not linger until refresh ships.
     return {
       ...identity,
       accessToken,
@@ -86,15 +114,15 @@ export function loadSession(
 export function saveSession(
   session: PrairieSession,
   storage: Pick<Storage, "setItem"> = localStorage,
-  tokensStorage: Pick<Storage, "setItem" | "removeItem"> = sessionStorage,
+  tokensStorage: Pick<Storage, "setItem" | "removeItem"> = defaultTokensStorage(),
 ): PrairieSession {
-  // Never write refreshToken to localStorage until token refresh is implemented.
+  // Never write refreshToken to durable storage until token refresh is implemented.
   const { refreshToken: _omitRefresh, ...withoutRefresh } = session;
 
   const normalizedServerUrl = normalizeServerUrl(session.serverUrl);
   const normalized: PrairieSession = { ...withoutRefresh, serverUrl: normalizedServerUrl };
 
-  // Store non-secret identity in localStorage.
+  // Store non-secret identity in the session blob.
   storage.setItem(
     SESSION_KEY,
     JSON.stringify({
@@ -105,7 +133,7 @@ export function saveSession(
     }),
   );
 
-  // Store tokens in sessionStorage.
+  // Store tokens in dedicated durable keys (localStorage by default).
   tokensStorage.setItem(ACCESS_TOKEN_KEY, normalized.accessToken);
   if (normalized.profileToken) {
     tokensStorage.setItem(PROFILE_TOKEN_KEY, normalized.profileToken);
@@ -129,9 +157,17 @@ export function saveSession(
  */
 export function clearSession(
   storage: Pick<Storage, "removeItem"> = localStorage,
-  tokensStorage: Pick<Storage, "removeItem"> = sessionStorage,
+  tokensStorage: Pick<Storage, "removeItem"> = defaultTokensStorage(),
 ): void {
   storage.removeItem(SESSION_KEY);
   tokensStorage.removeItem(ACCESS_TOKEN_KEY);
   tokensStorage.removeItem(PROFILE_TOKEN_KEY);
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+      sessionStorage.removeItem(PROFILE_TOKEN_KEY);
+    }
+  } catch {
+    // ignore
+  }
 }

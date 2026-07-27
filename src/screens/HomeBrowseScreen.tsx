@@ -10,6 +10,9 @@ interface HomeBrowseScreenProps {
   onOpenItem: (contentId: string) => void;
 }
 
+const SKELETON_ROW_COUNT = 4;
+const SKELETON_CARD_COUNT = 8;
+
 function itemSubtitle(item: {
   type?: string;
   year?: number | null;
@@ -68,9 +71,9 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
       </div>
       {loading ? (
         <>
-          {Array.from({ length: 2 }).map((_, rowIndex) => (
-            <MediaRow key={`home-skel-${rowIndex}`} title="">
-              {Array.from({ length: 8 }).map((__, cardIndex) => (
+          {Array.from({ length: SKELETON_ROW_COUNT }).map((_, rowIndex) => (
+            <MediaRow key={`home-skel-${rowIndex}`} title="" skeleton>
+              {Array.from({ length: SKELETON_CARD_COUNT }).map((__, cardIndex) => (
                 <PosterCard
                   key={`home-skel-${rowIndex}-${cardIndex}`}
                   title=""
@@ -94,22 +97,24 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
       {!loading && !error && sections.length === 0 ? (
         <p className="muted">No home rows yet — browse Libraries to find something to play.</p>
       ) : null}
-      {sections.map((section, sectionIndex) => (
-        <MediaRow key={section.id || section.title} title={section.title}>
-          {section.items.map((item, itemIndex) => (
-            <PosterCard
-              key={`${section.id}-${item.content_id}-${itemIndex}`}
-              title={item.title}
-              subtitle={itemSubtitle(item)}
-              posterUrl={item.poster_url}
-              progress={itemProgress(item)}
-              imageLoading={sectionIndex === 0 && itemIndex < 6 ? "eager" : "lazy"}
-              autoFocus={sectionIndex === 0 && itemIndex === 0}
-              onSelect={() => onOpenItem(item.content_id)}
-            />
-          ))}
-        </MediaRow>
-      ))}
+      {!loading
+        ? sections.map((section, sectionIndex) => (
+            <MediaRow key={section.id || section.title} title={section.title}>
+              {section.items.map((item, itemIndex) => (
+                <PosterCard
+                  key={`${section.id}-${item.content_id}-${itemIndex}`}
+                  title={item.title}
+                  subtitle={itemSubtitle(item)}
+                  posterUrl={item.poster_url}
+                  progress={itemProgress(item)}
+                  imageLoading={sectionIndex === 0 && itemIndex < 6 ? "eager" : "lazy"}
+                  autoFocus={sectionIndex === 0 && itemIndex === 0}
+                  onSelect={() => onOpenItem(item.content_id)}
+                />
+              ))}
+            </MediaRow>
+          ))
+        : null}
     </section>
   );
 }

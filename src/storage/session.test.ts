@@ -53,7 +53,7 @@ describe("session persistence", () => {
     });
   });
 
-  it("migrates legacy tokens from localStorage into sessionStorage", () => {
+  it("migrates legacy tokens from the identity blob into dedicated keys", () => {
     const storage = memoryStorage({
       "prairie.session": JSON.stringify({
         serverUrl: "https://prairie.example",
@@ -81,7 +81,7 @@ describe("session persistence", () => {
     expect(raw.profileToken).toBeUndefined();
   });
 
-  it("migrates a legacy profileToken into sessionStorage", () => {
+  it("migrates a legacy profileToken into dedicated token keys", () => {
     const storage = memoryStorage({
       "prairie.session": JSON.stringify({
         serverUrl: "https://prairie.example",
@@ -105,6 +105,29 @@ describe("session persistence", () => {
     const raw = JSON.parse(storage.getItem("prairie.session")!);
     expect(raw.profileToken).toBeUndefined();
     expect(raw.accessToken).toBeUndefined();
+  });
+
+  it("round-trips tokens through a single durable storage (TV cold launch)", () => {
+    const storage = memoryStorage();
+    saveSession(
+      {
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        username: "ada",
+        profileId: "p1",
+        profileName: "Ada",
+      },
+      storage,
+      storage,
+    );
+    expect(loadSession(storage, storage)).toEqual({
+      serverUrl: "https://prairie.example",
+      accessToken: "tok",
+      username: "ada",
+      profileId: "p1",
+      profileName: "Ada",
+      profileToken: undefined,
+    });
   });
 
   it("returns null when identity exists but no access token is available", () => {
