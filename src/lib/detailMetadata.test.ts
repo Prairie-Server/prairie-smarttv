@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   crewLine,
   episodeProgressRatio,
+  featuredCrew,
   formatAirDate,
   formatResumeLabel,
   formatRuntimeMinutes,
@@ -165,6 +166,18 @@ describe("detailMetadata", () => {
       "Created by Creator",
     );
     expect(crewLine(movie({ crew: [{ name: "Editor", job: "Editor" }] }))).toBeNull();
+    expect(featuredCrew(movie()).map((c) => c.name)).toEqual(["Denis Villeneuve", "Jon Spaihts"]);
+    expect(
+      featuredCrew(
+        movie({
+          crew: [
+            { name: "Denis Villeneuve", job: "Director" },
+            { name: "Jon Spaihts", job: "Writer" },
+            { name: "Editor", job: "Editor" },
+          ],
+        }),
+      ).map((c) => `${c.name}:${c.job}`),
+    ).toEqual(["Denis Villeneuve:Director", "Jon Spaihts:Writer"]);
   });
 
   it("detects resume progress and formats label", () => {
@@ -179,14 +192,28 @@ describe("detailMetadata", () => {
 
   it("picks next-up episode preferencing in-progress then unwatched", () => {
     const episodes: EpisodeSummary[] = [
-      { content_id: "e1", title: "One", episode_number: 1, user_data: { played: true } },
+      {
+        content_id: "e1",
+        title: "One",
+        episode_number: 1,
+        user_data: { played: true },
+      },
       {
         content_id: "e2",
         title: "Two",
         episode_number: 2,
-        user_data: { played: false, is_in_progress: true, position_seconds: 40 },
+        user_data: {
+          played: false,
+          is_in_progress: true,
+          position_seconds: 40,
+        },
       },
-      { content_id: "e3", title: "Three", episode_number: 3, user_data: { played: false } },
+      {
+        content_id: "e3",
+        title: "Three",
+        episode_number: 3,
+        user_data: { played: false },
+      },
     ];
     expect(pickNextUpEpisode(episodes)?.content_id).toBe("e2");
     expect(

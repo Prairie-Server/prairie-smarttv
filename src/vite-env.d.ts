@@ -62,6 +62,10 @@ declare global {
     webapis?: {
       avplay?: AvPlayApi;
       tvinfo?: TvInfoApi;
+      productinfo?: {
+        is8KPanelSupported?(): boolean;
+        isUdPanelSupported?(): boolean;
+      };
       systeminfo?: {
         isSupportedAudioCodec?(codec: string): boolean;
         isSupportedVideoCodec?(codec: string): boolean;

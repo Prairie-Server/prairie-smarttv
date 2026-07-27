@@ -105,7 +105,10 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     [scrollLeft, viewport, itemStride, count, overscan],
   );
 
-  const [forcedRange, setForcedRange] = useState<{ start: number; end: number } | null>(null);
+  const [forcedRange, setForcedRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
   const range = forcedRange
     ? {
         start: Math.min(forcedRange.start, windowRange.start),
@@ -166,8 +169,10 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
 
   if (isVirtual && items && props.renderItem) {
     focusCount = count;
-    const padLeft = range.start * itemStride;
-    const padRight = Math.max(0, (count - range.end) * itemStride);
+    // Flex `gap` sits between spacer and first/last card — subtract one gap so
+    // item i lands at i * stride (avoids a left-edge gutter / clipped focus).
+    const padLeft = range.start <= 0 ? 0 : range.start * itemStride - metrics.gap;
+    const padRight = range.end >= count ? 0 : (count - range.end) * itemStride - metrics.gap;
     const slice: ReactNode[] = [];
     for (let i = range.start; i < range.end; i++) {
       const item = items[i]!;
@@ -225,6 +230,12 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
         className="media-row__scroller"
         data-focus-container="horizontal"
         data-focus-count={focusCount}
+        style={
+          {
+            gap: metrics.gap,
+            scrollPaddingInline: designPx(12, scale),
+          } satisfies CSSProperties
+        }
         onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
       >
         {body}

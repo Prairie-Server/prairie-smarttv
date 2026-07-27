@@ -1,4 +1,4 @@
-import type { EpisodeSummary, ItemDetail, ItemVersion } from "../api/catalog";
+import type { CrewMember, EpisodeSummary, ItemDetail, ItemVersion } from "../api/catalog";
 
 export type FactToken =
   | { kind: "text"; value: string }
@@ -118,7 +118,10 @@ export function seriesFacts(detail: ItemDetail, seasonCount?: number | null): Fa
   if (year) tokens.push({ kind: "text", value: year });
   const seasons = seasonCount ?? detail.season_count;
   if (seasons != null && seasons > 0) {
-    tokens.push({ kind: "text", value: `${seasons} Season${seasons === 1 ? "" : "s"}` });
+    tokens.push({
+      kind: "text",
+      value: `${seasons} Season${seasons === 1 ? "" : "s"}`,
+    });
   }
   if (detail.episode_count != null && detail.episode_count > 0) {
     tokens.push({
@@ -154,6 +157,25 @@ export function crewLine(detail: ItemDetail): string | null {
   if (!unique.length) return null;
   const label = isSeriesType(detail.type) ? "Created by" : "Directed by";
   return `${label} ${unique.join(", ")}`;
+}
+
+const FEATURED_CREW_JOB = /^(director|writers?|producer|executive producer|creator|showrunner)$/i;
+
+/** Primary crew for portrait rails (same visual weight as cast cards). */
+export function featuredCrew(detail: ItemDetail, limit = 12): CrewMember[] {
+  const crew = detail.crew ?? [];
+  const matched = crew.filter((member) => FEATURED_CREW_JOB.test(member.job.trim()));
+  const source = matched.length > 0 ? matched : crew;
+  const seen = new Set<string>();
+  const out: CrewMember[] = [];
+  for (const member of source) {
+    const key = `${member.person_id ?? member.name}|${member.job}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(member);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export function resumePositionSeconds(
@@ -209,5 +231,9 @@ export function formatAirDate(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw.slice(0, 10);
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

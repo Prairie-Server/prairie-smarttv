@@ -20,6 +20,7 @@ import { useBackKey } from "../focus/useBackKey";
 import {
   crewLine,
   episodeProgressRatio,
+  featuredCrew,
   formatAirDate,
   formatResumeLabel,
   formatRuntimeMinutes,
@@ -321,6 +322,7 @@ export function ItemDetailScreen({
   const studios = detail?.studios?.filter(Boolean) ?? [];
   const networks = detail?.networks?.filter(Boolean) ?? [];
   const cast = detail?.cast ?? [];
+  const crew = detail ? featuredCrew(detail) : [];
   const extras = detail?.extras ?? [];
 
   return (
@@ -533,7 +535,11 @@ export function ItemDetailScreen({
                         ) : null}
                         {progress != null ? (
                           <div className="poster-card__progress">
-                            <span style={{ width: `${Math.round(progress * 100)}%` }} />
+                            <span
+                              style={{
+                                width: `${Math.round(progress * 100)}%`,
+                              }}
+                            />
                           </div>
                         ) : null}
                       </div>
@@ -569,34 +575,77 @@ export function ItemDetailScreen({
         </div>
       ) : null}
 
-      {cast.length > 0 ? (
+      {cast.length > 0 || crew.length > 0 ? (
         <div className="detail-body-section">
-          <div className="detail-section-header">
-            <div>
-              <p className="eyebrow">Cast</p>
-              <h2 className="detail-section-title">& Crew</h2>
-            </div>
-          </div>
-          <div className="cast-rail">
-            {cast.slice(0, 16).map((member) => (
-              <div
-                key={`${member.person_id ?? member.name}-${member.character ?? ""}`}
-                className="cast-card"
-              >
-                <div className="cast-card__photo" aria-hidden="true">
-                  {member.photo_url ? (
-                    <ArtworkImage src={member.photo_url} alt="" placeholderLabel={member.name} />
-                  ) : (
-                    <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
-                  )}
+          {cast.length > 0 ? (
+            <>
+              <div className="detail-section-header">
+                <div>
+                  <p className="eyebrow">People</p>
+                  <h2 className="detail-section-title">Cast</h2>
                 </div>
-                <p className="cast-card__name">{member.name}</p>
-                {member.character ? (
-                  <p className="muted cast-card__role">{member.character}</p>
-                ) : null}
               </div>
-            ))}
-          </div>
+              <div className="cast-rail">
+                {cast.slice(0, 16).map((member) => (
+                  <div
+                    key={`${member.person_id ?? member.name}-${member.character ?? ""}`}
+                    className="cast-card"
+                  >
+                    <div className="cast-card__photo" aria-hidden="true">
+                      {member.photo_url ? (
+                        <ArtworkImage
+                          src={member.photo_url}
+                          alt=""
+                          placeholderLabel={member.name}
+                        />
+                      ) : (
+                        <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
+                      )}
+                    </div>
+                    <p className="cast-card__name">{member.name}</p>
+                    {member.character ? (
+                      <p className="muted cast-card__role">{member.character}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {crew.length > 0 ? (
+            <>
+              <div
+                className={`detail-section-header${cast.length > 0 ? " detail-section-header--follow" : ""}`}
+              >
+                <div>
+                  {cast.length === 0 ? <p className="eyebrow">People</p> : null}
+                  <h2 className="detail-section-title">Crew</h2>
+                </div>
+              </div>
+              <div className="cast-rail">
+                {crew.map((member) => (
+                  <div
+                    key={`${member.person_id ?? member.name}-${member.job}`}
+                    className="cast-card"
+                  >
+                    <div className="cast-card__photo" aria-hidden="true">
+                      {member.photo_url ? (
+                        <ArtworkImage
+                          src={member.photo_url}
+                          alt=""
+                          placeholderLabel={member.name}
+                        />
+                      ) : (
+                        <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
+                      )}
+                    </div>
+                    <p className="cast-card__name">{member.name}</p>
+                    {member.job ? <p className="muted cast-card__role">{member.job}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 
