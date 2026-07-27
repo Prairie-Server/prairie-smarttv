@@ -127,31 +127,23 @@ input:focus,
 button:focus,
 .focusable:focus,
 .settings-row:focus,
-.option-chip:focus {
-  outline: var(--focus-outline);
-  outline-offset: 3px;
-  box-shadow: none;
+.option-chip:focus,
+.season-chip:focus,
+.settings-dropdown__option:focus,
+.settings-nav-item:focus,
+.episode-card:focus,
+.episode-row:focus {
+  outline: none;
 }
 
-/* Keep existing chrome borders; focus is outline-only to avoid double rings. */
+/* Soft focus chrome: color / scale instead of a square outline box. */
 button:focus,
 .focusable:focus,
 .settings-row:focus,
-.option-chip:focus {
-  border-color: inherit;
-}
-
-.focus-btn:focus {
-  border-color: rgba(243, 239, 230, 0.12);
-}
-
-.focus-btn--ghost:focus {
-  border-color: rgba(224, 168, 74, 0.45);
-}
-
-.poster-card:focus,
-.library-card:focus,
-.profile-card:focus {
+.option-chip:focus,
+.season-chip:focus,
+.settings-dropdown__option:focus,
+.settings-nav-item:focus {
   border-color: rgba(224, 168, 74, 0.55);
 }
 
@@ -164,8 +156,11 @@ button:focus,
   padding: 0.95rem 1.4rem;
   cursor: pointer;
   transition:
-    background 120ms ease,
-    color 120ms ease;
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
 }
 
 .focus-btn__icon {
@@ -178,6 +173,12 @@ button:focus,
 .focus-btn__icon svg {
   width: 100%;
   height: 100%;
+}
+
+.focus-btn:focus {
+  outline: none;
+  transform: scale(1.04);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.45);
 }
 
 .focus-btn:active {
@@ -195,10 +196,20 @@ button:focus,
   font-weight: 600;
 }
 
+.focus-btn--primary:focus {
+  background: linear-gradient(135deg, #f0c574, var(--prairie-amber));
+}
+
 .focus-btn--ghost {
   background: rgba(243, 239, 230, 0.06);
   color: var(--prairie-ink);
   border: 1px solid rgba(243, 239, 230, 0.12);
+}
+
+.focus-btn--ghost:focus {
+  background: rgba(224, 168, 74, 0.2);
+  border-color: rgba(224, 168, 74, 0.65);
+  color: var(--prairie-ink);
 }
 
 .focus-btn--danger {
@@ -588,12 +599,25 @@ button:focus,
   font-size: 1.05rem;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .settings-nav-item.is-active {
   background: rgba(224, 168, 74, 0.14);
   border-color: rgba(224, 168, 74, 0.35);
   color: var(--prairie-amber);
+}
+
+.settings-nav-item:focus {
+  background: rgba(224, 168, 74, 0.2);
+  border-color: rgba(224, 168, 74, 0.55);
+  transform: scale(1.02);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.3);
 }
 
 .settings-pane {
@@ -676,6 +700,81 @@ button:focus,
   font-weight: 600;
   color: var(--prairie-amber);
   font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.settings-row__chevron {
+  opacity: 0.7;
+  font-size: 0.85em;
+}
+
+.settings-row:focus {
+  background: rgba(224, 168, 74, 0.14);
+  border-color: rgba(224, 168, 74, 0.55);
+  transform: scale(1.01);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.28);
+}
+
+.settings-dropdown {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem 1.15rem;
+  border-radius: 16px;
+  border: 1px solid rgba(224, 168, 74, 0.35);
+  background: linear-gradient(180deg, rgba(34, 43, 56, 0.96), rgba(20, 24, 32, 0.98));
+}
+
+.settings-dropdown__header {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.settings-dropdown__label {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.settings-dropdown__hint {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.settings-dropdown__options {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-dropdown__option,
+.settings-dropdown__cancel {
+  width: 100%;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid rgba(243, 239, 230, 0.1);
+  background: rgba(10, 14, 20, 0.45);
+  color: inherit;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.settings-dropdown__option.is-selected {
+  border-color: rgba(224, 168, 74, 0.45);
+  color: var(--prairie-amber);
+  font-weight: 600;
+}
+
+.settings-dropdown__option:focus,
+.settings-dropdown__cancel:focus {
+  background: rgba(224, 168, 74, 0.18);
+  border-color: rgba(224, 168, 74, 0.6);
+  transform: scale(1.015);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.3);
 }
 
 .settings-about {
@@ -1136,6 +1235,9 @@ button:focus,
   display: grid;
   gap: 1.75rem;
   align-content: start;
+  /* Stabilize home shell while sections/skeletons swap (reduces CLS). */
+  min-height: min(100vh, 78rem);
+  overflow-anchor: none;
 }
 
 .browse-pane__intro {
@@ -1160,7 +1262,10 @@ button:focus,
 .media-row {
   display: grid;
   gap: 0.85rem;
-  min-height: 17.5rem;
+  min-height: 18.25rem;
+  contain: layout style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 18.25rem;
 }
 
 .media-row__title {
@@ -1222,15 +1327,23 @@ button:focus,
   text-align: left;
   overflow: hidden;
   scroll-snap-align: start;
-  transition: border-color 120ms ease;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .poster-card:focus,
 .library-card:focus,
 .profile-card:focus {
-  outline: var(--focus-outline);
-  outline-offset: 3px;
-  border-color: rgba(224, 168, 74, 0.55);
+  outline: none;
+  transform: scale(1.05);
+  border-color: rgba(224, 168, 74, 0.65);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.35),
+    0 0 0 2px rgba(240, 197, 116, 0.4);
+  z-index: 1;
 }
 
 .poster-card__art {
@@ -1457,10 +1570,33 @@ button:focus,
   position: relative;
   z-index: 1;
   padding: clamp(1.5rem, 4vw, 3rem);
-  max-width: 48rem;
+  max-width: 64rem;
   display: grid;
   gap: 0.85rem;
   align-content: end;
+}
+
+.detail-hero__body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.25rem;
+  align-items: end;
+}
+
+.detail-hero__poster {
+  position: relative;
+  width: clamp(7.5rem, 14vw, 11rem);
+  aspect-ratio: 2 / 3;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  background: #10151c;
+}
+
+.detail-hero__copy {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .detail-overview {
@@ -1474,6 +1610,128 @@ button:focus,
   padding: clamp(1.25rem, 3vw, 2.25rem) clamp(1.5rem, 4vw, 3rem) 3rem;
   display: grid;
   gap: 1rem;
+}
+
+.season-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.season-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 239, 230, 0.12);
+  background: rgba(28, 36, 48, 0.72);
+  color: inherit;
+  padding: 0.7rem 1.05rem;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.season-chip.is-active {
+  background: rgba(224, 168, 74, 0.18);
+  border-color: rgba(224, 168, 74, 0.5);
+  color: var(--prairie-amber);
+  font-weight: 600;
+}
+
+.season-chip:focus {
+  background: rgba(224, 168, 74, 0.22);
+  border-color: rgba(224, 168, 74, 0.65);
+  transform: scale(1.04);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.35);
+}
+
+.season-chip__count {
+  color: var(--prairie-muted);
+  font-size: 0.85em;
+}
+
+.episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+.episode-card {
+  display: grid;
+  gap: 0.65rem;
+  text-align: left;
+  border-radius: 14px;
+  padding: 0;
+  border: 1px solid rgba(243, 239, 230, 0.1);
+  background: rgba(28, 36, 48, 0.72);
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+.episode-card:focus {
+  outline: none;
+  transform: scale(1.03);
+  border-color: rgba(224, 168, 74, 0.6);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.3),
+    0 0 0 2px rgba(240, 197, 116, 0.35);
+}
+
+.episode-card__still {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #10151c;
+  overflow: hidden;
+}
+
+.episode-card__still-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(154, 163, 178, 0.45);
+  background: linear-gradient(160deg, #243041, #141820);
+}
+
+.episode-card__badge {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 0.55rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 8px;
+  background: rgba(10, 12, 16, 0.72);
+  color: var(--prairie-amber);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.episode-card__body {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0 0.85rem 0.9rem;
+}
+
+.episode-card__body strong {
+  font-size: 0.98rem;
+}
+
+.episode-card__overview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .episode-list {
@@ -1493,6 +1751,28 @@ button:focus,
   background: rgba(28, 36, 48, 0.72);
   color: inherit;
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+.episode-row:focus {
+  outline: none;
+  transform: scale(1.015);
+  border-color: rgba(224, 168, 74, 0.55);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.3);
+}
+
+@media (max-width: 720px) {
+  .detail-hero__body {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-hero__poster {
+    display: none;
+  }
 }
 
 .episode-row__num {

@@ -25,6 +25,26 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Whether an arrow key should stay on the caret inside an editable field.
+ * Up/Down always leave the field on TV remotes so users can reach Back / QR.
+ * Left/Right keep caret motion until the selection is at the field edge.
+ */
+export function shouldDeferToEditableCaret(target: EventTarget | null, key: ArrowKey): boolean {
+  if (!isEditableTarget(target)) return false;
+  if (key === "ArrowUp" || key === "ArrowDown") return false;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+    return true;
+  }
+  const start = target.selectionStart;
+  const end = target.selectionEnd;
+  if (start == null || end == null) return true;
+  if (start !== end) return true;
+  if (key === "ArrowLeft") return start > 0;
+  if (key === "ArrowRight") return start < target.value.length;
+  return true;
+}
+
 function isRoughlyOnScreen(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
   if (rect.width <= 0 && rect.height <= 0) return false;
@@ -148,12 +168,17 @@ export function handleSpatialArrowKey(event: KeyboardEvent): boolean {
   if (!isArrowKey(event.key)) return false;
   if (event.defaultPrevented) return false;
   if (event.altKey || event.ctrlKey || event.metaKey) return false;
-  if (isEditableTarget(event.target)) return false;
+  if (shouldDeferToEditableCaret(event.target, event.key)) return false;
   const focusables = listFocusables();
   if (focusables.length < 2) return false;
-  const active = document.activeElement as HTMLElement | null;
+  const active =
+    (isEditableTarget(event.target) ? (event.target as HTMLElement) : null) ??
+    (document.activeElement as HTMLElement | null);
   const next = findSpatialNeighbor(active, event.key, focusables);
   if (!next) return false;
+  if (isEditableTarget(event.target) && event.target instanceof HTMLElement) {
+    event.target.blur();
+  }
   focusWithoutPageJump(next);
   event.preventDefault();
   return true;

@@ -30,11 +30,19 @@ function resumeSeconds(watch: WatchDetail): number | undefined {
   return position;
 }
 
+function episodeStill(episode: EpisodeSummary): string | null {
+  const still = episode.still_url?.trim();
+  if (still) return still;
+  const poster = episode.poster_url?.trim();
+  return poster || null;
+}
+
 export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDetailScreenProps) {
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
+  const [episodesLoading, setEpisodesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyPlay, setBusyPlay] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +83,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
     if (!(detail.type === "series" || detail.type === "show" || detail.type === "tv")) return;
     let cancelled = false;
     void (async () => {
+      setEpisodesLoading(true);
       try {
         const eps = await fetchEpisodes(session, contentId, seasonNumber);
         if (!cancelled) setEpisodes(eps);
@@ -82,6 +91,8 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : "Could not load episodes");
         }
+      } finally {
+        if (!cancelled) setEpisodesLoading(false);
       }
     })();
     return () => {
@@ -116,6 +127,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
   const heroBackdropUrl = detail?.backdrop_url?.trim();
   const heroPosterUrl = detail?.poster_url?.trim();
   const heroSrc = heroBackdropUrl || heroPosterUrl;
+  const firstEpisode = episodes[0];
 
   return (
     <section className="screen detail-screen">
@@ -132,24 +144,46 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
           </FocusButton>
           {loading ? <p className="muted">Loading…</p> : null}
           {detail ? (
-            <>
-              <p className="eyebrow">{detail.type}</p>
-              <h1 className="browse-title">{detail.title}</h1>
-              <p className="muted">{[detail.year, detail.type].filter(Boolean).join(" · ")}</p>
-              {detail.overview ? <p className="detail-overview">{detail.overview}</p> : null}
-              {!isSeries ? (
-                <div className="row-actions">
-                  <FocusButton
-                    autoFocus
-                    icon={<Play />}
-                    disabled={busyPlay}
-                    onClick={() => void playContent(contentId, detail.title)}
-                  >
-                    {busyPlay ? "Starting…" : "Play"}
-                  </FocusButton>
+            <div className="detail-hero__body">
+              {heroPosterUrl && heroBackdropUrl ? (
+                <div className="detail-hero__poster" aria-hidden="true">
+                  <ArtworkImage src={heroPosterUrl} alt="" placeholderLabel={detail.title} />
                 </div>
               ) : null}
-            </>
+              <div className="detail-hero__copy">
+                <p className="eyebrow">{detail.type}</p>
+                <h1 className="browse-title">{detail.title}</h1>
+                <p className="muted">{[detail.year, detail.type].filter(Boolean).join(" · ")}</p>
+                {detail.overview ? <p className="detail-overview">{detail.overview}</p> : null}
+                {!isSeries ? (
+                  <div className="row-actions">
+                    <FocusButton
+                      autoFocus
+                      icon={<Play />}
+                      disabled={busyPlay}
+                      onClick={() => void playContent(contentId, detail.title)}
+                    >
+                      {busyPlay ? "Starting…" : "Play"}
+                    </FocusButton>
+                  </div>
+                ) : firstEpisode ? (
+                  <div className="row-actions">
+                    <FocusButton
+                      autoFocus
+                      icon={<Play />}
+                      disabled={busyPlay}
+                      onClick={() => void playContent(firstEpisode.content_id, firstEpisode.title)}
+                    >
+                      {busyPlay
+                        ? "Starting…"
+                        : firstEpisode.episode_number != null
+                          ? `Play S${seasonNumber}E${firstEpisode.episode_number}`
+                          : "Play"}
+                    </FocusButton>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           ) : null}
           {error ? (
             <p className="form-error" role="alert">
@@ -161,39 +195,73 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
 
       {isSeries ? (
         <div className="detail-episodes">
-          <div className="season-tabs">
+          <div className="season-tabs" role="tablist" aria-label="Seasons">
             {seasons.map((season) => (
-              <FocusButton
+              <button
                 key={season.season_number}
-                variant={seasonNumber === season.season_number ? "primary" : "ghost"}
+                type="button"
+                role="tab"
+                aria-selected={seasonNumber === season.season_number}
+                className={`season-chip${seasonNumber === season.season_number ? " is-active" : ""}`}
                 onClick={() => setSeasonNumber(season.season_number)}
               >
-                Season {season.season_number}
-              </FocusButton>
-            ))}
-          </div>
-          <div className="episode-list">
-            {episodes.map((episode, index) => (
-              <button
-                key={episode.content_id}
-                type="button"
-                className="episode-row"
-                autoFocus={index === 0}
-                disabled={busyPlay}
-                onClick={() => void playContent(episode.content_id, episode.title)}
-              >
-                <span className="episode-row__num">
-                  {episode.episode_number != null ? `E${episode.episode_number}` : "Ep"}
-                </span>
-                <span className="episode-row__body">
-                  <strong>{episode.title}</strong>
-                  {episode.overview ? <span className="muted">{episode.overview}</span> : null}
-                </span>
+                {season.title?.trim() || `Season ${season.season_number}`}
+                {season.episode_count != null ? (
+                  <span className="season-chip__count">{season.episode_count}</span>
+                ) : null}
               </button>
             ))}
           </div>
+
+          {episodesLoading ? <p className="muted">Loading episodes…</p> : null}
+
+          <div className="episode-grid">
+            {!episodesLoading
+              ? episodes.map((episode, index) => {
+                  const still = episodeStill(episode);
+                  return (
+                    <button
+                      key={episode.content_id}
+                      type="button"
+                      className="episode-card"
+                      autoFocus={index === 0 && !firstEpisode}
+                      disabled={busyPlay}
+                      onClick={() => void playContent(episode.content_id, episode.title)}
+                    >
+                      <div className="episode-card__still" aria-hidden="true">
+                        {still ? (
+                          <ArtworkImage
+                            src={still}
+                            alt=""
+                            placeholderLabel={episode.title}
+                            loading={index < 6 ? "eager" : "lazy"}
+                          />
+                        ) : (
+                          <div className="episode-card__still-empty">
+                            <Play size={28} />
+                          </div>
+                        )}
+                        <span className="episode-card__badge">
+                          {episode.episode_number != null ? `E${episode.episode_number}` : "Ep"}
+                        </span>
+                      </div>
+                      <span className="episode-card__body">
+                        <strong>{episode.title}</strong>
+                        {episode.overview ? (
+                          <span className="muted episode-card__overview">{episode.overview}</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })
+              : null}
+          </div>
+
           {seasons.length === 0 && !loading ? (
             <p className="muted">No seasons found for this series.</p>
+          ) : null}
+          {!episodesLoading && seasons.length > 0 && episodes.length === 0 ? (
+            <p className="muted">No episodes are available for this season yet.</p>
           ) : null}
         </div>
       ) : null}

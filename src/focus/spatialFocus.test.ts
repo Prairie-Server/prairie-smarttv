@@ -74,9 +74,11 @@ describe("spatialFocus", () => {
     expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowUp" }))).toBe(false);
   });
 
-  it("does not run spatial navigation while typing in a text input", () => {
+  it("does not run spatial navigation while typing left/right inside a text input", () => {
     const input = document.createElement("input");
     input.type = "text";
+    input.value = "hello";
+    input.setSelectionRange(2, 2);
     const button = document.createElement("button");
     document.body.append(input, button);
     place(input, 0, 0, 200, 48);
@@ -89,6 +91,73 @@ describe("spatialFocus", () => {
     expect(handleSpatialArrowKey(event)).toBe(false);
     expect(document.activeElement).toBe(input);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("leaves a text input on ArrowUp so Back / QR stay reachable", () => {
+    const back = document.createElement("button");
+    const input = document.createElement("input");
+    input.type = "text";
+    document.body.append(back, input);
+    place(back, 0, 0, 120, 48);
+    place(input, 0, 80, 200, 48);
+    input.focus();
+
+    const event = new KeyboardEvent("keydown", { key: "ArrowUp", cancelable: true });
+    Object.defineProperty(event, "target", { configurable: true, value: input });
+
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(back);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves a text input on ArrowLeft at the start of the field", () => {
+    const back = document.createElement("button");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = "hi";
+    input.setSelectionRange(0, 0);
+    document.body.append(back, input);
+    place(back, 0, 0, 120, 48);
+    place(input, 140, 0, 200, 48);
+    input.focus();
+
+    const event = new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true });
+    Object.defineProperty(event, "target", { configurable: true, value: input });
+
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(back);
+  });
+
+  it("defers caret motion for contentEditable, selections, and mid-field arrows", async () => {
+    const { shouldDeferToEditableCaret } = await import("./spatialFocus");
+
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+    document.body.append(editable);
+    expect(shouldDeferToEditableCaret(editable, "ArrowLeft")).toBe(true);
+    expect(shouldDeferToEditableCaret(editable, "ArrowUp")).toBe(false);
+
+    const select = document.createElement("select");
+    document.body.append(select);
+    expect(shouldDeferToEditableCaret(select, "ArrowRight")).toBe(true);
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = "hello";
+    input.setSelectionRange(1, 3);
+    expect(shouldDeferToEditableCaret(input, "ArrowLeft")).toBe(true);
+
+    input.setSelectionRange(5, 5);
+    expect(shouldDeferToEditableCaret(input, "ArrowRight")).toBe(false);
+    expect(shouldDeferToEditableCaret(input, "ArrowLeft")).toBe(true);
+
+    const number = document.createElement("input");
+    number.type = "number";
+    number.value = "12";
+    // happy-dom may report null selection on number inputs.
+    expect(shouldDeferToEditableCaret(number, "ArrowRight")).toBe(true);
+
+    expect(shouldDeferToEditableCaret(null, "ArrowLeft")).toBe(false);
   });
 
   it("keeps spatial navigation on checkbox inputs (TV toggles)", () => {

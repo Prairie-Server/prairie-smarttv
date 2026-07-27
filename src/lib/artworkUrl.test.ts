@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { artworkCandidates, webPAVIFSibling, webPPNGSibling } from "./artworkUrl";
+import {
+  artworkCandidates,
+  isSignedArtworkURL,
+  webPAVIFSibling,
+  webPPNGSibling,
+} from "./artworkUrl";
 import { resetImageFormatsCacheForTests } from "./imageFormats";
 
 describe("webPAVIFSibling", () => {
@@ -10,10 +15,10 @@ describe("webPAVIFSibling", () => {
     expect(webPAVIFSibling("original.webp")).toBe("original.avif");
   });
 
-  it("preserves query strings on absolute URLs", () => {
+  it("does not rewrite signed absolute URLs", () => {
     expect(
       webPAVIFSibling("https://cdn.example.com/art/original.rev.webp?X-Amz-Signature=abc"),
-    ).toBe("https://cdn.example.com/art/original.rev.avif?X-Amz-Signature=abc");
+    ).toBe("");
   });
 
   it("returns empty for non-WebP inputs", () => {
@@ -31,10 +36,17 @@ describe("webPPNGSibling", () => {
     );
   });
 
-  it("preserves query strings", () => {
-    expect(webPPNGSibling("https://cdn.example.com/art/original.webp?sig=1")).toBe(
-      "https://cdn.example.com/art/original.png?sig=1",
-    );
+  it("does not rewrite signed URLs", () => {
+    expect(webPPNGSibling("https://cdn.example.com/art/original.webp?sig=1")).toBe("");
+  });
+});
+
+describe("isSignedArtworkURL", () => {
+  it("detects common signature query params", () => {
+    expect(isSignedArtworkURL("https://x/?X-Amz-Signature=1")).toBe(true);
+    expect(isSignedArtworkURL("https://x/?Signature=1")).toBe(true);
+    expect(isSignedArtworkURL("https://x/?verify=token")).toBe(true);
+    expect(isSignedArtworkURL("https://x/art.webp")).toBe(false);
   });
 });
 
@@ -54,5 +66,10 @@ describe("artworkCandidates", () => {
 
   it("returns the original URL alone when it is not WebP", () => {
     expect(artworkCandidates("/art/cover.jpg")).toEqual(["/art/cover.jpg"]);
+  });
+
+  it("returns only the signed URL without inventing siblings", () => {
+    const signed = "https://cdn.example.com/art/original.rev.webp?X-Amz-Signature=abc";
+    expect(artworkCandidates(signed)).toEqual([signed]);
   });
 });

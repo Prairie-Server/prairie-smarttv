@@ -97,6 +97,7 @@ export interface EpisodeSummary {
   episode_number?: number;
   overview?: string | null;
   poster_url?: string | null;
+  still_url?: string | null;
 }
 
 export async function fetchSeasons(

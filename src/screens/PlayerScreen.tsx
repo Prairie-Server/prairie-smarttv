@@ -129,7 +129,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           if (!cancelled) setWatch(detail);
         }
         const forced = resolveForcedPlayMethod(settings);
-        const started = await startPlayback(session.serverUrl, session.accessToken, {
+        const started = await startPlayback(session, {
           fileId: launch.fileId,
           profileId: session.profileId,
           forcedPlayMethod: forced,
