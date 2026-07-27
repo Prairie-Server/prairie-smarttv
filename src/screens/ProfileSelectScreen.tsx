@@ -1,3 +1,4 @@
+import { ArrowLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { listProfiles, verifyProfilePin, type Profile } from "../api/auth";
 import { ApiError } from "../api/client";
@@ -99,7 +100,7 @@ export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelec
           <h1 className="browse-title">Choose a profile</h1>
           <p className="muted">{auth.username}</p>
         </div>
-        <FocusButton variant="ghost" onClick={onCancel}>
+        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onCancel}>
           Back
         </FocusButton>
       </header>
@@ -149,11 +150,12 @@ export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelec
             />
           </label>
           <div className="row-actions">
-            <FocusButton type="submit" disabled={busy}>
+            <FocusButton type="submit" icon={<ChevronRight />} disabled={busy}>
               {busy ? "Checking…" : "Continue"}
             </FocusButton>
             <FocusButton
               variant="ghost"
+              icon={<X />}
               onClick={() => {
                 setPinProfile(null);
                 setPin("");

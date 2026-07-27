@@ -1,3 +1,4 @@
+import { ArrowLeft, LogIn, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   fetchSetupStatus,
@@ -252,10 +253,21 @@ export function ConnectScreen({
             ) : null}
 
             <div className="connect-actions">
-              <FocusButton type="submit" className="connect-submit" disabled={busy}>
+              <FocusButton
+                type="submit"
+                className="connect-submit"
+                icon={<LogIn />}
+                disabled={busy}
+              >
                 {busy ? "Signing in…" : "Sign in"}
               </FocusButton>
-              <FocusButton type="button" variant="ghost" disabled={busy} onClick={onBack}>
+              <FocusButton
+                type="button"
+                variant="ghost"
+                icon={<ArrowLeft />}
+                disabled={busy}
+                onClick={onBack}
+              >
                 Back to servers
               </FocusButton>
             </div>
@@ -292,7 +304,11 @@ export function ConnectScreen({
               <p className="form-error" role="alert">
                 {quickConnect.message}
               </p>
-              <FocusButton type="button" onClick={() => void startQuickConnect()}>
+              <FocusButton
+                type="button"
+                icon={<RefreshCw />}
+                onClick={() => void startQuickConnect()}
+              >
                 Try Quick Connect again
               </FocusButton>
             </div>

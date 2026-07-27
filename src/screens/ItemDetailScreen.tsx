@@ -1,3 +1,4 @@
+import { ArrowLeft, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import {
@@ -126,7 +127,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
         )}
         <div className="detail-hero__shade" />
         <div className="detail-hero__content">
-          <FocusButton variant="ghost" onClick={onBack}>
+          <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack}>
             Back
           </FocusButton>
           {loading ? <p className="muted">Loading…</p> : null}
@@ -140,6 +141,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
                 <div className="row-actions">
                   <FocusButton
                     autoFocus
+                    icon={<Play />}
                     disabled={busyPlay}
                     onClick={() => void playContent(contentId, detail.title)}
                   >

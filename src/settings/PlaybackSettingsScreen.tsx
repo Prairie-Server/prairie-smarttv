@@ -1,3 +1,4 @@
+import { ArrowLeft, FileText, Radar } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FocusButton } from "../components/FocusButton";
 import { detectPlatform } from "../platform/detect";
@@ -92,7 +93,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
             Persisted in localStorage across app updates. Platform: <strong>{platform}</strong>
           </p>
         </div>
-        <FocusButton variant="ghost" onClick={onBack} autoFocus>
+        <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack} autoFocus>
           Back
         </FocusButton>
       </header>
@@ -103,7 +104,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
           <p className="muted settings-note">
             Switch between saved Prairie servers or scan the LAN for new ones.
           </p>
-          <FocusButton variant="ghost" onClick={onSwitchServer}>
+          <FocusButton variant="ghost" icon={<Radar />} onClick={onSwitchServer}>
             Servers / Scan LAN
           </FocusButton>
         </div>
@@ -307,7 +308,11 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
         ) : null}
         {changelogUrl ? (
           <>
-            <FocusButton variant="ghost" onClick={() => openChangelog(changelogUrl)}>
+            <FocusButton
+              variant="ghost"
+              icon={<FileText />}
+              onClick={() => openChangelog(changelogUrl)}
+            >
               Changelog
             </FocusButton>
             {changelogFallbackUrl ? (

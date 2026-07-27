@@ -1,3 +1,4 @@
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { buildManualUrlCandidates, checkServerCandidates } from "../api/checkServer";
 import { FocusButton } from "../components/FocusButton";
@@ -99,10 +100,16 @@ export function ManualServerScreen({
           ) : null}
 
           <div className="connect-actions">
-            <FocusButton type="submit" disabled={busy}>
+            <FocusButton type="submit" icon={<ChevronRight />} disabled={busy}>
               {busy ? "Checking…" : "Continue"}
             </FocusButton>
-            <FocusButton type="button" variant="ghost" disabled={busy} onClick={onBack}>
+            <FocusButton
+              type="button"
+              variant="ghost"
+              icon={<ArrowLeft />}
+              disabled={busy}
+              onClick={onBack}
+            >
               Back
             </FocusButton>
           </div>

@@ -1,3 +1,12 @@
+import {
+  ArrowLeft,
+  Captions,
+  FastForward,
+  Pause,
+  Play,
+  Rewind,
+  Volume2,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
@@ -383,7 +392,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       {controlsVisible || menu !== "none" ? (
         <div className="player-chrome" onMouseMove={bumpControls}>
           <div className="player-top-bar">
-            <FocusButton variant="ghost" onClick={() => void handleExit()}>
+            <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={() => void handleExit()}>
               Back
             </FocusButton>
             <div className="player-meta">
@@ -410,6 +419,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           <div className="player-controls">
             <FocusButton
               variant="ghost"
+              icon={<Rewind />}
               onClick={() => seekBy(-SEEK_STEP_SECONDS)}
               disabled={!streamUrl || Boolean(error)}
             >
@@ -417,6 +427,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             </FocusButton>
             <FocusButton
               autoFocus
+              icon={playing ? <Pause /> : <Play />}
               onClick={() => {
                 setPlaying((p) => {
                   const next = !p;
@@ -431,6 +442,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             </FocusButton>
             <FocusButton
               variant="ghost"
+              icon={<FastForward />}
               onClick={() => seekBy(SEEK_STEP_SECONDS)}
               disabled={!streamUrl || Boolean(error)}
             >
@@ -439,6 +451,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             {audioTracks.length > 0 ? (
               <FocusButton
                 variant="ghost"
+                icon={<Volume2 />}
                 onClick={() => {
                   setMenu((m) => (m === "audio" ? "none" : "audio"));
                   bumpControls();
@@ -450,6 +463,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             {subtitleTracks.length > 0 ? (
               <FocusButton
                 variant="ghost"
+                icon={<Captions />}
                 onClick={() => {
                   setMenu((m) => (m === "subs" ? "none" : "subs"));
                   bumpControls();

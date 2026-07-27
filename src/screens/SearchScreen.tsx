@@ -1,3 +1,4 @@
+import { Search } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
@@ -76,7 +77,9 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
             placeholder="Title…"
           />
         </label>
-        <FocusButton type="submit">Search</FocusButton>
+        <FocusButton type="submit" icon={<Search />}>
+          Search
+        </FocusButton>
       </form>
       {error ? (
         <p className="form-error" role="alert">
