@@ -38,10 +38,10 @@ describe("webPPNGSibling", () => {
 });
 
 describe("artworkCandidates", () => {
-  it("orders AVIF → WebP → PNG for WebP artwork", () => {
+  it("orders WebP → AVIF → PNG for WebP artwork", () => {
     expect(artworkCandidates("/art/original.rev.webp")).toEqual([
-      "/art/original.rev.avif",
       "/art/original.rev.webp",
+      "/art/original.rev.avif",
       "/art/original.rev.png",
     ]);
   });

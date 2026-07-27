@@ -72,8 +72,7 @@ code {
   line-height: 0.95;
   letter-spacing: -0.03em;
   color: var(--prairie-ink);
-  text-shadow: 0 0 40px var(--prairie-glow);
-  animation: brand-in 700ms ease-out both;
+  text-shadow: 0 0 16px var(--prairie-glow);
 }
 
 .brand-hero--compact {
@@ -191,7 +190,6 @@ button:focus,
   background:
     linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
     radial-gradient(circle at 70% 70%, rgba(80, 120, 170, 0.18), transparent 45%);
-  animation: dusk-drift 14s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
@@ -202,8 +200,7 @@ button:focus,
   border-radius: calc(var(--radius) + 4px);
   background: linear-gradient(180deg, rgba(34, 43, 56, 0.72), rgba(20, 24, 32, 0.88));
   border: 1px solid rgba(224, 168, 74, 0.16);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
-  animation: panel-rise 650ms ease-out both;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
 }
 
 .connect-panel--split {
@@ -319,7 +316,6 @@ button:focus,
   background:
     linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
     radial-gradient(circle at 50% 35%, rgba(80, 120, 170, 0.18), transparent 48%);
-  animation: dusk-drift 14s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
@@ -890,7 +886,6 @@ button:focus,
   padding: clamp(1rem, 2.5vw, 1.5rem) clamp(1.5rem, 4vw, 3rem);
   border-bottom: 1px solid rgba(243, 239, 230, 0.08);
   background: rgba(12, 16, 22, 0.72);
-  backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 5;

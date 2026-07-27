@@ -49,8 +49,12 @@ export function webPPNGSibling(objectPath: string | null | undefined): string {
 }
 
 /**
- * Ordered load candidates for a canonical artwork URL: AVIF → WebP → PNG when
+ * Ordered load candidates for a canonical artwork URL: WebP → AVIF → PNG when
  * the input is WebP; otherwise just the original URL.
+ *
+ * Smart TV browsers are often slower to recover from unsupported-image decode
+ * failures than desktop/mobile browsers, so prefer the canonical WebP first
+ * and only try AVIF as an optimization after that.
  */
 export function artworkCandidates(objectPath: string | null | undefined): string[] {
   const trimmed = objectPath?.trim() ?? "";
@@ -59,8 +63,8 @@ export function artworkCandidates(objectPath: string | null | undefined): string
   const avif = webPAVIFSibling(trimmed);
   const png = webPPNGSibling(trimmed);
   const out: string[] = [];
-  if (avif) out.push(avif);
   out.push(trimmed);
+  if (avif) out.push(avif);
   if (png) out.push(png);
   return out;
 }

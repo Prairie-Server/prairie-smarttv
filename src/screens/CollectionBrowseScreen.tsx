@@ -88,6 +88,7 @@ export function CollectionBrowseScreen({
                 title={item.title}
                 subtitle={item.year ? String(item.year) : item.type}
                 posterUrl={item.poster_url}
+                imageLoading={index < 12 ? "eager" : "lazy"}
                 autoFocus={index === 0}
                 onSelect={() => onOpenItem(item.content_id)}
               />

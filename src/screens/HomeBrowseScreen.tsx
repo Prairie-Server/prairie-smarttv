@@ -103,6 +103,7 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
               subtitle={itemSubtitle(item)}
               posterUrl={item.poster_url}
               progress={itemProgress(item)}
+              imageLoading={sectionIndex === 0 && itemIndex < 6 ? "eager" : "lazy"}
               autoFocus={sectionIndex === 0 && itemIndex === 0}
               onSelect={() => onOpenItem(item.content_id)}
             />

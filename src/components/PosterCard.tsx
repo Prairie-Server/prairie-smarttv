@@ -9,6 +9,7 @@ interface PosterCardProps {
   onSelect: () => void;
   autoFocus?: boolean;
   disabled?: boolean;
+  imageLoading?: "eager" | "lazy";
 }
 
 export function PosterCard({
@@ -19,6 +20,7 @@ export function PosterCard({
   onSelect,
   autoFocus,
   disabled,
+  imageLoading = "lazy",
 }: PosterCardProps) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (disabled) return;
@@ -42,7 +44,13 @@ export function PosterCard({
     >
       <div className="poster-card__art" aria-hidden="true">
         {hasPosterUrl ? (
-          <ArtworkImage src={normalizedPosterUrl} alt="" loading="lazy" />
+          <ArtworkImage
+            src={normalizedPosterUrl}
+            alt=""
+            loading={imageLoading}
+            decoding="async"
+            fetchPriority={imageLoading === "eager" ? "high" : "auto"}
+          />
         ) : (
           <div className="poster-card__placeholder">{title.slice(0, 1)}</div>
         )}

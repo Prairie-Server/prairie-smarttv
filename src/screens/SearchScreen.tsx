@@ -106,6 +106,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
                 title={item.title}
                 subtitle={item.year ? String(item.year) : item.type}
                 posterUrl={item.poster_url}
+                imageLoading={index < 12 ? "eager" : "lazy"}
                 onSelect={() => onOpenItem(item.content_id)}
               />
             ))}
