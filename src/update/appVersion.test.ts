@@ -46,16 +46,25 @@ describe("parseAppVersion", () => {
 
   it("returns null for blank or unparseable input", () => {
     expect(parseAppVersion(null)).toBeNull();
+    expect(parseAppVersion(undefined)).toBeNull();
     expect(parseAppVersion("")).toBeNull();
     expect(parseAppVersion("   ")).toBeNull();
     expect(parseAppVersion("1")).toBeNull();
     expect(parseAppVersion("not-a-version")).toBeNull();
+    expect(parseAppVersion("x.y")).toBeNull();
+    expect(parseAppVersion("1.x")).toBeNull();
   });
 
-  it("defaults missing patch to 0", () => {
+  it("defaults missing or unparseable patch to 0", () => {
     expect(parseAppVersion("1.4")).toEqual({
       major: 1,
       minor: 4,
+      patch: 0,
+      prerelease: false,
+    });
+    expect(parseAppVersion("2.0.abc")).toEqual({
+      major: 2,
+      minor: 0,
       patch: 0,
       prerelease: false,
     });
@@ -67,9 +76,18 @@ describe("compareAppVersions", () => {
     const a: AppVersion = { major: 1, minor: 4, patch: 1, prerelease: false };
     const b: AppVersion = { major: 1, minor: 4, patch: 0, prerelease: false };
     const pre: AppVersion = { major: 1, minor: 4, patch: 0, prerelease: true };
+    const olderMajor: AppVersion = { major: 0, minor: 9, patch: 0, prerelease: false };
+    const olderMinor: AppVersion = { major: 1, minor: 3, patch: 9, prerelease: false };
     expect(compareAppVersions(a, b)).toBeGreaterThan(0);
+    expect(compareAppVersions(b, a)).toBeLessThan(0);
     expect(compareAppVersions(b, pre)).toBeGreaterThan(0);
+    expect(compareAppVersions(pre, b)).toBeLessThan(0);
     expect(compareAppVersions(b, b)).toBe(0);
+    expect(compareAppVersions(pre, pre)).toBe(0);
+    expect(compareAppVersions(olderMajor, b)).toBeLessThan(0);
+    expect(compareAppVersions(b, olderMajor)).toBeGreaterThan(0);
+    expect(compareAppVersions(olderMinor, b)).toBeLessThan(0);
+    expect(compareAppVersions(b, olderMinor)).toBeGreaterThan(0);
     expect(formatAppVersion(a)).toBe("1.4.1");
   });
 });
@@ -123,9 +141,50 @@ describe("resolveAppUpdateStatus", () => {
     expect(statusLabel(status)).toBe("Couldn't check for updates");
   });
 
-  it("labels checking status", () => {
+  it("returns unavailable when latest is blank after trim", () => {
+    expect(resolveAppUpdateStatus("1.0.0", "   ", null).kind).toBe("unavailable");
+  });
+
+  it("falls back changelog to release url when resolving", () => {
+    const status = resolveAppUpdateStatus("1.0.0", "1.1.0", "https://example.com/r", null);
+    expect(status.kind).toBe("updateAvailable");
+    if (status.kind === "updateAvailable") {
+      expect(status.changelogUrl).toBe("https://example.com/r");
+    }
+  });
+
+  it("labels checking status and reason overrides", () => {
     expect(statusLabel({ kind: "checking" })).toBe("Checking…");
     expect(latestVersionLabel({ kind: "checking" })).toBeNull();
     expect(changelogUrlOrNull({ kind: "checking" })).toBeNull();
+    expect(
+      statusLabel({
+        kind: "unavailable",
+        currentVersion: "1.0.0",
+        reason: "Timed out",
+      }),
+    ).toBe("Timed out");
+    expect(
+      changelogUrlOrNull({
+        kind: "updateAvailable",
+        currentVersion: "1.0.0",
+        latestVersion: "1.1.0",
+        releaseUrl: "https://example.com/r",
+        changelogUrl: null,
+      }),
+    ).toBe("https://example.com/r");
+    expect(
+      changelogUrlOrNull({
+        kind: "upToDate",
+        currentVersion: "1.0.0",
+        latestVersion: "1.0.0",
+      }),
+    ).toBeNull();
+    expect(
+      changelogUrlOrNull({
+        kind: "unavailable",
+        currentVersion: "1.0.0",
+      }),
+    ).toBeNull();
   });
 });

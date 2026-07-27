@@ -81,4 +81,57 @@ describe("checkAppUpdate", () => {
       expect(status.latestVersion).toBe("0.2.0");
     }
   });
+
+  it("falls back changelog when html_url is missing", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ tag_name: "v0.2.0", html_url: 123 }), { status: 200 }),
+    );
+    const status = await checkAppUpdate({
+      currentVersionName: "0.1.0",
+      fetchImpl,
+      releasesLatestUrl: "https://example.test/latest",
+    });
+    expect(status.kind).toBe("updateAvailable");
+    if (status.kind === "updateAvailable") {
+      expect(status.releaseUrl).toBeNull();
+      expect(status.changelogUrl).toBe(DEFAULT_CHANGELOG_URL);
+    }
+  });
+
+  it("maps abort timeout to unavailable", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn(
+        (_url: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              const err = new Error("aborted");
+              err.name = "AbortError";
+              reject(err);
+            });
+          }),
+      );
+      const pending = checkAppUpdate({ currentVersionName: "0.1.0", fetchImpl });
+      await vi.advanceTimersByTimeAsync(8_000);
+      const status = await pending;
+      expect(status).toEqual({
+        kind: "unavailable",
+        currentVersion: "0.1.0",
+        changelogUrl: DEFAULT_CHANGELOG_URL,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("maps non-timeout abort to unavailable", async () => {
+    const fetchImpl = vi.fn(async () => {
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      throw err;
+    });
+    const status = await checkAppUpdate({ currentVersionName: "0.1.0", fetchImpl });
+    expect(status.kind).toBe("unavailable");
+  });
 });
