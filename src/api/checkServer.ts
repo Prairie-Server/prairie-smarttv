@@ -30,7 +30,10 @@ export function buildManualUrlCandidates(raw: string): string[] {
   if (!trimmed) return [];
 
   if (/^https?:\/\//i.test(trimmed)) {
-    return [normalizeServerUrl(trimmed)];
+    const normalized = normalizeServerUrl(trimmed);
+    // Normalize scheme casing for stable registry IDs and comparisons.
+    const lower = normalized.replace(/^https?:\/\//i, (m) => m.toLowerCase());
+    return [lower];
   }
 
   const withoutSlashes = trimmed.replace(/^\/+/, "");
