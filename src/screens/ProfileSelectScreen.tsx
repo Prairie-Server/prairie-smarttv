@@ -4,6 +4,7 @@ import { listProfiles, verifyProfilePin, type Profile } from "../api/auth";
 import { ApiError } from "../api/client";
 import { fetchServerHealth } from "../api/health";
 import { FocusButton } from "../components/FocusButton";
+import { ProfileAvatar } from "../components/ProfileAvatar";
 import { loadRegistry, rememberSession, saveRegistry } from "../storage/serverRegistry";
 import { saveSession, type AuthTokens, type PrairieSession } from "../storage/session";
 
@@ -46,6 +47,7 @@ export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelec
       ...auth,
       profileId: profile.id,
       profileName: profile.name,
+      profileAvatarUrl: profile.avatar_url ?? null,
       profileToken,
     });
     const health = await fetchServerHealth(session.serverUrl);
@@ -123,9 +125,13 @@ export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelec
               disabled={busy}
               onClick={() => void selectProfile(profile)}
             >
-              <span className="profile-card__avatar" aria-hidden="true">
-                {profile.name.slice(0, 1).toUpperCase()}
-              </span>
+              <ProfileAvatar
+                name={profile.name}
+                avatarUrl={profile.avatar_url}
+                serverUrl={auth.serverUrl}
+                size="lg"
+                className="profile-card__avatar"
+              />
               <span className="profile-card__name">{profile.name}</span>
               <span className="profile-card__meta muted">
                 {profile.is_primary ? "Primary" : profile.is_child ? "Child" : "Profile"}

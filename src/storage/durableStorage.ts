@@ -24,6 +24,7 @@ const MIRROR_KEYS = [
   STORAGE_SCHEMA_KEY,
   PERFORMANCE_MODE_KEY,
   "prairie.session.accessToken",
+  "prairie.session.refreshToken",
   "prairie.session.profileToken",
 ] as const;
 

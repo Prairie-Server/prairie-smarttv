@@ -303,7 +303,7 @@ export function ConnectScreen({
 
           {quickConnect.status === "waiting" ? (
             <div className="quick-connect-codes">
-              <QrCode value={quickConnect.session.verification_uri_complete} size={188} />
+              <QrCode value={quickConnect.session.verification_uri_complete} size={160} />
               <div>
                 <div className="quick-connect-label">Match</div>
                 <div className="quick-connect-match">{quickConnect.session.match_code}</div>

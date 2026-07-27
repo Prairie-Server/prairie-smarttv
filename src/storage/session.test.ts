@@ -26,7 +26,7 @@ describe("normalizeServerUrl", () => {
 });
 
 describe("session persistence", () => {
-  it("round-trips a valid session without persisting refreshToken", () => {
+  it("round-trips a valid session including refreshToken", () => {
     const storage = memoryStorage();
     const tokensStorage = memoryStorage();
     const saved = saveSession(
@@ -37,23 +37,27 @@ describe("session persistence", () => {
         username: "ada",
         profileId: "p1",
         profileName: "Ada",
+        profileAvatarUrl: "https://prairie.example/avatar.png",
         profileToken: "pin",
       },
       storage,
       tokensStorage,
     );
     expect(saved.serverUrl).toBe("https://prairie.example");
-    expect(saved.refreshToken).toBeUndefined();
+    expect(saved.refreshToken).toBe("ref");
     const raw = JSON.parse(storage.getItem("prairie.session")!);
     expect(raw.refreshToken).toBeUndefined();
     expect(raw.accessToken).toBeUndefined();
     expect(raw.profileToken).toBeUndefined();
+    expect(raw.profileAvatarUrl).toBe("https://prairie.example/avatar.png");
     expect(loadSession(storage, tokensStorage)).toEqual({
       serverUrl: "https://prairie.example",
       accessToken: "tok",
+      refreshToken: "ref",
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: "https://prairie.example/avatar.png",
       profileToken: "pin",
     });
   });
@@ -73,12 +77,15 @@ describe("session persistence", () => {
     expect(loadSession(storage, tokensStorage)).toEqual({
       serverUrl: "https://prairie.example",
       accessToken: "tok",
+      refreshToken: "legacy-ref",
       username: "ada",
       profileId: "p1",
       profileToken: "legacy-pin",
       profileName: undefined,
+      profileAvatarUrl: null,
     });
     expect(tokensStorage.getItem("prairie.session.accessToken")).toBe("tok");
+    expect(tokensStorage.getItem("prairie.session.refreshToken")).toBe("legacy-ref");
     expect(tokensStorage.getItem("prairie.session.profileToken")).toBe("legacy-pin");
     const raw = JSON.parse(storage.getItem("prairie.session")!);
     expect(raw.accessToken).toBeUndefined();
@@ -104,6 +111,7 @@ describe("session persistence", () => {
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: null,
       profileToken: "legacy-pin",
     });
     expect(tokensStorage.getItem("prairie.session.profileToken")).toBe("legacy-pin");
@@ -131,6 +139,7 @@ describe("session persistence", () => {
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: null,
       profileToken: undefined,
     });
   });
@@ -212,6 +221,7 @@ describe("session persistence", () => {
       username: "ada",
       profileId: "p1",
       profileName: "Ada",
+      profileAvatarUrl: null,
       profileToken: "pin-from-session",
     });
     expect(tokensStorage.getItem("prairie.session.accessToken")).toBe("from-session");

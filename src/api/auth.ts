@@ -96,6 +96,12 @@ export async function pollDeviceLogin(
   });
 }
 
+export interface RefreshResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
 export async function login(
   serverUrl: string,
   credentials: LoginRequest,
@@ -105,6 +111,29 @@ export async function login(
     method: "POST",
     body: JSON.stringify(credentials),
   });
+}
+
+/**
+ * Renew access + refresh tokens. Uses raw fetch (not apiRequest) so a failed
+ * refresh cannot recurse through the 401→refresh path.
+ */
+export async function refreshAccessToken(
+  serverUrl: string,
+  refreshToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RefreshResponse | null> {
+  const base = serverUrl.replace(/\/+$/, "");
+  try {
+    const response = await fetchImpl(`${base}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as RefreshResponse;
+  } catch {
+    return null;
+  }
 }
 
 export async function listProfiles(

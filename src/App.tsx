@@ -3,7 +3,10 @@ import type { CollectionCard } from "./api/collections";
 import { checkServer } from "./api/checkServer";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
 import type { Library } from "./api/libraries";
-import { setSessionUnauthorizedHandler } from "./api/sessionClient";
+import {
+  setSessionTokensRefreshedHandler,
+  setSessionUnauthorizedHandler,
+} from "./api/sessionClient";
 import { ShellNav, type ShellTab } from "./components/ShellNav";
 import type { DiscoveryHit } from "./discovery/discover";
 import { handleSpatialArrowKey } from "./focus/spatialFocus";
@@ -137,7 +140,21 @@ export function App() {
 
   useEffect(() => {
     setSessionUnauthorizedHandler(disconnect);
-    return () => setSessionUnauthorizedHandler(undefined);
+    setSessionTokensRefreshedHandler((tokens) => {
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken ?? prev.refreshToken,
+            }
+          : prev,
+      );
+    });
+    return () => {
+      setSessionUnauthorizedHandler(undefined);
+      setSessionTokensRefreshedHandler(undefined);
+    };
   }, [disconnect]);
 
   useEffect(() => {
@@ -342,7 +359,14 @@ export function App() {
 
   let body: ReactNode = null;
   if (route.name === "home") {
-    body = <HomeBrowseScreen session={session} onOpenItem={openItem} />;
+    body = (
+      <HomeBrowseScreen
+        session={session}
+        onOpenItem={openItem}
+        showOnNow={liveTvAvailable}
+        onOpenLiveChannel={(channel) => setRoute({ name: "livetv-player", channel, back: route })}
+      />
+    );
   } else if (route.name === "libraries") {
     body = (
       <LibrariesScreen
@@ -396,6 +420,7 @@ export function App() {
         <ShellNav
           active={tab}
           profileName={session.profileName}
+          profileAvatarUrl={session.profileAvatarUrl}
           showLiveTv={liveTvAvailable}
           onNavigate={(next) => {
             switch (next) {
@@ -422,6 +447,7 @@ export function App() {
               auth: {
                 serverUrl: session.serverUrl,
                 accessToken: session.accessToken,
+                refreshToken: session.refreshToken,
                 username: session.username,
               },
             })

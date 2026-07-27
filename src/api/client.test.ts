@@ -61,6 +61,8 @@ describe("isAuthLoginPath", () => {
 describe("apiRequest", () => {
   afterEach(() => {
     vi.useRealTimers();
+    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("parses error bodies into ApiError", async () => {
@@ -102,6 +104,69 @@ describe("apiRequest", () => {
       ),
     ).rejects.toMatchObject({ status: 401 });
     expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes the access token and retries once on 401", async () => {
+    const onUnauthorized = vi.fn();
+    const onTokensRefreshed = vi.fn();
+    localStorage.setItem("prairie.session.refreshToken", "refresh-1");
+    localStorage.setItem(
+      "prairie.session",
+      JSON.stringify({
+        serverUrl: "https://prairie.example",
+        username: "ada",
+        profileId: "p1",
+        profileName: "Ada",
+      }),
+    );
+    localStorage.setItem("prairie.session.accessToken", "old-tok");
+
+    let homeCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "new-tok",
+            refresh_token: "refresh-2",
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        );
+      }
+      homeCalls += 1;
+      const headers = new Headers(init?.headers);
+      if (homeCalls === 1) {
+        expect(headers.get("Authorization")).toBe("Bearer old-tok");
+        return new Response(JSON.stringify({ message: "expired" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        });
+      }
+      expect(headers.get("Authorization")).toBe("Bearer new-tok");
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    await expect(
+      apiRequest(
+        {
+          serverUrl: "https://prairie.example",
+          accessToken: "old-tok",
+          refreshToken: "refresh-1",
+          fetchImpl,
+          onUnauthorized,
+          onTokensRefreshed,
+        },
+        "/api/v1/home/sections",
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(onTokensRefreshed).toHaveBeenCalledWith({
+      accessToken: "new-tok",
+      refreshToken: "refresh-2",
+    });
+    expect(localStorage.getItem("prairie.session.accessToken")).toBe("new-tok");
+    expect(localStorage.getItem("prairie.session.refreshToken")).toBe("refresh-2");
   });
 
   it("does not call onUnauthorized for auth/login 401", async () => {

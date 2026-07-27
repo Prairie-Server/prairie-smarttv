@@ -274,3 +274,15 @@ export function nextProgramForChannel(
   }
   return null;
 }
+
+/** Fraction of the current programme that has already aired (0–1). */
+export function programProgressFraction(
+  startIso: string,
+  stopIso: string,
+  nowMs: number = Date.now(),
+): number {
+  const start = Date.parse(startIso);
+  const stop = Date.parse(stopIso);
+  if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) return 0;
+  return Math.min(1, Math.max(0, (nowMs - start) / (stop - start)));
+}
