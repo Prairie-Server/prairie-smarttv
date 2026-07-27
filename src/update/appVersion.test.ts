@@ -195,6 +195,8 @@ describe("resolveAppUpdateStatus", () => {
         currentVersion: "1.0.0",
       }),
     ).toBeNull();
-    expect(releaseUrlOrNull({ kind: "upToDate", currentVersion: "1.0.0", latestVersion: "1.0.0" })).toBeNull();
+    expect(
+      releaseUrlOrNull({ kind: "upToDate", currentVersion: "1.0.0", latestVersion: "1.0.0" }),
+    ).toBeNull();
   });
 });
