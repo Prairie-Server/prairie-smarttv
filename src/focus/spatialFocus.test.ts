@@ -79,9 +79,7 @@ describe("spatialFocus", () => {
     document.body.append(alone);
     place(alone, 0, 0);
     alone.focus();
-    expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowRight" }))).toBe(
-      false,
-    );
+    expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowRight" }))).toBe(false);
     expect(findSpatialNeighbor(alone, "ArrowRight", [])).toBeNull();
     expect(findSpatialNeighbor(alone, "ArrowUp", [alone])).toBeNull();
     expect(isArrowKey("ArrowUp")).toBe(true);
