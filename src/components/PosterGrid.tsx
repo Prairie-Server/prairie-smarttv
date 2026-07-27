@@ -18,7 +18,7 @@ import { registerFocusReveal } from "../focus/spatialFocus";
 const DEFAULT_MIN_COLUMN_WIDTH = 150;
 const DEFAULT_GAP = 16;
 const DEFAULT_ROW_HEIGHT = 320;
-const DEFAULT_OVERSCAN_ROWS = 4;
+const DEFAULT_OVERSCAN_ROWS = 6;
 
 interface PosterGridProps {
   children?: ReactNode;
@@ -118,6 +118,22 @@ function PosterGridInner({
   const startIndex = Math.min(count, Math.max(0, startRow) * columns);
   const endIndex = Math.min(count, Math.max(0, endRow) * columns);
 
+  /** Grow the mounted rows around `index` on the next commit (no flushSync). */
+  const prefetchAround = useCallback(
+    (index: number) => {
+      const row = Math.floor(index / Math.max(columns, 1));
+      const start = Math.max(0, row - overscanRows);
+      const end = Math.min(rowCount, row + overscanRows + 1);
+      setForcedRows((prev) => {
+        if (prev && prev.start <= start && prev.end >= end) return prev;
+        return prev
+          ? { start: Math.min(prev.start, start), end: Math.max(prev.end, end) }
+          : { start, end };
+      });
+    },
+    [columns, overscanRows, rowCount],
+  );
+
   const reveal = useCallback(
     (index: number) => {
       const el = rootRef.current;
@@ -126,6 +142,8 @@ function PosterGridInner({
       const existing = el.querySelector<HTMLElement>(`[data-focus-index="${index}"]`);
       if (existing) {
         existing.scrollIntoView({ block: "nearest", inline: "nearest" });
+        // Keep the next step inside the mounted rows.
+        prefetchAround(index);
         return existing;
       }
 
@@ -140,7 +158,7 @@ function PosterGridInner({
       node?.scrollIntoView({ block: "nearest", inline: "nearest" });
       return node;
     },
-    [columns, overscanRows, rowCount],
+    [columns, overscanRows, rowCount, prefetchAround],
   );
 
   useEffect(() => {
@@ -149,11 +167,14 @@ function PosterGridInner({
     return registerFocusReveal(el, reveal);
   }, [reveal]);
 
+  // Drop the forced rows once scrolling covers them, instead of on a timer that
+  // could unmount the focused card mid-navigation.
   useEffect(() => {
     if (!forcedRows) return;
-    const handle = window.setTimeout(() => setForcedRows(null), 400);
-    return () => window.clearTimeout(handle);
-  }, [forcedRows]);
+    if (naturalStartRow <= forcedRows.start && naturalEndRow >= forcedRows.end) {
+      setForcedRows(null);
+    }
+  }, [forcedRows, naturalStartRow, naturalEndRow]);
 
   const shouldVirtualize = count > columns * 3;
   const sliceStart = shouldVirtualize ? startIndex : 0;

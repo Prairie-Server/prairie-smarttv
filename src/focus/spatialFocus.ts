@@ -115,6 +115,10 @@ function focusAtContainerIndex(container: HTMLElement, index: number): HTMLEleme
   const direct = container.querySelector<HTMLElement>(`[data-focus-index="${index}"]`);
   if (direct && closestFocusContainer(direct) === container) {
     lastIndexByContainer.set(container, index);
+    // Let a virtualized container align its scroll and widen its mounted window
+    // for the next step. The node is already here, so the result is unused —
+    // this is what keeps sequential steps off the synchronous mount path.
+    revealHandlers.get(container)?.(index);
     return direct;
   }
 
