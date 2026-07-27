@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { fetchSetupStatus, login } from "../api/auth";
+import { networkFailureMessage } from "../api/checkServer";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
 import type { AuthTokens } from "../storage/session";
@@ -63,12 +64,12 @@ export function ConnectScreen({
         username: auth.user.username,
       });
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else if (err instanceof Error) {
-        setError(err.message);
+      // Prefer ApiError bodies for auth/setup HTTP failures; remap transport
+      // errors ("Failed to fetch") so wrong http/https is actionable on TV.
+      if (err instanceof ApiError && err.code !== "timeout") {
+        setError(err.message || "Could not connect");
       } else {
-        setError("Could not connect");
+        setError(networkFailureMessage(err));
       }
     } finally {
       setBusy(false);

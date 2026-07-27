@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from "react";
+import {
+  buildManualUrlCandidates,
+  checkServerCandidates,
+} from "../api/checkServer";
 import { FocusButton } from "../components/FocusButton";
-import { normalizeServerUrl } from "../storage/persist";
 
 export interface ManualServerScreenProps {
   initialUrl?: string;
-  onContinue: (serverUrl: string) => void;
+  onContinue: (serverUrl: string, options?: { serverName?: string }) => void;
   onBack: () => void;
 }
 
@@ -15,30 +18,54 @@ export function ManualServerScreen({
 }: ManualServerScreenProps) {
   const [serverUrl, setServerUrl] = useState(initialUrl);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setError(null);
-    const normalized = normalizeServerUrl(serverUrl);
-    if (!normalized) {
-      setError("Enter a valid http(s) Prairie server URL");
+
+    const candidates = buildManualUrlCandidates(serverUrl);
+    if (!candidates.length) {
+      setError("Enter a valid Prairie server address");
       return;
     }
+
+    // Validate any fully-qualified candidate before probing.
+    for (const candidate of candidates) {
+      try {
+        const parsed = new URL(candidate);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          setError("Server URL must use http or https");
+          return;
+        }
+        if (parsed.username || parsed.password) {
+          setError("Server URL must not include credentials");
+          return;
+        }
+      } catch {
+        setError("Enter a valid Prairie server address");
+        return;
+      }
+    }
+
+    setBusy(true);
     try {
-      const parsed = new URL(normalized);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        setError("Server URL must use http or https");
+      const result = await checkServerCandidates(candidates);
+      if (!result.ok) {
+        setError(result.message);
         return;
       }
-      if (parsed.username || parsed.password) {
-        setError("Server URL must not include credentials");
+      if (result.needsSetup) {
+        setError(
+          "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.",
+        );
         return;
       }
-    } catch {
-      setError("Enter a valid http(s) Prairie server URL");
-      return;
+      onContinue(result.serverUrl, { serverName: result.serverName });
+    } finally {
+      setBusy(false);
     }
-    onContinue(normalized);
   }
 
   return (
@@ -48,9 +75,11 @@ export function ManualServerScreen({
         <img className="connect-mark" src="/prairie-mark.png" alt="" width={72} height={72} />
         <p className="eyebrow">Add server</p>
         <h1 className="brand-hero brand-hero--compact">Prairie</h1>
-        <p className="lede">Enter your Prairie server address, then sign in on the next screen.</p>
+        <p className="lede">
+          Enter your Prairie server address. We check it is reachable before signing in.
+        </p>
 
-        <form className="connect-form" onSubmit={handleSubmit}>
+        <form className="connect-form" onSubmit={(e) => void handleSubmit(e)}>
           <label className="field">
             <span>Server URL</span>
             <input
@@ -58,10 +87,11 @@ export function ManualServerScreen({
               className="focusable"
               type="url"
               inputMode="url"
-              placeholder="https://prairie.example.com"
+              placeholder="192.168.1.10:8080"
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
               required
+              disabled={busy}
             />
           </label>
 
@@ -72,8 +102,10 @@ export function ManualServerScreen({
           ) : null}
 
           <div className="connect-actions">
-            <FocusButton type="submit">Continue</FocusButton>
-            <FocusButton type="button" variant="ghost" onClick={onBack}>
+            <FocusButton type="submit" disabled={busy}>
+              {busy ? "Checking…" : "Continue"}
+            </FocusButton>
+            <FocusButton type="button" variant="ghost" disabled={busy} onClick={onBack}>
               Back
             </FocusButton>
           </div>

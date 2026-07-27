@@ -43,8 +43,12 @@ export interface SetupStatusResponse {
 export async function fetchSetupStatus(
   serverUrl: string,
   fetchImpl?: typeof fetch,
+  timeoutMs?: number,
 ): Promise<SetupStatusResponse> {
-  return apiRequest<SetupStatusResponse>({ serverUrl, fetchImpl }, "/api/v1/auth/setup");
+  return apiRequest<SetupStatusResponse>(
+    { serverUrl, fetchImpl, timeoutMs },
+    "/api/v1/auth/setup",
+  );
 }
 
 export async function login(
