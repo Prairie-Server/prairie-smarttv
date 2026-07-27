@@ -1,5 +1,5 @@
 import { ArrowLeft, Bookmark, CheckCircle2, Heart, Play, RotateCcw, Star } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   fetchEpisodes,
@@ -17,6 +17,7 @@ import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { useBackKey } from "../focus/useBackKey";
+import { LANDSCAPE_WIDTH, LOGO_WIDTH, POSTER_WIDTH } from "../lib/artworkUrl";
 import {
   crewLine,
   episodeProgressRatio,
@@ -97,10 +98,12 @@ export function ItemDetailScreen({
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [similar, setSimilar] = useState<ItemDetail[]>([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyPlay, setBusyPlay] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const playButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const handleBack = useCallback(() => {
     onBack();
@@ -120,41 +123,70 @@ export function ItemDetailScreen({
         const item = await fetchItemDetail(session, contentId);
         if (cancelled) return;
         setDetail(item);
-        if (isSeriesType(item.type)) {
-          const nextSeasons = await fetchSeasons(session, contentId);
-          if (cancelled) return;
-          setSeasons(nextSeasons);
-          const first = nextSeasons[0]?.season_number ?? null;
-          setSeasonNumber(first);
-        }
-        try {
-          const refs = await fetchSimilarItems(session, contentId);
-          const details = (
-            await Promise.all(
-              refs.slice(0, 12).map(async (ref) => {
-                try {
-                  return await fetchItemDetail(session, ref.media_item_id);
-                } catch {
-                  return null;
-                }
-              }),
-            )
-          ).filter((entry): entry is ItemDetail => entry != null);
-          if (!cancelled) setSimilar(details);
-        } catch {
-          if (!cancelled) setSimilar([]);
-        }
+        // Unblock the hero as soon as primary detail is ready — seasons and
+        // recommendations must never gate Play / OK focus.
+        setLoading(false);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof ApiError ? err.message : "Could not load title");
-      } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [session, contentId]);
+
+  useEffect(() => {
+    if (!detail || !isSeriesType(detail.type)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nextSeasons = await fetchSeasons(session, contentId);
+        if (cancelled) return;
+        setSeasons(nextSeasons);
+        const first = nextSeasons[0]?.season_number ?? null;
+        setSeasonNumber(first);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : "Could not load seasons");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, contentId, detail]);
+
+  useEffect(() => {
+    if (!detail) return;
+    let cancelled = false;
+    void (async () => {
+      setSimilarLoading(true);
+      try {
+        const refs = await fetchSimilarItems(session, contentId);
+        const details = (
+          await Promise.all(
+            refs.slice(0, 12).map(async (ref) => {
+              try {
+                return await fetchItemDetail(session, ref.media_item_id);
+              } catch {
+                return null;
+              }
+            }),
+          )
+        ).filter((entry): entry is ItemDetail => entry != null);
+        if (!cancelled) setSimilar(details);
+      } catch {
+        if (!cancelled) setSimilar([]);
+      } finally {
+        if (!cancelled) setSimilarLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, contentId, detail]);
 
   useEffect(() => {
     if (seasonNumber == null || !detail) return;
@@ -177,6 +209,18 @@ export function ItemDetailScreen({
       cancelled = true;
     };
   }, [session, contentId, seasonNumber, detail]);
+
+  // Defensive: ensure Play receives focus once the hero is ready so OK cannot
+  // land on <body> before autoFocus paints.
+  useEffect(() => {
+    if (!detail || loading) return;
+    const node = playButtonRef.current;
+    if (!node) return;
+    if (document.activeElement === node) return;
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    if (tag === "button" || tag === "input" || tag === "a") return;
+    node.focus({ preventScroll: true });
+  }, [detail, loading]);
 
   async function playContent(id: string, title: string, startFromBeginning = false) {
     setBusyPlay(true);
@@ -344,14 +388,27 @@ export function ItemDetailScreen({
             <div className="detail-hero__body">
               {heroPosterUrl && heroBackdropUrl ? (
                 <div className="detail-hero__poster" aria-hidden="true">
-                  <ArtworkImage src={heroPosterUrl} alt="" placeholderLabel={detail.title} />
+                  <ArtworkImage
+                    src={heroPosterUrl}
+                    alt=""
+                    placeholderLabel={detail.title}
+                    widthHint={POSTER_WIDTH}
+                    width={220}
+                    height={330}
+                  />
                 </div>
               ) : null}
               <div className="detail-hero__copy">
                 <p className="eyebrow">{sources.join(" · ") || typeLabel(detail.type)}</p>
                 {heroLogoUrl ? (
                   <div className="detail-hero__logo">
-                    <ArtworkImage src={heroLogoUrl} alt={detail.title} />
+                    <ArtworkImage
+                      src={heroLogoUrl}
+                      alt={detail.title}
+                      widthHint={LOGO_WIDTH}
+                      width={352}
+                      height={120}
+                    />
                   </div>
                 ) : (
                   <h1 className="browse-title">{detail.title}</h1>
@@ -380,6 +437,7 @@ export function ItemDetailScreen({
                 <div className="row-actions detail-actions">
                   {!isSeries ? (
                     <FocusButton
+                      ref={playButtonRef}
                       autoFocus
                       icon={<Play />}
                       disabled={busyPlay}
@@ -389,6 +447,7 @@ export function ItemDetailScreen({
                     </FocusButton>
                   ) : nextUp ? (
                     <FocusButton
+                      ref={playButtonRef}
                       autoFocus
                       icon={<Play />}
                       disabled={busyPlay}
@@ -518,7 +577,11 @@ export function ItemDetailScreen({
                             src={still}
                             alt=""
                             placeholderLabel={episode.title}
-                            loading={index < 6 ? "eager" : "lazy"}
+                            widthHint={LANDSCAPE_WIDTH}
+                            width={280}
+                            height={158}
+                            loading={index < 3 ? "eager" : "lazy"}
+                            decoding={index < 3 ? "sync" : "async"}
                           />
                         ) : (
                           <div className="episode-card__still-empty">
@@ -732,6 +795,11 @@ export function ItemDetailScreen({
               />
             )}
           />
+        </div>
+      ) : similarLoading && detail ? (
+        <div className="detail-body-section">
+          <p className="eyebrow">More Like This</p>
+          <p className="muted">Loading…</p>
         </div>
       ) : null}
     </section>

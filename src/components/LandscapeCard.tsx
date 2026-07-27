@@ -1,5 +1,6 @@
-import type { KeyboardEvent } from "react";
+import { memo, type KeyboardEvent } from "react";
 import { Play } from "lucide-react";
+import { LANDSCAPE_WIDTH } from "../lib/artworkUrl";
 import { ArtworkImage } from "./ArtworkImage";
 
 interface LandscapeCardProps {
@@ -16,7 +17,7 @@ interface LandscapeCardProps {
   "data-focus-index"?: number;
 }
 
-export function LandscapeCard({
+function LandscapeCardInner({
   title,
   subtitle,
   meta,
@@ -52,6 +53,9 @@ export function LandscapeCard({
             src={src}
             alt=""
             placeholderLabel={title}
+            widthHint={LANDSCAPE_WIDTH}
+            width={352}
+            height={198}
             loading={imageLoading}
             decoding="async"
             fetchPriority={imageLoading === "eager" ? "high" : "auto"}
@@ -79,3 +83,5 @@ export function LandscapeCard({
     </button>
   );
 }
+
+export const LandscapeCard = memo(LandscapeCardInner);

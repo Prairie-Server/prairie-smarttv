@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type ImgHTMLAttributes,
 } from "react";
-import { artworkCandidates } from "../lib/artworkUrl";
+import { artworkCandidates, artworkSized } from "../lib/artworkUrl";
 import { resolveArtworkUrl } from "../lib/resolveArtworkUrl";
 import { useServerUrl } from "../serverUrlContext";
 
@@ -17,6 +17,11 @@ export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
   placeholderLabel?: string;
   /** Override server origin used to absolutize relative `/artwork/...` paths. */
   serverUrl?: string | null;
+  /**
+   * Prefer a server width variant (`/w300.`, `/w500.`, …) before format siblings.
+   * Matches prairie-server artworkkey ladders — not a query param.
+   */
+  widthHint?: number | null;
 };
 
 /**
@@ -37,11 +42,15 @@ export function ArtworkImage({
   className,
   style,
   serverUrl: serverUrlProp,
+  widthHint,
+  width,
+  height,
   ...rest
 }: ArtworkImageProps) {
   const contextServerUrl = useServerUrl();
   const serverUrl = serverUrlProp?.trim() || contextServerUrl;
-  const normalizedSrc = resolveArtworkUrl(src, serverUrl) || undefined;
+  const sized = artworkSized(src, widthHint);
+  const normalizedSrc = resolveArtworkUrl(sized, serverUrl) || undefined;
   const candidates = artworkCandidates(normalizedSrc);
   const [failedCount, setFailedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -91,6 +100,8 @@ export function ArtworkImage({
         className="artwork-image__img"
         src={current}
         alt={alt}
+        width={width}
+        height={height}
         style={imgStyle}
         onLoad={(event) => {
           setLoaded(true);

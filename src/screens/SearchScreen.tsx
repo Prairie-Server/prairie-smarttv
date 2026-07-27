@@ -144,7 +144,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
                 posterUrl={item.poster_url}
                 watched={Boolean(item.user_state?.played)}
                 favorite={Boolean(item.user_state?.is_favorite)}
-                imageLoading={index < 12 ? "eager" : "lazy"}
+                imageLoading={index < 4 ? "eager" : "lazy"}
                 onSelect={() => onOpenItem(item.content_id)}
               />
             ))}

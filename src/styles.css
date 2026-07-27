@@ -2391,7 +2391,8 @@ button:focus,
 .detail-hero__logo {
   position: relative;
   width: min(100%, 22rem);
-  max-height: 7.5rem;
+  height: 7.5rem;
+  min-height: 7.5rem;
 }
 
 .detail-hero__logo .artwork-image,
@@ -2399,7 +2400,7 @@ button:focus,
   position: relative;
   width: auto;
   max-width: 100%;
-  height: auto;
+  height: 100%;
   max-height: 7.5rem;
   object-fit: contain;
   object-position: left center;
@@ -2793,4 +2794,35 @@ button:focus,
 
 .episode-row__body strong {
   font-size: 1.05rem;
+}
+
+/* Perf tiers: drop box-shadow transitions on low/balanced TVs.
+ * Animating blurred shadows during D-pad nav is a continuous repaint cost. */
+html[data-perf="low"] .poster-card,
+html[data-perf="balanced"] .poster-card,
+html[data-perf="low"] .library-card,
+html[data-perf="balanced"] .library-card,
+html[data-perf="low"] .profile-card,
+html[data-perf="balanced"] .profile-card,
+html[data-perf="low"] .landscape-card,
+html[data-perf="balanced"] .landscape-card,
+html[data-perf="low"] .episode-card,
+html[data-perf="balanced"] .episode-card {
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+html[data-perf="low"] .poster-card:focus,
+html[data-perf="balanced"] .poster-card:focus,
+html[data-perf="low"] .library-card:focus,
+html[data-perf="balanced"] .library-card:focus,
+html[data-perf="low"] .profile-card:focus,
+html[data-perf="balanced"] .profile-card:focus,
+html[data-perf="low"] .landscape-card:focus,
+html[data-perf="balanced"] .landscape-card:focus,
+html[data-perf="low"] .episode-card:focus,
+html[data-perf="balanced"] .episode-card:focus {
+  box-shadow: none;
+  outline: 3px solid var(--prairie-ring);
 }
