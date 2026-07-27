@@ -80,7 +80,7 @@ export function ServerListScreen({
   const [connecting, setConnecting] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorText, setErrorText] = useState("");
-  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const didAutoScan = useRef(false);
 
@@ -161,11 +161,11 @@ export function ServerListScreen({
   }
 
   function handleRemove() {
-    if (!focusedId || controlsLocked) return;
-    const next = removeServer(loadRegistry(), focusedId);
+    if (!selectedId || controlsLocked) return;
+    const next = removeServer(loadRegistry(), selectedId);
     saveRegistry(next);
     setRegistry(next);
-    setFocusedId(null);
+    setSelectedId(null);
   }
 
   async function runSelect(label: string, action: () => void | Promise<void>) {
@@ -230,7 +230,7 @@ export function ServerListScreen({
           <FocusButton
             variant="ghost"
             onClick={handleRemove}
-            disabled={controlsLocked || !focusedId}
+            disabled={controlsLocked || !selectedId}
           >
             Remove
           </FocusButton>
@@ -245,11 +245,11 @@ export function ServerListScreen({
                   key={entry.id}
                   type="button"
                   role="listitem"
-                  className={`server-card focusable ${focusedId === entry.id ? "is-focused" : ""} ${
+                  className={`server-card focusable ${
                     entry.id === registry.activeServerId ? "is-active" : ""
                   }`}
                   autoFocus={index === 0}
-                  onFocus={() => setFocusedId(entry.id)}
+                  onFocus={() => setSelectedId(entry.id)}
                   onClick={() => void runSelect(displayName(entry), () => onSelectSaved(entry))}
                   disabled={controlsLocked}
                 >
