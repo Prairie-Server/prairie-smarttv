@@ -29,6 +29,11 @@ export interface BuildCandidatesOptions {
   extraCidrs?: string[];
   deepScan?: boolean;
   maxHostsPerCidr?: number;
+  /**
+   * Hostnames to probe for cross-subnet discovery (resolved via unicast DNS A records).
+   * If omitted, the legacy hardcoded defaults are used.
+   */
+  baseHosts?: readonly string[];
   /** Device IPv4s when the platform can expose them (often empty on Tizen/webOS). */
   localIps?: string[];
 }
@@ -164,11 +169,20 @@ export function collectScanCidrs(extraCidrs: string[] = [], localIps: string[] =
  *      deepScan=true  → full /24 on deepScanPorts (:8080)
  */
 export function buildCandidates(options: BuildCandidatesOptions = {}): string[] {
-  const { extraCidrs = [], deepScan = false, maxHostsPerCidr = 254, localIps = [] } = options;
+  const {
+    extraCidrs = [],
+    deepScan = false,
+    maxHostsPerCidr = 254,
+    localIps = [],
+    baseHosts,
+  } = options;
   const out: string[] = [];
   const seen = new Set<string>();
 
-  for (const host of ["prairie.local", "prairie"]) {
+  const defaultBaseHosts = ["prairie.local", "prairie"] as const;
+  const hostsToProbe = baseHosts && baseHosts.length > 0 ? baseHosts : defaultBaseHosts;
+
+  for (const host of hostsToProbe) {
     urlsForHost(host, DEFAULT_PORTS, seen, out);
   }
   for (const ip of localIps) {

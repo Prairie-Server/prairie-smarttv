@@ -10,6 +10,7 @@ import {
   sortedEntries,
   type ServerEntry,
 } from "../storage/serverRegistry";
+import { loadLastServerUrl } from "../storage/persist";
 
 export interface ServerListScreenProps {
   onSelectSaved: (entry: ServerEntry) => void;
@@ -24,6 +25,46 @@ function mergeHitLists(base: DiscoveryHit[], extra: DiscoveryHit[]): DiscoveryHi
   const map = new Map(base.map((h) => [h.url, h]));
   for (const hit of extra) map.set(hit.url, hit);
   return [...map.values()];
+}
+
+const DEFAULT_DISCOVERY_BASE_HOSTS = ["prairie.local", "prairie"] as const;
+
+function hostnamesFromServerUrls(urls: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of urls) {
+    const url = raw.trim();
+    if (!url) continue;
+    try {
+      const host = new URL(url).hostname;
+      const key = host.toLowerCase();
+      if (!host || seen.has(key)) continue;
+      seen.add(key);
+      out.push(host);
+    } catch {
+      /* ignore invalid URL shapes */
+    }
+  }
+  return out;
+}
+
+function computeDiscoveryBaseHosts(registry: ReturnType<typeof loadRegistry>): string[] {
+  const savedHosts = hostnamesFromServerUrls(registry.entries.map((e) => e.url));
+  const last = loadLastServerUrl();
+  const lastHost = last ? hostnamesFromServerUrls([last]) : [];
+  const custom = [...savedHosts, ...lastHost];
+  const merged = [...custom, ...DEFAULT_DISCOVERY_BASE_HOSTS];
+
+  // De-dupe while preserving ordering (first configured, then defaults).
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const host of merged) {
+    const key = host.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(host);
+  }
+  return out;
 }
 
 export function ServerListScreen({
@@ -70,10 +111,12 @@ export function ServerListScreen({
     try {
       const current = loadRegistry();
       setRegistry(current);
+      const baseHosts = computeDiscoveryBaseHosts(current);
 
       let hits = await runLanDiscovery({
         extraCidrs: current.scanCidrs,
         deepScan: false,
+        baseHosts,
         signal: controller.signal,
         onHit: (next) => setDiscovered(next),
         onProgress: (done, total) => {
@@ -88,6 +131,7 @@ export function ServerListScreen({
         const deepHits = await runLanDiscovery({
           extraCidrs: current.scanCidrs,
           deepScan: true,
+          baseHosts,
           signal: controller.signal,
           onHit: (next) => setDiscovered(mergeHitLists(hits, next)),
           onProgress: (done, total) => {
