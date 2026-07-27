@@ -4,12 +4,39 @@ export function isArrowKey(key: string): key is ArrowKey {
   return key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight";
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
+/** Text-entry fields where arrows should move the caret, not spatial focus. */
+export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target instanceof HTMLInputElement) return true;
   if (target instanceof HTMLTextAreaElement) return true;
   if (target instanceof HTMLSelectElement) return true;
-  return target.isContentEditable;
+  if (target.isContentEditable) return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+  const type = (target.type || "text").toLowerCase();
+  // Checkboxes/radios/buttons must stay in spatial nav (TV remote).
+  return (
+    type === "text" ||
+    type === "password" ||
+    type === "search" ||
+    type === "email" ||
+    type === "url" ||
+    type === "tel" ||
+    type === "number" ||
+    type === ""
+  );
+}
+
+function isRoughlyOnScreen(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0 && rect.height <= 0) return false;
+  // Keep wide horizontal margins so in-row posters stay candidates.
+  const marginX = Math.max(window.innerWidth, 800);
+  const marginY = Math.max(window.innerHeight * 0.75, 320);
+  return (
+    rect.bottom > -marginY &&
+    rect.top < window.innerHeight + marginY &&
+    rect.right > -marginX &&
+    rect.left < window.innerWidth + marginX
+  );
 }
 
 export function listFocusables(root: ParentNode = document): HTMLElement[] {
@@ -19,7 +46,19 @@ export function listFocusables(root: ParentNode = document): HTMLElement[] {
     ),
   ).filter((el) => {
     if (el.closest("[data-focus-trap='off']")) return false;
-    return el.offsetParent !== null || el === document.activeElement;
+    if (el.getAttribute("aria-hidden") === "true") return false;
+    // Native checkboxes/radios inside a focusable row should not be separate targets.
+    if (
+      el instanceof HTMLInputElement &&
+      (el.type === "checkbox" || el.type === "radio") &&
+      el.closest("button, [role='button'], .settings-row, .toggle-row")
+    ) {
+      return false;
+    }
+    const visible = el.offsetParent !== null || el === document.activeElement;
+    if (!visible) return false;
+    if (el === document.activeElement) return true;
+    return isRoughlyOnScreen(el);
   });
 }
 
@@ -99,6 +138,11 @@ export function findSpatialNeighbor(
   return best;
 }
 
+function focusWithoutPageJump(el: HTMLElement): void {
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
 /** Handle an arrow keydown with spatial focus. Returns true when focus moved. */
 export function handleSpatialArrowKey(event: KeyboardEvent): boolean {
   if (!isArrowKey(event.key)) return false;
@@ -110,7 +154,12 @@ export function handleSpatialArrowKey(event: KeyboardEvent): boolean {
   const active = document.activeElement as HTMLElement | null;
   const next = findSpatialNeighbor(active, event.key, focusables);
   if (!next) return false;
-  next.focus();
+  focusWithoutPageJump(next);
   event.preventDefault();
   return true;
+}
+
+/** TV remote Back / Escape helpers. */
+export function isBackKey(key: string): boolean {
+  return key === "Escape" || key === "Backspace" || key === "XF86Back" || key === "GoBack";
 }
