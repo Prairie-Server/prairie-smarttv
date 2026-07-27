@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiRequest, buildStreamUrl, isAuthLoginPath, isSameServerOrigin } from "./client";
+import {
+  ApiError,
+  apiRequest,
+  buildStreamUrl,
+  isAuthLoginPath,
+  isSameServerOrigin,
+} from "./client";
 
 describe("buildStreamUrl", () => {
   it("joins relative stream paths and appends token", () => {
