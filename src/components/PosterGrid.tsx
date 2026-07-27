@@ -14,11 +14,14 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { registerFocusReveal } from "../focus/spatialFocus";
+import { currentViewportWidth, designPx, viewportScaleFactor } from "../ui/viewportScale";
 
+/** Design-px metrics (1920×1080). Scaled by ui-scale so JS columns match CSS rem. */
 const DEFAULT_MIN_COLUMN_WIDTH = 150;
 const DEFAULT_GAP = 16;
 const DEFAULT_ROW_HEIGHT = 320;
-const DEFAULT_OVERSCAN_ROWS = 6;
+/** Keep only ~1–2 rows around the viewport; 6 was enough to mount whole pages. */
+const DEFAULT_OVERSCAN_ROWS = 2;
 
 interface PosterGridProps {
   children?: ReactNode;
@@ -37,7 +40,7 @@ function stampFocusIndex(node: ReactNode, index: number): ReactNode {
   return cloneElement(element, { "data-focus-index": index });
 }
 
-function columnCountForWidth(width: number, minColumnWidth: number, gap: number): number {
+export function columnCountForWidth(width: number, minColumnWidth: number, gap: number): number {
   if (width <= 0) return 1;
   return Math.max(1, Math.floor((width + gap) / (minColumnWidth + gap)));
 }
@@ -52,6 +55,7 @@ function PosterGridInner({
   overscanRows = DEFAULT_OVERSCAN_ROWS,
 }: PosterGridProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(() => viewportScaleFactor(currentViewportWidth()));
   const [width, setWidth] = useState(1280);
   const [scrollY, setScrollY] = useState(0);
   const [viewportH, setViewportH] = useState(
@@ -63,8 +67,21 @@ function PosterGridInner({
 
   const childArray = useMemo(() => Children.toArray(children), [children]);
   const count = itemCount ?? childArray.length;
-  const columns = columnCountForWidth(width, minColumnWidth, gap);
+
+  // CSS columns use rem (scaled by root font-size / ui-scale). Match that here
+  // so D-pad row jumps and virtualization windows stay aligned on 4K/8K panels.
+  const scaledMinColumn = designPx(minColumnWidth, scale);
+  const scaledGap = designPx(gap, scale);
+  const scaledRowHeight = designPx(estimatedRowHeight, scale);
+  const columns = columnCountForWidth(width, scaledMinColumn, scaledGap);
   const rowCount = Math.max(1, Math.ceil(count / Math.max(columns, 1)));
+
+  useLayoutEffect(() => {
+    const updateScale = () => setScale(viewportScaleFactor(currentViewportWidth()));
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
 
   useLayoutEffect(() => {
     const el = rootRef.current;
@@ -108,9 +125,9 @@ function PosterGridInner({
 
   const naturalStartRow = Math.max(
     0,
-    Math.floor((scrollY - gridOffsetTop) / estimatedRowHeight) - overscanRows,
+    Math.floor((scrollY - gridOffsetTop) / scaledRowHeight) - overscanRows,
   );
-  const visibleRows = Math.ceil(viewportH / estimatedRowHeight) + 1;
+  const visibleRows = Math.ceil(viewportH / scaledRowHeight) + 1;
   const naturalEndRow = Math.min(rowCount, naturalStartRow + visibleRows + overscanRows * 2);
 
   const startRow = forcedRows ? Math.min(forcedRows.start, naturalStartRow) : naturalStartRow;
@@ -176,12 +193,13 @@ function PosterGridInner({
     }
   }, [forcedRows, naturalStartRow, naturalEndRow]);
 
-  const shouldVirtualize = count > columns * 3;
+  // Virtualize as soon as there is more than ~2 viewport rows of content.
+  const shouldVirtualize = count > columns * 2;
   const sliceStart = shouldVirtualize ? startIndex : 0;
   const sliceEnd = shouldVirtualize ? endIndex : count;
-  const padTop = shouldVirtualize ? Math.max(0, startRow) * estimatedRowHeight : 0;
+  const padTop = shouldVirtualize ? Math.max(0, startRow) * scaledRowHeight : 0;
   const padBottom = shouldVirtualize
-    ? Math.max(0, rowCount - Math.max(endRow, 0)) * estimatedRowHeight
+    ? Math.max(0, rowCount - Math.max(endRow, 0)) * scaledRowHeight
     : 0;
 
   return (

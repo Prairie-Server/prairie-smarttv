@@ -70,14 +70,17 @@ describe("perf-tier CSS", () => {
     expect(uncovered).toEqual([]);
   });
 
-  it("replaces the focus glow with a flat outline on low and balanced tiers", () => {
+  it("uses a solid rounded box-shadow ring on low and balanced tiers", () => {
+    // CSS outline paints as a square on Tizen; the solid ring follows radius.
+    expect(css).toContain("--focus-ring-solid:");
     const focusRule = rules().find(
       (rule) =>
         rule.selectors.some((s) => s === 'html[data-perf="low"] .poster-card:focus') &&
-        /box-shadow:\s*none/.test(rule.body),
+        /box-shadow:\s*var\(--focus-ring-solid\)/.test(rule.body),
     );
     expect(focusRule).toBeDefined();
-    expect(focusRule?.body).toContain("outline:");
+    expect(focusRule?.body).toContain("outline: none");
+    expect(focusRule?.body).not.toMatch(/outline:\s*var\(--focus-outline\)/);
     // The focus affordance has to survive for buttons too, not only cards.
     expect(focusRule?.selectors).toContain('html[data-perf="low"] .focus-btn:focus');
   });
