@@ -28,14 +28,24 @@ describe("buildStreamUrl", () => {
 
   it("appends profile_id for same-origin streams when provided", () => {
     expect(
-      buildStreamUrl("https://prairie.example", "/api/v1/livetv/live-hls/t/index.m3u8", "tok", "p1"),
+      buildStreamUrl(
+        "https://prairie.example",
+        "/api/v1/livetv/live-hls/t/index.m3u8",
+        "tok",
+        "p1",
+      ),
     ).toBe("https://prairie.example/api/v1/livetv/live-hls/t/index.m3u8?token=tok&profile_id=p1");
     expect(
-      buildStreamUrl("https://prairie.example", "https://prairie.example/live.m3u8?st=1", "tok", "p1"),
+      buildStreamUrl(
+        "https://prairie.example",
+        "https://prairie.example/live.m3u8?st=1",
+        "tok",
+        "p1",
+      ),
     ).toBe("https://prairie.example/live.m3u8?st=1&token=tok&profile_id=p1");
-    expect(
-      buildStreamUrl("https://prairie.example", "/live.m3u8", null, "p1"),
-    ).toBe("https://prairie.example/live.m3u8?profile_id=p1");
+    expect(buildStreamUrl("https://prairie.example", "/live.m3u8", null, "p1")).toBe(
+      "https://prairie.example/live.m3u8?profile_id=p1",
+    );
   });
 });
 

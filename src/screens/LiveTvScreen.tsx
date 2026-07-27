@@ -218,8 +218,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const historyRecordings = useMemo(
     () =>
       recordings.filter(
-        (recording) =>
-          !["scheduled", "recording"].includes(recording.status.trim().toLowerCase()),
+        (recording) => !["scheduled", "recording"].includes(recording.status.trim().toLowerCase()),
       ),
     [recordings],
   );
@@ -371,10 +370,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                   <span className="livetv-channel__body">
                     <strong>{channelDisplayLabel(channel)}</strong>
                     <span className="muted">
-                      {programLine(
-                        currentProgramForChannel(programs, channel.id),
-                        "No guide data",
-                      )}
+                      {programLine(currentProgramForChannel(programs, channel.id), "No guide data")}
                     </span>
                   </span>
                 </button>
