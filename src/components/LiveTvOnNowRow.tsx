@@ -10,7 +10,6 @@ import {
 import type { PrairieSession } from "../storage/session";
 import { ArtworkImage } from "./ArtworkImage";
 import { MediaRow } from "./MediaRow";
-import { PosterCard } from "./PosterCard";
 
 interface OnNowCard {
   channel: LiveTvChannel;
@@ -106,16 +105,17 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
     return (
       <MediaRow title="On now" variant="poster" className="media-row--on-now" skeleton>
         {Array.from({ length: 6 }).map((_, index) => (
-          <PosterCard
+          <div
             key={`on-now-skel-${index}`}
-            title=""
-            subtitle={null}
-            posterUrl={null}
-            disabled
-            onSelect={() => {
-              // Disabled skeleton; no-op.
-            }}
-          />
+            className="poster-card poster-card--skeleton"
+            aria-hidden="true"
+          >
+            <div className="poster-card__art" />
+            <div className="poster-card__meta">
+              <p className="poster-card__title">{"\u00a0"}</p>
+              <p className="poster-card__subtitle is-empty">{"\u00a0"}</p>
+            </div>
+          </div>
         ))}
       </MediaRow>
     );

@@ -82,7 +82,6 @@ export function ShellNav({
         <img className="shell-nav__mark" src="/prairie-mark.png" alt="" width={40} height={40} />
         <div className="shell-nav__brand-text">
           <p className="eyebrow">Prairie</p>
-          <p className="shell-nav__profile muted">{profileName ?? "Profile"}</p>
         </div>
       </div>
       <nav className="shell-nav__tabs" aria-label="Main">

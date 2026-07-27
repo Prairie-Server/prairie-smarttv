@@ -1485,12 +1485,7 @@ button:focus,
 }
 
 .shell-nav__brand .eyebrow {
-  margin-bottom: 0.15rem;
-}
-
-.shell-nav__profile {
-  margin: 0;
-  font-size: 0.95rem;
+  margin-bottom: 0;
 }
 
 .shell-nav__tabs,
@@ -2911,4 +2906,14 @@ html[data-perf="balanced"] input[type="number"]:focus {
   line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* DOM-only skeleton card: shimmer without mounting a real card component. */
+.poster-card--skeleton {
+  pointer-events: none;
+  cursor: default;
+}
+
+.poster-card--skeleton .poster-card__art {
+  background: rgba(243, 239, 230, 0.06);
 }

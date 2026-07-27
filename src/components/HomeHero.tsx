@@ -1,6 +1,7 @@
 import { Play } from "lucide-react";
 import type { CatalogItem } from "../api/catalog";
 import { ArtworkImage } from "./ArtworkImage";
+import { BACKDROP_HERO_WIDTH } from "../lib/artworkUrl";
 import { FocusButton } from "./FocusButton";
 import { catalogItemSubtitle } from "../lib/browseCards";
 
@@ -31,7 +32,13 @@ export function HomeHero({
   return (
     <section className="home-hero" aria-label="Featured">
       {backdrop ? (
-        <ArtworkImage className="home-hero__art" src={backdrop} alt="" loading="eager" />
+        <ArtworkImage
+          className="home-hero__art"
+          src={backdrop}
+          alt=""
+          widthHint={BACKDROP_HERO_WIDTH}
+          loading="eager"
+        />
       ) : (
         <div className="home-hero__art home-hero__art--empty" />
       )}

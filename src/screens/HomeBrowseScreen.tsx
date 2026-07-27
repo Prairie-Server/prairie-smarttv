@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CatalogItem } from "../api/catalog";
 import { ApiError } from "../api/client";
 import { fetchHomeSections, type HomeSection } from "../api/home";
 import type { LiveTvChannel } from "../api/livetv";
@@ -9,6 +10,7 @@ import { MediaRow, mediaRowMinHeight, type MediaRowVariant } from "../components
 import { PosterCard } from "../components/PosterCard";
 import { catalogItemProgress, catalogItemSubtitle, usesLandscapeCards } from "../lib/browseCards";
 import { formatRuntimeSeconds } from "../lib/detailMetadata";
+import { useStableItemSelect } from "../hooks/useStableItemSelect";
 import type { PrairieSession } from "../storage/session";
 
 interface HomeBrowseScreenProps {
@@ -18,13 +20,105 @@ interface HomeBrowseScreenProps {
   showOnNow?: boolean;
 }
 
-const SKELETON_ROW_COUNT = 4;
-const SKELETON_CARD_COUNT = 8;
+/* Only ~2 rows are visible at launch (rows grow with ui-scale on 4K/8K panels),
+ * and every skeleton card is mounted then torn down when data lands. */
+const SKELETON_ROW_COUNT = 2;
+const SKELETON_CARD_COUNT = 6;
 /** Rows mounted in the first commit; the rest follow one frame at a time. */
-const INITIAL_ROW_COUNT = 2;
+const INITIAL_ROW_COUNT = 1;
 const ROW_MOUNT_CHUNK = 2;
+/**
+ * Mount a row once its reserved slot comes within this much of the viewport.
+ * Rows further down stay placeholders: an 8K panel scales cards up (ui-scale
+ * 1.55), so mounting every row put >300 cards and images on screen at once and
+ * buried the SoC in decode work for tens of seconds.
+ */
+const ROW_PREFETCH_MARGIN = "60% 0px";
 /** How long entry focus waits for On now before settling on the first row. */
 const ON_NOW_FOCUS_GRACE_MS = 700;
+
+/** How many images in the first row decode eagerly; the rest stay lazy. */
+const EAGER_IMAGE_COUNT = 2;
+
+interface HomeRowProps {
+  section: HomeSection;
+  variant: MediaRowVariant;
+  eagerCount: number;
+  selectHandler: (contentId: string) => () => void;
+}
+
+/**
+ * One rail, isolated from Home's state. Home re-renders whenever a row mounts,
+ * On now resolves, or a row height is measured; without this boundary each of
+ * those re-rendered every mounted card on the screen.
+ */
+const HomeRow = memo(function HomeRow({
+  section,
+  variant,
+  eagerCount,
+  selectHandler,
+}: HomeRowProps) {
+  const getItemKey = useCallback(
+    (item: CatalogItem, itemIndex: number) => `${section.id}-${item.content_id}-${itemIndex}`,
+    [section.id],
+  );
+
+  const renderItem = useCallback(
+    (item: CatalogItem, itemIndex: number) => {
+      const progress = catalogItemProgress(item);
+      const imageLoading = itemIndex < eagerCount ? "eager" : "lazy";
+      if (variant === "landscape") {
+        const remaining =
+          item.duration_seconds != null && item.position_seconds != null
+            ? formatRuntimeSeconds(item.duration_seconds - item.position_seconds)
+            : null;
+        return (
+          <LandscapeCard
+            title={item.title}
+            subtitle={
+              item.series_title
+                ? `${item.series_title}${
+                    item.season_number != null && item.episode_number != null
+                      ? ` · S${item.season_number}E${item.episode_number}`
+                      : ""
+                  }`
+                : catalogItemSubtitle(item)
+            }
+            meta={remaining ? `${remaining} left` : null}
+            imageUrl={item.backdrop_url || item.poster_url}
+            progress={progress}
+            watched={Boolean(item.user_state?.played)}
+            imageLoading={imageLoading}
+            onSelect={selectHandler(item.content_id)}
+          />
+        );
+      }
+      return (
+        <PosterCard
+          title={item.title}
+          subtitle={catalogItemSubtitle(item)}
+          posterUrl={item.poster_url}
+          progress={progress}
+          watched={Boolean(item.user_state?.played)}
+          favorite={Boolean(item.user_state?.is_favorite)}
+          imageLoading={imageLoading}
+          onSelect={selectHandler(item.content_id)}
+        />
+      );
+    },
+    [variant, eagerCount, selectHandler],
+  );
+
+  return (
+    <MediaRow
+      title={section.title}
+      variant={variant}
+      items={section.items}
+      getItemKey={getItemKey}
+      renderItem={renderItem}
+    />
+  );
+});
 
 export function HomeBrowseScreen({
   session,
@@ -36,9 +130,12 @@ export function HomeBrowseScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [mountedRowCount, setMountedRowCount] = useState(INITIAL_ROW_COUNT);
+  const [mountedRows, setMountedRows] = useState<ReadonlySet<number>>(
+    () => new Set(Array.from({ length: INITIAL_ROW_COUNT }, (_, index) => index)),
+  );
   const [onNowStatus, setOnNowStatus] = useState<OnNowStatus>("loading");
   const paneRef = useRef<HTMLElement>(null);
+  const rowObserverRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +147,7 @@ export function HomeBrowseScreen({
         if (!cancelled) {
           setSections(next.filter((s) => s.items.length > 0));
           setHeroIndex(0);
-          setMountedRowCount(INITIAL_ROW_COUNT);
+          setMountedRows(new Set(Array.from({ length: INITIAL_ROW_COUNT }, (_, i) => i)));
         }
       } catch (err) {
         if (cancelled) return;
@@ -72,6 +169,7 @@ export function HomeBrowseScreen({
 
   const expectOnNow = showOnNow && onOpenLiveChannel != null;
   const handleOnNowStatus = useCallback((status: OnNowStatus) => setOnNowStatus(status), []);
+  const selectHandler = useStableItemSelect(onOpenItem);
 
   // Reserve the height a real row actually occupies rather than the design
   // min-height, so deferred rows do not grow the page as they mount. Measured
@@ -94,20 +192,63 @@ export function HomeBrowseScreen({
       }
       return next;
     });
-  }, [loading, mountedRowCount, rows.length]);
+  }, [loading, mountedRows, rows.length]);
 
   const reservedHeight = (variant: MediaRowVariant): string | number =>
     rowHeights[variant] ?? mediaRowMinHeight(variant);
 
-  // Mount below-the-fold rows a chunk per frame: first paint only pays for the
-  // rows in view, and the reserved-height placeholders keep the page stable.
+  const mountRow = useCallback((index: number) => {
+    setMountedRows((prev) => {
+      if (prev.has(index)) return prev;
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+  }, []);
+
+  const hasIntersectionObserver = typeof IntersectionObserver !== "undefined";
+
+  /** Observe a reserved slot so its row mounts just before it scrolls into view. */
+  const rowSlotRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (!node || !hasIntersectionObserver) return;
+      if (!rowObserverRef.current) {
+        rowObserverRef.current = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              const index = Number((entry.target as HTMLElement).dataset.rowIndex);
+              if (Number.isFinite(index)) mountRow(index);
+            }
+          },
+          { rootMargin: ROW_PREFETCH_MARGIN },
+        );
+      }
+      rowObserverRef.current.observe(node);
+    },
+    [hasIntersectionObserver, mountRow],
+  );
+
   useEffect(() => {
-    if (loading || mountedRowCount >= rows.length) return;
+    return () => {
+      rowObserverRef.current?.disconnect();
+      rowObserverRef.current = null;
+    };
+  }, []);
+
+  // Without IntersectionObserver, fall back to adding a chunk of rows per frame.
+  useEffect(() => {
+    if (hasIntersectionObserver || loading) return;
+    if (mountedRows.size >= rows.length) return;
     const handle = window.requestAnimationFrame(() => {
-      setMountedRowCount((count) => Math.min(rows.length, count + ROW_MOUNT_CHUNK));
+      setMountedRows((prev) => {
+        const next = new Set(prev);
+        for (let added = 0; added < ROW_MOUNT_CHUNK; added++) next.add(next.size);
+        return next;
+      });
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [loading, mountedRowCount, rows.length]);
+  }, [hasIntersectionObserver, loading, mountedRows, rows.length]);
 
   // Entry focus goes to the topmost real card in DOM order — On now when it has
   // cards, otherwise the first row — instead of a hardcoded row index. Waiting
@@ -120,17 +261,39 @@ export function HomeBrowseScreen({
     return () => window.clearTimeout(handle);
   }, [expectOnNow]);
   const awaitingOnNow = expectOnNow && onNowStatus === "loading" && !onNowGraceExpired;
+
+  // Focus parked by this screen, so a late On now row can still claim it. Any
+  // remote press clears it and the user keeps their place.
+  const parkedFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (loading || error || featured || awaitingOnNow) return;
+    const clear = () => {
+      parkedFocusRef.current = null;
+    };
+    window.addEventListener("keydown", clear, { once: true });
+    return () => window.removeEventListener("keydown", clear);
+  }, []);
+
+  useEffect(() => {
+    if (loading || error || featured) return;
     const pane = paneRef.current;
     if (!pane) return;
     const active = document.activeElement;
-    if (active instanceof HTMLElement && active !== document.body && pane.contains(active)) return;
+    const parked = parkedFocusRef.current;
+    const userHasFocus =
+      active instanceof HTMLElement && active !== document.body && pane.contains(active);
+    // Hold off while On now may still arrive above the rows, but never leave the
+    // screen unfocused for long — the grace timer releases the wait.
+    if (awaitingOnNow && !userHasFocus) return;
+    // Once On now fills, take over focus the app parked on a row below it.
+    if (userHasFocus && active !== parked) return;
+
     const first = pane.querySelector<HTMLElement>(
       'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
     );
-    first?.focus({ preventScroll: true });
-  }, [loading, error, featured, awaitingOnNow, rows.length, onNowStatus, mountedRowCount]);
+    if (!first || first === active) return;
+    first.focus({ preventScroll: true });
+    parkedFocusRef.current = first;
+  }, [loading, error, featured, awaitingOnNow, rows.length, onNowStatus, mountedRows]);
 
   return (
     <section className="browse-pane browse-pane--home" ref={paneRef}>
@@ -140,16 +303,17 @@ export function HomeBrowseScreen({
           {Array.from({ length: SKELETON_ROW_COUNT }).map((_, rowIndex) => (
             <MediaRow key={`home-skel-${rowIndex}`} title="" skeleton>
               {Array.from({ length: SKELETON_CARD_COUNT }).map((__, cardIndex) => (
-                <PosterCard
+                <div
                   key={`home-skel-${rowIndex}-${cardIndex}`}
-                  title=""
-                  subtitle={null}
-                  posterUrl={null}
-                  disabled
-                  onSelect={() => {
-                    // Disabled skeleton; no-op.
-                  }}
-                />
+                  className="poster-card poster-card--skeleton"
+                  aria-hidden="true"
+                >
+                  <div className="poster-card__art" />
+                  <div className="poster-card__meta">
+                    <p className="poster-card__title">{"\u00a0"}</p>
+                    <p className="poster-card__subtitle is-empty">{"\u00a0"}</p>
+                  </div>
+                </div>
               ))}
             </MediaRow>
           ))}
@@ -189,11 +353,13 @@ export function HomeBrowseScreen({
       {!loading
         ? rows.map((section, sectionIndex) => {
             const landscape = usesLandscapeCards(section.section_type, section.items);
-            if (sectionIndex >= mountedRowCount) {
-              const variant: MediaRowVariant = landscape ? "landscape" : "poster";
+            const variant: MediaRowVariant = landscape ? "landscape" : "poster";
+            if (!mountedRows.has(sectionIndex)) {
               return (
                 <div
                   key={section.id || section.title}
+                  ref={rowSlotRef}
+                  data-row-index={sectionIndex}
                   className={`media-row media-row--${variant} media-row--deferred`}
                   style={{ minHeight: reservedHeight(variant) }}
                   aria-hidden="true"
@@ -201,53 +367,12 @@ export function HomeBrowseScreen({
               );
             }
             return (
-              <MediaRow
+              <HomeRow
                 key={section.id || section.title}
-                title={section.title}
-                variant={landscape ? "landscape" : "poster"}
-                items={section.items}
-                getItemKey={(item, itemIndex) => `${section.id}-${item.content_id}-${itemIndex}`}
-                renderItem={(item, itemIndex) => {
-                  const progress = catalogItemProgress(item);
-                  if (landscape) {
-                    const remaining =
-                      item.duration_seconds != null && item.position_seconds != null
-                        ? formatRuntimeSeconds(item.duration_seconds - item.position_seconds)
-                        : null;
-                    return (
-                      <LandscapeCard
-                        title={item.title}
-                        subtitle={
-                          item.series_title
-                            ? `${item.series_title}${
-                                item.season_number != null && item.episode_number != null
-                                  ? ` · S${item.season_number}E${item.episode_number}`
-                                  : ""
-                              }`
-                            : catalogItemSubtitle(item)
-                        }
-                        meta={remaining ? `${remaining} left` : null}
-                        imageUrl={item.backdrop_url || item.poster_url}
-                        progress={progress}
-                        watched={Boolean(item.user_state?.played)}
-                        imageLoading={sectionIndex === 0 && itemIndex < 2 ? "eager" : "lazy"}
-                        onSelect={() => onOpenItem(item.content_id)}
-                      />
-                    );
-                  }
-                  return (
-                    <PosterCard
-                      title={item.title}
-                      subtitle={catalogItemSubtitle(item)}
-                      posterUrl={item.poster_url}
-                      progress={progress}
-                      watched={Boolean(item.user_state?.played)}
-                      favorite={Boolean(item.user_state?.is_favorite)}
-                      imageLoading={sectionIndex === 0 && itemIndex < 3 ? "eager" : "lazy"}
-                      onSelect={() => onOpenItem(item.content_id)}
-                    />
-                  );
-                }}
+                section={section}
+                variant={variant}
+                eagerCount={sectionIndex === 0 ? EAGER_IMAGE_COUNT : 0}
+                selectHandler={selectHandler}
               />
             );
           })

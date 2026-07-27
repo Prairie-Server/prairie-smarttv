@@ -23,8 +23,14 @@ export const POSTER_WIDTH = 300;
 export const STILL_WIDTH = 500;
 /** Backdrop-fed landscape cards (~352 CSS-px); backdrops have no w500 rung. */
 export const BACKDROP_CARD_WIDTH = 300;
-/** Full-bleed hero backdrop — 1920 instead of the unbounded original. */
-export const BACKDROP_HERO_WIDTH = 1920;
+/**
+ * Full-bleed hero backdrop. Decoded memory scales with resolution, not file
+ * size: 1920×1080 costs ~8 MB of surface where 1280×720 costs ~3.7 MB, and TV
+ * panels upscale the hero behind a shade layer anyway.
+ */
+export const BACKDROP_HERO_WIDTH = 1280;
+/** Cast/crew portrait thumbnails (~120 CSS-px). */
+export const PROFILE_WIDTH = 300;
 /** Title logos on detail hero. */
 export const LOGO_WIDTH = 500;
 
