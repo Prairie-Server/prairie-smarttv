@@ -136,6 +136,57 @@ describe("serverRegistry", () => {
     registry = removeServer(registry, id);
     expect(registry.entries).toHaveLength(1);
     expect(registry.activeServerId).toBe(otherId);
+    registry = removeServer(registry, otherId);
+    expect(registry.entries).toHaveLength(0);
+    expect(registry.activeServerId).toBe("");
+    expect(removeServer(registry, "missing")).toBe(registry);
+    expect(clearTokens(registry, "missing")).toBe(registry);
+  });
+
+  it("preserves existing optional fields when updating partial entries", () => {
+    const url = "https://partial.example.com";
+    let registry = addOrUpdate(emptyRegistry(), {
+      url,
+      fetchedName: "Prairie",
+      username: "ada",
+      profileId: "p1",
+      profileName: "Primary",
+      accessToken: "access",
+      profileToken: "profile",
+      lastUsedAt: 123,
+    });
+
+    registry = addOrUpdate(registry, { url });
+    expect(registry.entries[0]).toMatchObject({
+      fetchedName: "Prairie",
+      username: "ada",
+      profileId: "p1",
+      profileName: "Primary",
+      accessToken: "access",
+      profileToken: "profile",
+      lastUsedAt: 123,
+    });
+
+    const inactive = addOrUpdate(registry, {
+      url: "https://inactive.example.com",
+      lastUsedAt: 999,
+    });
+    inactive.activeServerId = entryIdFromUrl(url);
+    const sorted = sortedEntries(inactive);
+    expect(sorted[0]?.id).toBe(entryIdFromUrl(url));
+    expect(sorted[1]?.url).toBe("https://inactive.example.com");
+    expect(
+      sortedEntries({
+        activeServerId: "",
+        entries: [
+          { ...inactive.entries[0]!, lastUsedAt: undefined as unknown as number },
+          { ...inactive.entries[1]!, lastUsedAt: undefined as unknown as number },
+        ],
+        scanCidrs: [],
+      }).map((entry) => entry.url),
+    ).toEqual([inactive.entries[0]!.url, inactive.entries[1]!.url]);
+    expect(switchTo(inactive, "missing")).toBe(inactive);
+    expect(addOrUpdate(inactive, { url: "" })).toBe(inactive);
   });
 
   it("promotes an existing session into the registry", () => {
@@ -158,6 +209,15 @@ describe("serverRegistry", () => {
     });
     const fromUrl = migrateFromLegacy(storage2);
     expect(fromUrl.entries[0]?.url).toBe("https://url-only.example.com");
+
+    expect(migrateFromLegacy(memoryStorage()).entries).toEqual([]);
+
+    const populated = memoryStorage({
+      "prairie.serverRegistry": JSON.stringify({
+        entries: [{ url: "https://already.example.com" }],
+      }),
+    });
+    expect(migrateFromLegacy(populated).entries[0]?.url).toBe("https://already.example.com");
   });
 
   it("normalizes entries and tolerates corrupt registry blobs", () => {

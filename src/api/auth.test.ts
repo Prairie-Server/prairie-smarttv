@@ -72,6 +72,21 @@ describe("auth API helpers", () => {
     await expect(listProfiles("https://prairie.example", "tok", fetchImpl)).resolves.toEqual([]);
   });
 
+  it("returns profile arrays from the server", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            profiles: [{ id: "p1", name: "Primary", is_primary: true, is_child: false }],
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(listProfiles("https://prairie.example", "tok", fetchImpl)).resolves.toEqual([
+      { id: "p1", name: "Primary", is_primary: true, is_child: false },
+    ]);
+  });
+
   it("verifies a profile PIN", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toContain("/api/v1/profiles/p1/verify-pin");
