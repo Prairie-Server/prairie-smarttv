@@ -47,7 +47,13 @@ vi.mock("../api/catalog", async (importOriginal) => {
 });
 
 vi.mock("../api/recommendations", () => ({
-  fetchSimilarItems: vi.fn(async () => [{ media_item_id: "s1" }, { media_item_id: "s2" }]),
+  fetchSimilarItems: vi.fn(async () => ({
+    refs: [{ media_item_id: "s1" }, { media_item_id: "s2" }],
+    cards: [
+      { content_id: "s1", type: "movie", title: "Similar 1", year: 2019 },
+      { content_id: "s2", type: "movie", title: "Similar 2", year: 2020 },
+    ],
+  })),
 }));
 
 let container: HTMLDivElement;

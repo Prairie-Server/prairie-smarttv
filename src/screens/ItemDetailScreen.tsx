@@ -5,6 +5,7 @@ import {
   fetchEpisodes,
   fetchItemDetail,
   fetchSeasons,
+  type CatalogItem,
   type EpisodeSummary,
   type ItemDetail,
   type SeasonSummary,
@@ -117,7 +118,7 @@ export function ItemDetailScreen({
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
-  const [similar, setSimilar] = useState<ItemDetail[]>([]);
+  const [similar, setSimilar] = useState<CatalogItem[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyPlay, setBusyPlay] = useState(false);
@@ -161,9 +162,9 @@ export function ItemDetailScreen({
   const similarWanted = similarNear && heroSettled;
 
   const selectSimilar = useStableItemSelect(onOpenItem);
-  const similarItemKey = useCallback((item: ItemDetail) => item.content_id, []);
+  const similarItemKey = useCallback((item: CatalogItem) => item.content_id, []);
   const renderSimilarItem = useCallback(
-    (item: ItemDetail) => (
+    (item: CatalogItem) => (
       <PosterCard
         title={item.title}
         subtitle={item.year ? String(item.year) : item.type}
@@ -241,9 +242,16 @@ export function ItemDetailScreen({
     void (async () => {
       setSimilarLoading(true);
       try {
-        const refs = await fetchSimilarItems(session, contentId);
+        const { refs, cards } = await fetchSimilarItems(session, contentId);
+        if (cancelled) return;
+        if (cards.length > 0) {
+          // Server hydrated the row: no per-card lookup needed.
+          setSimilar(cards.slice(0, SIMILAR_LIMIT));
+          return;
+        }
+        // Older server: fall back to one item-detail request per card.
         const wanted = refs.slice(0, SIMILAR_LIMIT);
-        const details: ItemDetail[] = [];
+        const details: CatalogItem[] = [];
         for (let index = 0; index < wanted.length; index += SIMILAR_FETCH_BATCH) {
           if (cancelled) return;
           const batch = await Promise.all(
