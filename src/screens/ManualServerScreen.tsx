@@ -1,10 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { buildManualUrlCandidates, checkServerCandidates } from "../api/checkServer";
 import { FocusButton } from "../components/FocusButton";
-<<<<<<< HEAD
-=======
 import { validateServerUrl } from "../storage/serverUrl";
->>>>>>> 5c77d98 (fix(security): keep session tokens out of localStorage and restrict public HTTP)
 
 export interface ManualServerScreenProps {
   initialUrl?: string;
@@ -25,7 +22,6 @@ export function ManualServerScreen({
     event.preventDefault();
     if (busy) return;
     setError(null);
-<<<<<<< HEAD
 
     const candidates = buildManualUrlCandidates(serverUrl);
     if (!candidates.length) {
@@ -33,27 +29,26 @@ export function ManualServerScreen({
       return;
     }
 
-    // Validate any fully-qualified candidate before probing.
+    // Validate any fully-qualified candidate before probing (incl. cleartext policy).
+    const allowed: string[] = [];
     for (const candidate of candidates) {
-      try {
-        const parsed = new URL(candidate);
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          setError("Server URL must use http or https");
-          return;
+      const validated = validateServerUrl(candidate);
+      if (!validated.ok) {
+        // Keep the first actionable policy error for the user.
+        if (allowed.length === 0) {
+          setError(validated.message);
         }
-        if (parsed.username || parsed.password) {
-          setError("Server URL must not include credentials");
-          return;
-        }
-      } catch {
-        setError("Enter a valid Prairie server address");
-        return;
+        continue;
       }
+      allowed.push(validated.url);
+    }
+    if (!allowed.length) {
+      return;
     }
 
     setBusy(true);
     try {
-      const result = await checkServerCandidates(candidates);
+      const result = await checkServerCandidates(allowed);
       if (!result.ok) {
         setError(result.message);
         return;
@@ -68,14 +63,6 @@ export function ManualServerScreen({
     } finally {
       setBusy(false);
     }
-=======
-    const validated = validateServerUrl(serverUrl);
-    if (!validated.ok) {
-      setError(validated.message);
-      return;
-    }
-    onContinue(validated.url);
->>>>>>> 5c77d98 (fix(security): keep session tokens out of localStorage and restrict public HTTP)
   }
 
   return (
