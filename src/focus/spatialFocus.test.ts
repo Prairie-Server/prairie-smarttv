@@ -74,8 +74,9 @@ describe("spatialFocus", () => {
     expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowUp" }))).toBe(false);
   });
 
-  it("does not run spatial navigation while typing in an input", () => {
+  it("does not run spatial navigation while typing in a text input", () => {
     const input = document.createElement("input");
+    input.type = "text";
     const button = document.createElement("button");
     document.body.append(input, button);
     place(input, 0, 0, 200, 48);
@@ -88,6 +89,71 @@ describe("spatialFocus", () => {
     expect(handleSpatialArrowKey(event)).toBe(false);
     expect(document.activeElement).toBe(input);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("keeps spatial navigation on checkbox inputs (TV toggles)", () => {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    const button = document.createElement("button");
+    document.body.append(checkbox, button);
+    place(checkbox, 0, 0, 40, 40);
+    place(button, 0, 100, 120, 48);
+    checkbox.focus();
+
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true });
+    Object.defineProperty(event, "target", { configurable: true, value: checkbox });
+
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(button);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("detects TV back keys", async () => {
+    const { isBackKey, isEditableTarget } = await import("./spatialFocus");
+    expect(isBackKey("Escape")).toBe(true);
+    expect(isBackKey("XF86Back")).toBe(true);
+    expect(isBackKey("GoBack")).toBe(true);
+    expect(isBackKey("ArrowLeft")).toBe(false);
+
+    const text = document.createElement("input");
+    text.type = "text";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    expect(isEditableTarget(text)).toBe(true);
+    expect(isEditableTarget(checkbox)).toBe(false);
+  });
+
+  it("skips checkboxes nested in settings rows and aria-hidden controls", () => {
+    const row = document.createElement("button");
+    row.className = "settings-row";
+    const nested = document.createElement("input");
+    nested.type = "checkbox";
+    row.append(nested);
+
+    const hidden = document.createElement("button");
+    hidden.setAttribute("aria-hidden", "true");
+
+    const visible = document.createElement("button");
+    document.body.append(row, hidden, visible);
+    place(row, 0, 0);
+    place(nested, 8, 8, 20, 20);
+    place(hidden, 0, 80);
+    place(visible, 0, 160);
+
+    expect(listFocusables()).toEqual([row, visible]);
+  });
+
+  it("treats password and search inputs as editable, not radios", async () => {
+    const { isEditableTarget } = await import("./spatialFocus");
+    for (const type of ["password", "search", "email", "url", "tel", "number"] as const) {
+      const input = document.createElement("input");
+      input.type = type;
+      expect(isEditableTarget(input)).toBe(true);
+    }
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    expect(isEditableTarget(radio)).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
   });
 
   it("returns early when fewer than two focusables or no neighbor", () => {

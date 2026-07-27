@@ -10,6 +10,7 @@ import {
 import { networkFailureMessage } from "../api/checkServer";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
+import { QrCode } from "../components/QrCode";
 import { validateServerUrl } from "../storage/serverUrl";
 import type { AuthTokens } from "../storage/session";
 
@@ -47,6 +48,7 @@ export function ConnectScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quickConnect, setQuickConnect] = useState<QuickConnectState>({ status: "idle" });
+  const [showTextFallback, setShowTextFallback] = useState(false);
   const pollCancelled = useRef(false);
 
   const trimmedUrl = serverUrl.trim().replace(/\/+$/, "");
@@ -70,6 +72,7 @@ export function ConnectScreen({
       return;
     }
     pollCancelled.current = false;
+    setShowTextFallback(false);
     setQuickConnect({ status: "starting" });
     setError(null);
     try {
@@ -93,12 +96,17 @@ export function ConnectScreen({
     }
   }, [trimmedUrl]);
 
+  const stopQuickConnect = useCallback(() => {
+    pollCancelled.current = true;
+    setQuickConnect({ status: "idle" });
+    setShowTextFallback(false);
+  }, []);
+
   useEffect(() => {
-    void startQuickConnect();
     return () => {
       pollCancelled.current = true;
     };
-  }, [startQuickConnect]);
+  }, []);
 
   useEffect(() => {
     if (quickConnect.status !== "waiting") {
@@ -276,26 +284,50 @@ export function ConnectScreen({
 
         <aside className="quick-connect-panel" aria-live="polite">
           <p className="eyebrow">Quick Connect</p>
-          <h2 className="quick-connect-title">Approve from another device</h2>
+          <h2 className="quick-connect-title">Use your phone instead</h2>
           <p className="quick-connect-copy">
-            On a signed-in phone or browser, open Settings → Quick Connect and enter this code.
+            Scan a code, sign in there, and approve this TV — or enter the text code in Settings →
+            Quick Connect.
           </p>
 
-          {quickConnect.status === "starting" || quickConnect.status === "idle" ? (
+          {quickConnect.status === "idle" ? (
+            <div className="quick-connect-codes">
+              <FocusButton type="button" onClick={() => void startQuickConnect()}>
+                Show QR code
+              </FocusButton>
+            </div>
+          ) : null}
+
+          {quickConnect.status === "starting" ? (
             <p className="quick-connect-status">Generating code…</p>
           ) : null}
 
           {quickConnect.status === "waiting" ? (
             <div className="quick-connect-codes">
-              <div>
-                <div className="quick-connect-label">Code</div>
-                <div className="quick-connect-code">{quickConnect.session.user_code}</div>
-              </div>
+              <QrCode value={quickConnect.session.verification_uri_complete} size={188} />
               <div>
                 <div className="quick-connect-label">Match</div>
                 <div className="quick-connect-match">{quickConnect.session.match_code}</div>
               </div>
+              {showTextFallback ? (
+                <div>
+                  <div className="quick-connect-label">Code</div>
+                  <div className="quick-connect-code">{quickConnect.session.user_code}</div>
+                  <p className="quick-connect-status">{quickConnect.session.verification_uri}</p>
+                </div>
+              ) : (
+                <FocusButton
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowTextFallback(true)}
+                >
+                  Can&apos;t scan the QR code?
+                </FocusButton>
+              )}
               <p className="quick-connect-status">Waiting for approval…</p>
+              <FocusButton type="button" variant="ghost" onClick={stopQuickConnect}>
+                Start over
+              </FocusButton>
             </div>
           ) : null}
 
