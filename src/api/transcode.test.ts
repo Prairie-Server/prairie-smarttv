@@ -92,7 +92,11 @@ describe("buildTranscodeStartRequest", () => {
 
 describe("startTranscode", () => {
   it("posts the transcode start body", async () => {
-    const fetchImpl = vi.fn(async () => manifestResponse());
+    let postedUrl = "";
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      postedUrl = String(url);
+      return manifestResponse();
+    });
     const resp = await startTranscode(
       session,
       buildTranscodeStartRequest({
@@ -103,7 +107,7 @@ describe("startTranscode", () => {
       fetchImpl,
     );
     expect(resp.manifest_url).toContain("master.m3u8");
-    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("/playback/transcode/start");
+    expect(postedUrl).toContain("/playback/transcode/start");
   });
 });
 
@@ -155,23 +159,27 @@ describe("preparePlayableSession", () => {
   });
 
   it("falls back to h264 encode when remux copy is rejected with 422", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: "no_alternate" } }), { status: 422 }),
-      )
-      .mockResolvedValueOnce(
-        manifestResponse({
-          can_seek_anywhere: true,
-          player_start_seconds: 8,
-        }),
-      );
+    const bodies: unknown[] = [];
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      if (bodies.length === 1) {
+        return new Response(JSON.stringify({ error: { message: "no_alternate" } }), {
+          status: 422,
+        });
+      }
+      return manifestResponse({
+        can_seek_anywhere: true,
+        player_start_seconds: 8,
+      });
+    });
 
     const prepared = await preparePlayableSession(session, started("remux"), 8, fetchImpl);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    const secondBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
-    expect(secondBody.target_codec_video).toBe("h264");
-    expect(secondBody.target_resolution).toBe("1080p");
+    expect(bodies[0]).toMatchObject({ target_codec_video: "copy" });
+    expect(bodies[1]).toMatchObject({
+      target_codec_video: "h264",
+      target_resolution: "1080p",
+    });
     expect(prepared.session.play_method).toBe("transcode");
     expect(prepared.playerStartSeconds).toBe(8);
   });
