@@ -17,7 +17,14 @@ import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { useBackKey } from "../focus/useBackKey";
-import { BACKDROP_HERO_WIDTH, LOGO_WIDTH, POSTER_WIDTH, STILL_WIDTH } from "../lib/artworkUrl";
+import { useStableItemSelect } from "../hooks/useStableItemSelect";
+import {
+  BACKDROP_HERO_WIDTH,
+  LOGO_WIDTH,
+  POSTER_WIDTH,
+  PROFILE_WIDTH,
+  STILL_WIDTH,
+} from "../lib/artworkUrl";
 import {
   crewLine,
   episodeProgressRatio,
@@ -110,6 +117,21 @@ export function ItemDetailScreen({
   const [error, setError] = useState<string | null>(null);
   const playButtonRef = useRef<HTMLButtonElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const selectSimilar = useStableItemSelect(onOpenItem);
+  const similarItemKey = useCallback((item: ItemDetail) => item.content_id, []);
+  const renderSimilarItem = useCallback(
+    (item: ItemDetail) => (
+      <PosterCard
+        title={item.title}
+        subtitle={item.year ? String(item.year) : item.type}
+        posterUrl={item.poster_url}
+        watched={Boolean(item.user_state?.played)}
+        onSelect={selectSimilar(item.content_id)}
+      />
+    ),
+    [selectSimilar],
+  );
 
   const handleBack = useCallback(() => {
     onBack();
@@ -692,6 +714,10 @@ export function ItemDetailScreen({
                           src={member.photo_url}
                           alt=""
                           placeholderLabel={member.name}
+                          widthHint={PROFILE_WIDTH}
+                          width={120}
+                          height={120}
+                          loading="lazy"
                         />
                       ) : (
                         <div className="cast-card__photo-empty">
@@ -731,6 +757,10 @@ export function ItemDetailScreen({
                           src={member.photo_url}
                           alt=""
                           placeholderLabel={member.name}
+                          widthHint={PROFILE_WIDTH}
+                          width={120}
+                          height={120}
+                          loading="lazy"
                         />
                       ) : (
                         <div className="cast-card__photo-empty">
@@ -820,16 +850,8 @@ export function ItemDetailScreen({
           <MediaRow
             title="More Like This"
             items={similar}
-            getItemKey={(item) => item.content_id}
-            renderItem={(item) => (
-              <PosterCard
-                title={item.title}
-                subtitle={item.year ? String(item.year) : item.type}
-                posterUrl={item.poster_url}
-                watched={Boolean(item.user_state?.played)}
-                onSelect={() => onOpenItem(item.content_id)}
-              />
-            )}
+            getItemKey={similarItemKey}
+            renderItem={renderSimilarItem}
           />
         </div>
       ) : similarLoading && detail ? (

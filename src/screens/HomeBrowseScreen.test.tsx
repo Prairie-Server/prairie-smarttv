@@ -79,6 +79,21 @@ let container: HTMLDivElement;
 let root: Root | null = null;
 let frameQueue: FrameRequestCallback[] = [];
 let realRaf: typeof window.requestAnimationFrame;
+let realIntersectionObserver: typeof window.IntersectionObserver | undefined;
+let observedSlots: HTMLElement[] = [];
+let intersectionCallbacks: IntersectionObserverCallback[] = [];
+
+/** Report the given deferred slots as scrolled into view. */
+async function scrollSlotsIntoView(slots: HTMLElement[]) {
+  const entries = slots.map(
+    (target) => ({ target, isIntersecting: true }) as unknown as IntersectionObserverEntry,
+  );
+  await act(async () => {
+    for (const callback of intersectionCallbacks) {
+      callback(entries, {} as IntersectionObserver);
+    }
+  });
+}
 
 async function flushFrames(count = 1) {
   for (let frame = 0; frame < count; frame++) {
@@ -125,6 +140,24 @@ beforeEach(() => {
   releaseChannels = null;
   channelCount = 4;
   frameQueue = [];
+  observedSlots = [];
+  intersectionCallbacks = [];
+  realIntersectionObserver = window.IntersectionObserver;
+  class TestIntersectionObserver {
+    constructor(callback: IntersectionObserverCallback) {
+      intersectionCallbacks.push(callback);
+    }
+    observe(target: Element) {
+      observedSlots.push(target as HTMLElement);
+    }
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+  window.IntersectionObserver =
+    TestIntersectionObserver as unknown as typeof window.IntersectionObserver;
   realRaf = window.requestAnimationFrame;
   window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
     frameQueue.push(callback);
@@ -134,6 +167,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.requestAnimationFrame = realRaf;
+  if (realIntersectionObserver) window.IntersectionObserver = realIntersectionObserver;
   if (root) {
     act(() => root?.unmount());
     root = null;
@@ -151,20 +185,35 @@ describe("HomeBrowseScreen first paint", () => {
     await settle(80);
   });
 
-  it("defers below-the-fold rows, then mounts them with reserved height", async () => {
+  it("keeps below-the-fold rows unmounted until their slot nears the viewport", async () => {
     await renderHome();
     await settle();
 
-    const deferred = container.querySelectorAll(".media-row--deferred");
-    expect(deferred.length).toBe(sections.length - 2);
-    expect(rowScrollers()).toBe(2);
+    const deferred = [...container.querySelectorAll<HTMLElement>(".media-row--deferred")];
+    // Only the first row is mounted; the rest are reserved slots. Mounting every
+    // row put >300 cards on screen at 4K/8K ui-scale.
+    expect(deferred.length).toBe(sections.length - 1);
+    expect(rowScrollers()).toBe(1);
     // Deferred rows hold a height so mounting them cannot reflow rows above.
-    expect((deferred[0] as HTMLElement).style.minHeight).not.toBe("");
+    expect(deferred[0]?.style.minHeight).not.toBe("");
+    expect(observedSlots.length).toBe(deferred.length);
 
-    // Frames pass: the rest mount a chunk at a time.
-    await flushFrames(1);
-    expect(rowScrollers()).toBe(4);
-    await flushFrames(5);
+    // Scrolling brings the next two slots close enough to mount.
+    await scrollSlotsIntoView(deferred.slice(0, 2));
+    expect(rowScrollers()).toBe(3);
+    expect(container.querySelectorAll(".media-row--deferred").length).toBe(sections.length - 3);
+
+    // Rows further down stay unmounted.
+    expect(rowScrollers()).toBeLessThan(sections.length);
+  });
+
+  it("mounts rows a chunk per frame when IntersectionObserver is unavailable", async () => {
+    // Older TV browsers without IO must still reach every row.
+    (window as { IntersectionObserver?: unknown }).IntersectionObserver = undefined;
+    await renderHome();
+    await settle();
+    expect(rowScrollers()).toBe(1);
+    for (let frame = 0; frame < 8; frame++) await flushFrames(1);
     expect(container.querySelectorAll(".media-row--deferred").length).toBe(0);
     expect(rowScrollers()).toBe(sections.length);
   });

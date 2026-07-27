@@ -102,9 +102,11 @@ function MediaRowInner<T>(props: MediaRowProps<T>) {
   const items = isVirtual ? props.items : null;
   const count = items?.length ?? 0;
   const itemStride = metrics.itemWidth + metrics.gap;
-  // Wide enough that a single D-pad step stays inside the mounted window even
-  // when the rAF-coalesced scroll position is a frame stale.
-  const overscan = variant === "landscape" ? 8 : 12;
+  // Just wide enough that a single D-pad step stays inside the mounted window
+  // (the window is also widened around the focused index on each step). Larger
+  // values multiply mounted cards across every row, which is the dominant cost
+  // on TV SoCs — especially at 4K/8K ui-scale where cards are bigger.
+  const overscan = variant === "landscape" ? 3 : 4;
 
   useLayoutEffect(() => {
     const updateScale = () => setScale(viewportScaleFactor(currentViewportWidth()));
