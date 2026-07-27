@@ -28,6 +28,19 @@ function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/** Match oxfmt's preference for short arrays on one line (unit-tests gate). */
+function formatAppinfoJson(value) {
+  return formatJson(value).replace(
+    /"requiredPermissions": \[\n(?:\s+"[^"]+",?\n)+?\s+\]/,
+    (block) => {
+      const items = [...block.matchAll(/"([^"]+)"/g)]
+        .map((m) => m[1])
+        .filter((name) => name !== "requiredPermissions");
+      return `"requiredPermissions": [${items.map((name) => `"${name}"`).join(", ")}]`;
+    },
+  );
+}
+
 function stampConfigXml(configPath) {
   const config = readFileSync(configPath, "utf8");
   const nextConfig = config.replace(/(<widget\b[^>]*\bversion=")([^"]+)(")/, `$1${version}$3`);
@@ -54,7 +67,7 @@ appinfo.version = version;
 writeAtomic(pkgPath, formatJson(pkg));
 writeAtomic(tizenConfigPath, nextTizenConfig);
 writeAtomic(tizenLegacyConfigPath, nextTizenLegacyConfig);
-writeAtomic(appinfoPath, formatJson(appinfo));
+writeAtomic(appinfoPath, formatAppinfoJson(appinfo));
 
 console.log(
   `Stamped version ${version} into package.json, tizen/config.xml, tizen-legacy/config.xml, and appinfo.json`,
