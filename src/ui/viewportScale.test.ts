@@ -125,6 +125,9 @@ describe("viewportScale", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1920 });
     Object.defineProperty(window.screen, "width", { configurable: true, value: 1920 });
     expect(detectPanelClass({ productInfo: null })).toBe("fhd");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 0 });
+    Object.defineProperty(window.screen, "width", { configurable: true, value: 0 });
+    expect(detectPanelClass({ productInfo: null })).toBe("fhd");
     Object.defineProperty(window, "innerWidth", { configurable: true, value: previousInner });
     if (previousScreen) Object.defineProperty(window.screen, "width", previousScreen);
   });

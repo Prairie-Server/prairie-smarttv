@@ -328,6 +328,12 @@ describe("Live TV API", () => {
     const missing = vi.fn(async () => new Response("nope", { status: 404 }));
     await expect(fetchLiveTvRecordings(session, missing)).resolves.toEqual([]);
 
+    const emptyBody = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
+    await expect(fetchLiveTvRecordings(session, emptyBody)).resolves.toEqual([]);
+
+    const boom = vi.fn(async () => new Response("fail", { status: 500 }));
+    await expect(fetchLiveTvRecordings(session, boom)).rejects.toMatchObject({ status: 500 });
+
     const cancelFetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toContain("/api/v1/livetv/recordings/rec-1");
       expect(init?.method).toBe("DELETE");
