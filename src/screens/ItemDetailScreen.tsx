@@ -40,7 +40,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       setSeasons([]);
@@ -73,7 +73,7 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
     if (seasonNumber == null || !detail) return;
     if (!(detail.type === "series" || detail.type === "show" || detail.type === "tv")) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const eps = await fetchEpisodes(session, contentId, seasonNumber);
         if (!cancelled) setEpisodes(eps);

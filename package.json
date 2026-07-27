@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
+    "lint": "oxlint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
@@ -36,21 +36,17 @@
     "regenerator-runtime": "^0.14.1"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-legacy": "^8.0.0",
     "@vitejs/plugin-react": "^6.0.0",
     "@vitest/coverage-v8": "^4.0.0",
-    "eslint": "^10.8.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.8.0",
     "jsdom": "^29.0.0",
+    "oxlint": "^1.75.0",
+    "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.9.6",
     "terser": "^5.49.0",
-    "typescript": "~6.0.3",
-    "typescript-eslint": "^8.65.0",
+    "typescript": "~7.0.2",
     "vite": "^8.0.0",
     "vitest": "^4.0.0"
   }
