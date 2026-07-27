@@ -85,6 +85,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const directFallbackTriedRef = useRef(false);
   const fallingBackRef = useRef(false);
   const seekByRef = useRef<(delta: number) => void>(() => undefined);
+  const bumpControlsRef = useRef<() => void>(() => undefined);
   const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
 
   const deviceCaps = useMemo(() => probeTvPlaybackCapabilities(), []);
@@ -234,7 +235,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         if (menu !== "none") return;
         event.preventDefault();
         setPlaying((p) => !p);
-        bumpControls();
+        bumpControlsRef.current();
         return;
       }
       if (key === "MediaRewind" || (key === "ArrowLeft" && event.altKey)) {
@@ -433,6 +434,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   useEffect(() => {
     seekByRef.current = seekBy;
+    bumpControlsRef.current = bumpControls;
     handleExitRef.current = handleExit;
   });
 

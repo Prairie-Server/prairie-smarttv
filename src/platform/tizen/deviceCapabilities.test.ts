@@ -7,6 +7,18 @@ vi.mock("./avplay", () => ({
 import { isAvPlayAvailable } from "./avplay";
 import { probeTvPlaybackCapabilities } from "./deviceCapabilities";
 
+function stubWindow(partial: {
+  innerWidth: number;
+  innerHeight: number;
+  matchMedia?: ((query: string) => { matches: boolean }) | undefined;
+}): void {
+  vi.stubGlobal("window", {
+    innerWidth: partial.innerWidth,
+    innerHeight: partial.innerHeight,
+    matchMedia: partial.matchMedia,
+  });
+}
+
 describe("probeTvPlaybackCapabilities", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -16,8 +28,7 @@ describe("probeTvPlaybackCapabilities", () => {
   it("advertises hevc and mkv when AVPlay is available", () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
     vi.stubGlobal("screen", { width: 3840, height: 2160 });
-    vi.stubGlobal("window", {
-      ...window,
+    stubWindow({
       innerWidth: 1920,
       innerHeight: 1080,
       matchMedia: () => ({ matches: true }),
@@ -33,8 +44,7 @@ describe("probeTvPlaybackCapabilities", () => {
   it("maps 1080p and 1440p panels from screen size", () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 5.0)" });
     vi.stubGlobal("screen", { width: 1920, height: 1080 });
-    vi.stubGlobal("window", {
-      ...window,
+    stubWindow({
       innerWidth: 1920,
       innerHeight: 1080,
       matchMedia: () => ({ matches: false }),
@@ -48,8 +58,7 @@ describe("probeTvPlaybackCapabilities", () => {
   it("uses window size when screen reports zero", () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 3.0)" });
     vi.stubGlobal("screen", { width: 0, height: 0 });
-    vi.stubGlobal("window", {
-      ...window,
+    stubWindow({
       innerWidth: 3840,
       innerHeight: 2160,
       matchMedia: () => ({ matches: false }),
@@ -63,8 +72,7 @@ describe("probeTvPlaybackCapabilities", () => {
   it("enables hevc from Tizen major even without AVPlay", () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 4.0)" });
     vi.stubGlobal("screen", { width: 1280, height: 720 });
-    vi.stubGlobal("window", {
-      ...window,
+    stubWindow({
       innerWidth: 1280,
       innerHeight: 720,
       matchMedia: () => {
@@ -81,8 +89,7 @@ describe("probeTvPlaybackCapabilities", () => {
     vi.mocked(isAvPlayAvailable).mockReturnValue(true);
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 2.4)" });
     vi.stubGlobal("screen", { width: 1280, height: 720 });
-    vi.stubGlobal("window", {
-      ...window,
+    stubWindow({
       innerWidth: 1280,
       innerHeight: 720,
       matchMedia: undefined,
@@ -96,8 +103,7 @@ describe("probeTvPlaybackCapabilities", () => {
   it("stays conservative without AVPlay on unknown UA", () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0" });
     vi.stubGlobal("screen", { width: 1280, height: 720 });
-    vi.stubGlobal("window", {
-      ...window,
+    stubWindow({
       innerWidth: 1280,
       innerHeight: 720,
       matchMedia: () => ({ matches: false }),
