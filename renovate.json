@@ -1,6 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
+  "extends": ["github>prairie-server/prairie-server//renovate-presets/default"],
+  "enabledManagers": ["github-actions", "npm"],
+  "packageRules": [
+    {
+      "description": "typescript-eslint peer range is still <6.1; stay on TypeScript 5 until that catches up",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6"
+    }
   ]
 }
