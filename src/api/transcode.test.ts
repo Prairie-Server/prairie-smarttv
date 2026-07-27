@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildTranscodeStartRequest, needsHlsBootstrap, preparePlayableSession } from "./transcode";
+import { ApiError } from "./client";
+import {
+  buildTranscodeStartRequest,
+  needsHlsBootstrap,
+  preparePlayableSession,
+  startTranscode,
+} from "./transcode";
 import type { PlaybackSessionResponse } from "../player/types";
 import type { PrairieSession } from "../storage/session";
 
@@ -25,12 +31,31 @@ function started(playMethod: string): PlaybackSessionResponse {
   };
 }
 
+function manifestResponse(overrides: Record<string, unknown> = {}) {
+  return new Response(
+    JSON.stringify({
+      session_id: "s1",
+      status: "ok",
+      manifest_url: "/api/v1/playback/transcode/s1/master.m3u8",
+      duration_seconds: 3600,
+      player_start_seconds: 12,
+      stream_origin_seconds: 0,
+      timeline_offset_seconds: 0,
+      can_seek_anywhere: false,
+      ...overrides,
+    }),
+    { status: 200 },
+  );
+}
+
 describe("needsHlsBootstrap", () => {
   it("is true for remux and transcode only", () => {
     expect(needsHlsBootstrap("direct")).toBe(false);
     expect(needsHlsBootstrap("remux")).toBe(true);
     expect(needsHlsBootstrap("TRANSCODE")).toBe(true);
     expect(needsHlsBootstrap(null)).toBe(false);
+    expect(needsHlsBootstrap(undefined)).toBe(false);
+    expect(needsHlsBootstrap("  ")).toBe(false);
   });
 });
 
@@ -51,16 +76,34 @@ describe("buildTranscodeStartRequest", () => {
     });
   });
 
-  it("uses h264/aac for transcode", () => {
+  it("uses h264/aac for transcode and clamps negative seek", () => {
     const body = buildTranscodeStartRequest({
       sessionId: "s1",
-      seekSeconds: 0,
+      seekSeconds: -5,
       playMethod: "transcode",
     });
     expect(body.target_codec_video).toBe("h264");
     expect(body.target_codec_audio).toBe("aac");
     expect(body.target_resolution).toBe("1080p");
     expect(body.target_bitrate_kbps).toBe(6000);
+    expect(body.seek_seconds).toBe(0);
+  });
+});
+
+describe("startTranscode", () => {
+  it("posts the transcode start body", async () => {
+    const fetchImpl = vi.fn(async () => manifestResponse());
+    const resp = await startTranscode(
+      session,
+      buildTranscodeStartRequest({
+        sessionId: "s1",
+        seekSeconds: 0,
+        playMethod: "transcode",
+      }),
+      fetchImpl,
+    );
+    expect(resp.manifest_url).toContain("master.m3u8");
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("/playback/transcode/start");
   });
 });
 
@@ -79,19 +122,7 @@ describe("preparePlayableSession", () => {
       expect(init?.method).toBe("POST");
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("copy");
-      return new Response(
-        JSON.stringify({
-          session_id: "s1",
-          status: "ok",
-          manifest_url: "/api/v1/playback/transcode/s1/master.m3u8",
-          duration_seconds: 3600,
-          player_start_seconds: 12,
-          stream_origin_seconds: 0,
-          timeline_offset_seconds: 0,
-          can_seek_anywhere: false,
-        }),
-        { status: 200 },
-      );
+      return manifestResponse();
     });
 
     const prepared = await preparePlayableSession(session, started("remux"), 12, fetchImpl);
@@ -100,5 +131,78 @@ describe("preparePlayableSession", () => {
     expect(prepared.streamUrl).toContain("token=tok");
     expect(prepared.playerStartSeconds).toBe(12);
     expect(prepared.session.play_method).toBe("remux");
+  });
+
+  it("bootstraps full encode for transcode and marks can_seek_anywhere", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.target_codec_video).toBe("h264");
+      return manifestResponse({
+        can_seek_anywhere: true,
+        player_start_seconds: 90,
+        duration_seconds: null,
+        session_id: "",
+      });
+    });
+
+    const prepared = await preparePlayableSession(session, started("transcode"), 90, fetchImpl);
+    expect(prepared.session.play_method).toBe("transcode");
+    expect(prepared.session.session_id).toBe("s1");
+    expect(prepared.session.duration_seconds).toBe(3600);
+    expect(prepared.playerStartSeconds).toBe(90);
+    expect(prepared.session.playback_info?.stream_type).toBe("hls");
+    expect(prepared.session.playback_info?.can_seek_anywhere).toBe(true);
+  });
+
+  it("falls back to h264 encode when remux copy is rejected with 422", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "no_alternate" } }), { status: 422 }),
+      )
+      .mockResolvedValueOnce(
+        manifestResponse({
+          can_seek_anywhere: true,
+          player_start_seconds: 8,
+        }),
+      );
+
+    const prepared = await preparePlayableSession(session, started("remux"), 8, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
+    expect(secondBody.target_codec_video).toBe("h264");
+    expect(secondBody.target_resolution).toBe("1080p");
+    expect(prepared.session.play_method).toBe("transcode");
+    expect(prepared.playerStartSeconds).toBe(8);
+  });
+
+  it("rethrows non-422 remux failures", async () => {
+    const fetchImpl = vi.fn(async () => new Response("boom", { status: 500 }));
+    await expect(
+      preparePlayableSession(session, started("remux"), 0, fetchImpl),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("rethrows transcode failures without attempting copy fallback", async () => {
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 422 }));
+    await expect(
+      preparePlayableSession(session, started("transcode"), 0, fetchImpl),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses seekSeconds when player_start_seconds is omitted", async () => {
+    const fetchImpl = vi.fn(async () =>
+      manifestResponse({
+        player_start_seconds: undefined,
+        can_seek_anywhere: undefined,
+        duration_seconds: undefined,
+      }),
+    );
+    const base = started("remux");
+    delete (base as { duration_seconds?: number }).duration_seconds;
+    const prepared = await preparePlayableSession(session, base, 44, fetchImpl);
+    expect(prepared.playerStartSeconds).toBe(44);
+    expect(prepared.session.position).toBe(12);
   });
 });
