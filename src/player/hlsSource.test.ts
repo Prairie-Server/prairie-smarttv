@@ -28,17 +28,17 @@ describe("resolveHtml5Source", () => {
 
   it("uses hls.js when there is no native HLS but MSE is available", () => {
     // This is Tizen: Chromium 85 reports "" for the HLS MIME type.
-    expect(
-      resolveHtml5Source({ url: manifest, nativeHlsSupport: "", hlsJsSupported: true }),
-    ).toBe("hls-js");
+    expect(resolveHtml5Source({ url: manifest, nativeHlsSupport: "", hlsJsSupported: true })).toBe(
+      "hls-js",
+    );
   });
 
   it("falls back to a direct src when neither is available", () => {
     // Nothing can play it, but the media element surfaces an error rather than
     // hanging with a manifest that is never fetched.
-    expect(
-      resolveHtml5Source({ url: manifest, nativeHlsSupport: "", hlsJsSupported: false }),
-    ).toBe("progressive");
+    expect(resolveHtml5Source({ url: manifest, nativeHlsSupport: "", hlsJsSupported: false })).toBe(
+      "progressive",
+    );
   });
 
   it("leaves progressive MP4 alone", () => {
