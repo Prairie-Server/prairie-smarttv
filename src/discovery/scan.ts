@@ -17,6 +17,8 @@ export interface ScanOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   localIps?: string[];
+  /** Hostnames to probe for cross-subnet discovery (resolved via unicast DNS). */
+  baseHosts?: string[];
   fetchImpl?: typeof fetch;
   onHit?: (hits: DiscoveryHit[]) => void;
   onProgress?: (done: number, total: number) => void;
@@ -77,6 +79,7 @@ export async function runLanDiscovery(options: ScanOptions = {}): Promise<Discov
     timeoutMs = 400,
     signal,
     fetchImpl = fetch,
+    baseHosts,
     onHit,
     onProgress,
   } = options;
@@ -86,6 +89,7 @@ export async function runLanDiscovery(options: ScanOptions = {}): Promise<Discov
     deepScan,
     maxHostsPerCidr,
     localIps,
+    baseHosts,
   });
 
   const hits: DiscoveryHit[] = [];

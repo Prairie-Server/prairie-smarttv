@@ -28,10 +28,33 @@ describe("discover", () => {
       serverId: "abc",
     });
     expect(parseHealth({ status: "healthy" })).toEqual({ serverName: "", serverId: "" });
+    expect(parseHealth({ status: "UP" })).toEqual({ serverName: "", serverId: "" });
+    expect(parseHealth({ status: 1 })).toBeNull();
     expect(parseHealth({ status: "down" })).toBeNull();
     expect(parseHealth(null)).toBeNull();
     expect(HEALTH_PATH).toBe("/api/v1/health");
     expect(DEEP_SCAN_PORTS[0]).toBe(8080);
+  });
+
+  it("probes configured baseHosts instead of only prairie.local defaults", () => {
+    const custom = buildCandidates({
+      baseHosts: ["prairie.lan"],
+      deepScan: false,
+      maxHostsPerCidr: 4,
+      extraCidrs: [],
+      localIps: [],
+    });
+    expect(custom.some((url) => url.includes("prairie.lan"))).toBe(true);
+    expect(custom.some((url) => url.includes("prairie.local"))).toBe(false);
+
+    const emptyOverride = buildCandidates({
+      baseHosts: [],
+      deepScan: false,
+      maxHostsPerCidr: 4,
+      extraCidrs: [],
+      localIps: [],
+    });
+    expect(emptyOverride.some((url) => url.includes("prairie.local"))).toBe(true);
   });
 
   it("includes Litefin-style common /24s and priority hosts for Prairie ports", () => {
