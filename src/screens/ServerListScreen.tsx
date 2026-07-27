@@ -139,7 +139,7 @@ export function ServerListScreen({
             <p className="eyebrow">Smart TV</p>
             <h1 className="brand-hero">Prairie</h1>
             <p className="lede">
-              Choose a saved server or one found on your LAN. Sign-in comes next.
+              Choose a saved server or one found on your LAN.
             </p>
           </div>
           {onBack ? (
