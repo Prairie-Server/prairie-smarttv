@@ -21,7 +21,11 @@ interface AvPlayApi {
   getState(): string;
   getDuration(): number;
   getCurrentTime(): number;
-  seekTo(milliseconds: number, success?: () => void, error?: (err: unknown) => void): void;
+  seekTo(
+    milliseconds: number,
+    success?: () => void,
+    error?: (err: unknown) => void,
+  ): void;
   setExternalSubtitlePath?(path: string): void;
   setSilentSubtitle?(silent: boolean): void;
   setSelectTrack?(type: string, index: number): void;
@@ -62,6 +66,10 @@ declare global {
     webapis?: {
       avplay?: AvPlayApi;
       tvinfo?: TvInfoApi;
+      productinfo?: {
+        is8KPanelSupported?(): boolean;
+        isUdPanelSupported?(): boolean;
+      };
       systeminfo?: {
         isSupportedAudioCodec?(codec: string): boolean;
         isSupportedVideoCodec?(codec: string): boolean;

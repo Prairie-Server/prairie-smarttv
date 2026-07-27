@@ -1,4 +1,9 @@
-import type { EpisodeSummary, ItemDetail, ItemVersion } from "../api/catalog";
+import type {
+  CrewMember,
+  EpisodeSummary,
+  ItemDetail,
+  ItemVersion,
+} from "../api/catalog";
 
 export type FactToken =
   | { kind: "text"; value: string }
@@ -16,7 +21,9 @@ function preferredVersion(detail: ItemDetail): ItemVersion | null {
   return versions[0] ?? null;
 }
 
-export function formatRuntimeMinutes(runtimeMinutes: number | null | undefined): string | null {
+export function formatRuntimeMinutes(
+  runtimeMinutes: number | null | undefined,
+): string | null {
   if (runtimeMinutes == null || runtimeMinutes <= 0) return null;
   if (runtimeMinutes < 60) return `${runtimeMinutes}m`;
   const h = Math.floor(runtimeMinutes / 60);
@@ -24,7 +31,9 @@ export function formatRuntimeMinutes(runtimeMinutes: number | null | undefined):
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-export function formatRuntimeSeconds(seconds: number | null | undefined): string | null {
+export function formatRuntimeSeconds(
+  seconds: number | null | undefined,
+): string | null {
   if (seconds == null || seconds <= 0) return null;
   return formatRuntimeMinutes(Math.round(seconds / 60));
 }
@@ -96,13 +105,15 @@ function qualityChips(version: ItemVersion | null): FactToken[] {
   if (version.hdr) chips.push({ kind: "chip", value: "HDR" });
   const audio = audioLabel(version);
   if (audio) chips.push({ kind: "chip", value: audio });
-  if ((version.subtitle_tracks?.length ?? 0) > 0) chips.push({ kind: "chip", value: "CC" });
+  if ((version.subtitle_tracks?.length ?? 0) > 0)
+    chips.push({ kind: "chip", value: "CC" });
   return chips;
 }
 
 export function movieFacts(detail: ItemDetail): FactToken[] {
   const tokens: FactToken[] = [];
-  if (detail.year && detail.year > 0) tokens.push({ kind: "text", value: String(detail.year) });
+  if (detail.year && detail.year > 0)
+    tokens.push({ kind: "text", value: String(detail.year) });
   const runtime = formatRuntimeMinutes(detail.runtime);
   if (runtime) tokens.push({ kind: "text", value: runtime });
   if (detail.rating_imdb != null) {
@@ -112,13 +123,19 @@ export function movieFacts(detail: ItemDetail): FactToken[] {
   return tokens;
 }
 
-export function seriesFacts(detail: ItemDetail, seasonCount?: number | null): FactToken[] {
+export function seriesFacts(
+  detail: ItemDetail,
+  seasonCount?: number | null,
+): FactToken[] {
   const tokens: FactToken[] = [];
   const year = seriesYearLabel(detail);
   if (year) tokens.push({ kind: "text", value: year });
   const seasons = seasonCount ?? detail.season_count;
   if (seasons != null && seasons > 0) {
-    tokens.push({ kind: "text", value: `${seasons} Season${seasons === 1 ? "" : "s"}` });
+    tokens.push({
+      kind: "text",
+      value: `${seasons} Season${seasons === 1 ? "" : "s"}`,
+    });
   }
   if (detail.episode_count != null && detail.episode_count > 0) {
     tokens.push({
@@ -149,11 +166,35 @@ export function starringText(detail: ItemDetail): string | null {
 
 export function crewLine(detail: ItemDetail): string | null {
   const crew = detail.crew ?? [];
-  const directors = crew.filter((c) => /director|creator/i.test(c.job)).map((c) => c.name);
+  const directors = crew
+    .filter((c) => /director|creator/i.test(c.job))
+    .map((c) => c.name);
   const unique = [...new Set(directors)].slice(0, 3);
   if (!unique.length) return null;
   const label = isSeriesType(detail.type) ? "Created by" : "Directed by";
   return `${label} ${unique.join(", ")}`;
+}
+
+const FEATURED_CREW_JOB =
+  /^(director|writers?|producer|executive producer|creator|showrunner)$/i;
+
+/** Primary crew for portrait rails (same visual weight as cast cards). */
+export function featuredCrew(detail: ItemDetail, limit = 12): CrewMember[] {
+  const crew = detail.crew ?? [];
+  const matched = crew.filter((member) =>
+    FEATURED_CREW_JOB.test(member.job.trim()),
+  );
+  const source = matched.length > 0 ? matched : crew;
+  const seen = new Set<string>();
+  const out: CrewMember[] = [];
+  for (const member of source) {
+    const key = `${member.person_id ?? member.name}|${member.job}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(member);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export function resumePositionSeconds(
@@ -161,7 +202,8 @@ export function resumePositionSeconds(
   duration: number | null | undefined,
 ): number | undefined {
   if (position == null || position <= 0) return undefined;
-  if (duration != null && duration > 0 && position / duration >= 0.95) return undefined;
+  if (duration != null && duration > 0 && position / duration >= 0.95)
+    return undefined;
   return position;
 }
 
@@ -186,7 +228,9 @@ export function formatResumeLabel(positionSeconds: number): string {
   return `Resume ${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function pickNextUpEpisode(episodes: EpisodeSummary[]): EpisodeSummary | null {
+export function pickNextUpEpisode(
+  episodes: EpisodeSummary[],
+): EpisodeSummary | null {
   if (!episodes.length) return null;
   const inProgress = episodes.find((ep) => ep.user_data?.is_in_progress);
   if (inProgress) return inProgress;
@@ -198,7 +242,8 @@ export function pickNextUpEpisode(episodes: EpisodeSummary[]): EpisodeSummary | 
 export function episodeProgressRatio(episode: EpisodeSummary): number | null {
   const position = episode.user_data?.position_seconds;
   const duration =
-    episode.user_data?.duration_seconds ?? (episode.runtime ? episode.runtime * 60 : null);
+    episode.user_data?.duration_seconds ??
+    (episode.runtime ? episode.runtime * 60 : null);
   if (position == null || duration == null || duration <= 0) return null;
   const ratio = position / duration;
   if (ratio <= 0.02 || ratio >= 0.95) return null;
@@ -209,5 +254,9 @@ export function formatAirDate(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw.slice(0, 10);
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

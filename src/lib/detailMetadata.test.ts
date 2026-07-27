@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   crewLine,
   episodeProgressRatio,
+  featuredCrew,
   formatAirDate,
   formatResumeLabel,
   formatRuntimeMinutes,
@@ -36,7 +37,11 @@ function movie(overrides: Partial<ItemDetail> = {}): ItemDetail {
         subtitle_tracks: [{ language: "en" }],
       },
     ],
-    cast: [{ name: "Timothee Chalamet" }, { name: "Zendaya" }, { name: "Rebecca Ferguson" }],
+    cast: [
+      { name: "Timothee Chalamet" },
+      { name: "Zendaya" },
+      { name: "Rebecca Ferguson" },
+    ],
     crew: [
       { name: "Denis Villeneuve", job: "Director" },
       { name: "Jon Spaihts", job: "Writer" },
@@ -110,7 +115,9 @@ describe("detailMetadata", () => {
     expect(
       movieFacts(
         movie({
-          versions: [{ file_id: 1, resolution: "480p", audio_tracks: [{ channels: 8 }] }],
+          versions: [
+            { file_id: 1, resolution: "480p", audio_tracks: [{ channels: 8 }] },
+          ],
         }),
       ),
     ).toEqual(
@@ -146,10 +153,14 @@ describe("detailMetadata", () => {
         { kind: "text", value: "40 Episodes" },
       ]),
     );
-    expect(seriesYearLabel(movie({ year: 2020, first_air_date: null, last_air_date: null }))).toBe(
-      "2020",
-    );
-    expect(seriesYearLabel(movie({ year: null, first_air_date: "2021-05-01" }))).toBe("2021");
+    expect(
+      seriesYearLabel(
+        movie({ year: 2020, first_air_date: null, last_air_date: null }),
+      ),
+    ).toBe("2020");
+    expect(
+      seriesYearLabel(movie({ year: null, first_air_date: "2021-05-01" })),
+    ).toBe("2021");
   });
 
   it("builds source, starring, and crew lines", () => {
@@ -158,13 +169,34 @@ describe("detailMetadata", () => {
       "TV Show",
       "Drama",
     ]);
-    expect(starringText(movie())).toBe("Starring Timothee Chalamet, Zendaya, Rebecca Ferguson");
+    expect(starringText(movie())).toBe(
+      "Starring Timothee Chalamet, Zendaya, Rebecca Ferguson",
+    );
     expect(starringText(movie({ cast: [] }))).toBeNull();
     expect(crewLine(movie())).toBe("Directed by Denis Villeneuve");
-    expect(crewLine(movie({ type: "series", crew: [{ name: "Creator", job: "Creator" }] }))).toBe(
-      "Created by Creator",
-    );
-    expect(crewLine(movie({ crew: [{ name: "Editor", job: "Editor" }] }))).toBeNull();
+    expect(
+      crewLine(
+        movie({ type: "series", crew: [{ name: "Creator", job: "Creator" }] }),
+      ),
+    ).toBe("Created by Creator");
+    expect(
+      crewLine(movie({ crew: [{ name: "Editor", job: "Editor" }] })),
+    ).toBeNull();
+    expect(featuredCrew(movie()).map((c) => c.name)).toEqual([
+      "Denis Villeneuve",
+      "Jon Spaihts",
+    ]);
+    expect(
+      featuredCrew(
+        movie({
+          crew: [
+            { name: "Denis Villeneuve", job: "Director" },
+            { name: "Jon Spaihts", job: "Writer" },
+            { name: "Editor", job: "Editor" },
+          ],
+        }),
+      ).map((c) => `${c.name}:${c.job}`),
+    ).toEqual(["Denis Villeneuve:Director", "Jon Spaihts:Writer"]);
   });
 
   it("detects resume progress and formats label", () => {
@@ -179,14 +211,28 @@ describe("detailMetadata", () => {
 
   it("picks next-up episode preferencing in-progress then unwatched", () => {
     const episodes: EpisodeSummary[] = [
-      { content_id: "e1", title: "One", episode_number: 1, user_data: { played: true } },
+      {
+        content_id: "e1",
+        title: "One",
+        episode_number: 1,
+        user_data: { played: true },
+      },
       {
         content_id: "e2",
         title: "Two",
         episode_number: 2,
-        user_data: { played: false, is_in_progress: true, position_seconds: 40 },
+        user_data: {
+          played: false,
+          is_in_progress: true,
+          position_seconds: 40,
+        },
       },
-      { content_id: "e3", title: "Three", episode_number: 3, user_data: { played: false } },
+      {
+        content_id: "e3",
+        title: "Three",
+        episode_number: 3,
+        user_data: { played: false },
+      },
     ];
     expect(pickNextUpEpisode(episodes)?.content_id).toBe("e2");
     expect(

@@ -14,7 +14,11 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { registerFocusReveal } from "../focus/spatialFocus";
-import { designPx, currentViewportWidth, viewportScaleFactor } from "../ui/viewportScale";
+import {
+  designPx,
+  currentViewportWidth,
+  viewportScaleFactor,
+} from "../ui/viewportScale";
 
 export type MediaRowVariant = "poster" | "landscape";
 
@@ -49,7 +53,8 @@ interface MediaRowVirtualProps<T> extends MediaRowBaseProps {
   children?: never;
 }
 
-export type MediaRowProps<T = unknown> = MediaRowChildrenProps | MediaRowVirtualProps<T>;
+export type MediaRowProps<T = unknown> =
+  MediaRowChildrenProps | MediaRowVirtualProps<T>;
 
 function computeWindow(
   scrollLeft: number,
@@ -73,7 +78,9 @@ function stampFocusIndex(node: ReactNode, index: number): ReactNode {
 
 export function MediaRow<T>(props: MediaRowProps<T>) {
   const { title, skeleton = false, variant = "poster", className = "" } = props;
-  const [scale, setScale] = useState(() => viewportScaleFactor(currentViewportWidth()));
+  const [scale, setScale] = useState(() =>
+    viewportScaleFactor(currentViewportWidth()),
+  );
   const design = VARIANT_METRICS_DESIGN[variant];
   const metrics = useMemo(
     () => ({
@@ -87,14 +94,16 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewport, setViewport] = useState(() => designPx(1280, scale));
 
-  const isVirtual = "items" in props && Array.isArray(props.items) && props.renderItem != null;
+  const isVirtual =
+    "items" in props && Array.isArray(props.items) && props.renderItem != null;
   const items = isVirtual ? props.items : null;
   const count = items?.length ?? 0;
   const itemStride = metrics.itemWidth + metrics.gap;
   const overscan = variant === "landscape" ? 3 : 5;
 
   useLayoutEffect(() => {
-    const updateScale = () => setScale(viewportScaleFactor(currentViewportWidth()));
+    const updateScale = () =>
+      setScale(viewportScaleFactor(currentViewportWidth()));
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
@@ -105,7 +114,10 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     [scrollLeft, viewport, itemStride, count, overscan],
   );
 
-  const [forcedRange, setForcedRange] = useState<{ start: number; end: number } | null>(null);
+  const [forcedRange, setForcedRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
   const range = forcedRange
     ? {
         start: Math.min(forcedRange.start, windowRange.start),
@@ -138,7 +150,8 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
       });
       const targetLeft = Math.max(
         0,
-        index * itemStride - Math.max(0, (el.clientWidth - metrics.itemWidth) / 2),
+        index * itemStride -
+          Math.max(0, (el.clientWidth - metrics.itemWidth) / 2),
       );
       if (Math.abs(el.scrollLeft - targetLeft) > 2) {
         el.scrollLeft = targetLeft;
@@ -166,8 +179,12 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
 
   if (isVirtual && items && props.renderItem) {
     focusCount = count;
-    const padLeft = range.start * itemStride;
-    const padRight = Math.max(0, (count - range.end) * itemStride);
+    // Flex `gap` sits between spacer and first/last card — subtract one gap so
+    // item i lands at i * stride (avoids a left-edge gutter / clipped focus).
+    const padLeft =
+      range.start <= 0 ? 0 : range.start * itemStride - metrics.gap;
+    const padRight =
+      range.end >= count ? 0 : (count - range.end) * itemStride - metrics.gap;
     const slice: ReactNode[] = [];
     for (let i = range.start; i < range.end; i++) {
       const item = items[i]!;
@@ -185,11 +202,19 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     body = (
       <>
         {padLeft > 0 ? (
-          <div className="media-row__spacer" style={{ width: padLeft }} aria-hidden />
+          <div
+            className="media-row__spacer"
+            style={{ width: padLeft }}
+            aria-hidden
+          />
         ) : null}
         {slice}
         {padRight > 0 ? (
-          <div className="media-row__spacer" style={{ width: padRight }} aria-hidden />
+          <div
+            className="media-row__spacer"
+            style={{ width: padRight }}
+            aria-hidden
+          />
         ) : null}
       </>
     );
@@ -216,7 +241,10 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
       style={{ minHeight: metrics.minHeight }}
     >
       {skeleton ? (
-        <div className="media-row__title media-row__title--skeleton" aria-hidden="true" />
+        <div
+          className="media-row__title media-row__title--skeleton"
+          aria-hidden="true"
+        />
       ) : (
         <h2 className="media-row__title">{title}</h2>
       )}
@@ -225,6 +253,12 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
         className="media-row__scroller"
         data-focus-container="horizontal"
         data-focus-count={focusCount}
+        style={
+          {
+            gap: metrics.gap,
+            scrollPaddingInline: designPx(12, scale),
+          } satisfies CSSProperties
+        }
         onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
       >
         {body}

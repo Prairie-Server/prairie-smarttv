@@ -40,8 +40,16 @@ body,
 body {
   font-family: var(--font-ui);
   background:
-    radial-gradient(1200px 700px at 12% -10%, rgba(224, 168, 74, 0.16), transparent 55%),
-    radial-gradient(900px 600px at 88% 8%, rgba(70, 110, 160, 0.22), transparent 50%),
+    radial-gradient(
+      1200px 700px at 12% -10%,
+      rgba(224, 168, 74, 0.16),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px 600px at 88% 8%,
+      rgba(70, 110, 160, 0.22),
+      transparent 50%
+    ),
     linear-gradient(165deg, #10151c 0%, var(--prairie-bg) 42%, #0f1319 100%);
   color: var(--prairie-ink);
   -webkit-font-smoothing: antialiased;
@@ -215,7 +223,11 @@ button:focus,
 }
 
 .focus-btn--primary {
-  background: linear-gradient(135deg, var(--prairie-amber), var(--prairie-amber-deep));
+  background: linear-gradient(
+    135deg,
+    var(--prairie-amber),
+    var(--prairie-amber-deep)
+  );
   color: #1a1408;
   font-weight: 600;
 }
@@ -293,8 +305,17 @@ button:focus,
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
-    radial-gradient(circle at 70% 70%, rgba(80, 120, 170, 0.18), transparent 45%);
+    linear-gradient(
+      120deg,
+      transparent 30%,
+      rgba(224, 168, 74, 0.05) 48%,
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at 70% 70%,
+      rgba(80, 120, 170, 0.18),
+      transparent 45%
+    );
   pointer-events: none;
 }
 
@@ -303,7 +324,11 @@ button:focus,
   width: min(560px, 100%);
   padding: clamp(1.5rem, 4vw, 2.5rem);
   border-radius: calc(var(--radius) + 4px);
-  background: linear-gradient(180deg, rgba(34, 43, 56, 0.72), rgba(20, 24, 32, 0.88));
+  background: linear-gradient(
+    180deg,
+    rgba(34, 43, 56, 0.72),
+    rgba(20, 24, 32, 0.88)
+  );
   border: 1px solid rgba(224, 168, 74, 0.16);
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
 }
@@ -431,8 +456,17 @@ button:focus,
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
-    radial-gradient(circle at 50% 35%, rgba(80, 120, 170, 0.18), transparent 48%);
+    linear-gradient(
+      120deg,
+      transparent 30%,
+      rgba(224, 168, 74, 0.05) 48%,
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at 50% 35%,
+      rgba(80, 120, 170, 0.18),
+      transparent 48%
+    );
   pointer-events: none;
 }
 
@@ -734,7 +768,11 @@ button:focus,
 
 .settings-row.is-on {
   border-color: rgba(224, 168, 74, 0.4);
-  background: linear-gradient(135deg, rgba(224, 168, 74, 0.14), rgba(28, 36, 48, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(224, 168, 74, 0.14),
+    rgba(28, 36, 48, 0.9)
+  );
 }
 
 .settings-row__copy {
@@ -878,7 +916,11 @@ button:focus,
 
 .option-chip.is-active {
   border-color: rgba(224, 168, 74, 0.55);
-  background: linear-gradient(135deg, rgba(224, 168, 74, 0.16), rgba(28, 36, 48, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(224, 168, 74, 0.16),
+    rgba(28, 36, 48, 0.9)
+  );
 }
 
 .option-chip__label {
@@ -997,7 +1039,11 @@ button:focus,
   border-radius: var(--radius);
   border: 1px solid rgba(240, 197, 116, 0.22);
   background:
-    radial-gradient(600px 280px at 10% 0%, rgba(224, 112, 112, 0.18), transparent 55%),
+    radial-gradient(
+      600px 280px at 10% 0%,
+      rgba(224, 112, 112, 0.18),
+      transparent 55%
+    ),
     linear-gradient(165deg, #161b24 0%, #0c0f14 100%);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
@@ -1039,7 +1085,11 @@ button:focus,
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, rgba(8, 10, 14, 0.45), transparent 65%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(8, 10, 14, 0.45),
+    transparent 65%
+  );
 }
 
 .player-buffering__label {
@@ -1108,7 +1158,11 @@ button:focus,
 .player-scrub-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--prairie-amber-deep), var(--prairie-amber));
+  background: linear-gradient(
+    90deg,
+    var(--prairie-amber-deep),
+    var(--prairie-amber)
+  );
 }
 
 .player-time-row {
@@ -1500,8 +1554,18 @@ button:focus,
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(10, 12, 16, 0.92) 12%, rgba(10, 12, 16, 0.45) 52%, transparent 78%),
-    linear-gradient(0deg, rgba(10, 12, 16, 0.95) 8%, rgba(10, 12, 16, 0.35) 48%, transparent 72%);
+    linear-gradient(
+      90deg,
+      rgba(10, 12, 16, 0.92) 12%,
+      rgba(10, 12, 16, 0.45) 52%,
+      transparent 78%
+    ),
+    linear-gradient(
+      0deg,
+      rgba(10, 12, 16, 0.95) 8%,
+      rgba(10, 12, 16, 0.35) 48%,
+      transparent 72%
+    );
 }
 
 .home-hero__content {
@@ -1689,7 +1753,11 @@ button:focus,
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(0deg, rgba(10, 12, 16, 0.88), rgba(10, 12, 16, 0.25));
+  background: linear-gradient(
+    0deg,
+    rgba(10, 12, 16, 0.88),
+    rgba(10, 12, 16, 0.25)
+  );
 }
 
 .library-card__icon {
@@ -1774,9 +1842,13 @@ button:focus,
 
 .media-row__scroller {
   display: flex;
+  /* Gap is set inline from MediaRow metrics so virtualization spacers stay aligned. */
   gap: 0.9rem;
   overflow-x: auto;
-  padding-bottom: 0.35rem;
+  /* Room for focus scale/ring so the first poster is not clipped on the left. */
+  padding: 0.45rem 0.75rem 0.85rem;
+  margin-inline: -0.75rem;
+  scroll-padding-inline: 0.75rem;
   scroll-snap-type: x mandatory;
 }
 
@@ -1858,7 +1930,8 @@ button:focus,
 .library-card:focus,
 .profile-card:focus {
   outline: none;
-  transform: scale(1.05);
+  transform: scale(1.04);
+  transform-origin: center center;
   border-color: rgba(224, 168, 74, 0.65);
   box-shadow:
     0 14px 32px rgba(0, 0, 0, 0.35),
@@ -2088,8 +2161,16 @@ button:focus,
   min-height: 100%;
   /* Opaque so leaving the player never shows only the body gradient. */
   background:
-    radial-gradient(1200px 700px at 12% -10%, rgba(224, 168, 74, 0.16), transparent 55%),
-    radial-gradient(900px 600px at 88% 8%, rgba(70, 110, 160, 0.22), transparent 50%),
+    radial-gradient(
+      1200px 700px at 12% -10%,
+      rgba(224, 168, 74, 0.16),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px 600px at 88% 8%,
+      rgba(70, 110, 160, 0.22),
+      transparent 50%
+    ),
     linear-gradient(165deg, #10151c 0%, var(--prairie-bg) 42%, #0f1319 100%);
 }
 
@@ -2255,6 +2336,9 @@ button:focus,
 .detail-crew,
 .detail-starring {
   margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  max-width: 40rem;
 }
 
 .detail-actions {
@@ -2282,6 +2366,10 @@ button:focus,
   gap: 1rem;
 }
 
+.detail-section-header--follow {
+  margin-top: 0.75rem;
+}
+
 .detail-section-title {
   margin: 0.15rem 0 0;
   font-size: clamp(1.5rem, 2.6vw, 2rem);
@@ -2290,26 +2378,28 @@ button:focus,
 
 .cast-rail {
   display: flex;
-  gap: 1.1rem;
+  gap: 1rem;
   overflow-x: auto;
-  padding-bottom: 0.35rem;
+  padding: 0.35rem 0.35rem 0.55rem;
+  margin-inline: -0.35rem;
+  scroll-padding-inline: 0.35rem;
   scroll-snap-type: x mandatory;
 }
 
 .cast-card {
   flex: 0 0 auto;
-  width: 7.5rem;
+  width: 9.5rem;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
   scroll-snap-align: start;
-  text-align: center;
+  text-align: left;
 }
 
 .cast-card__photo {
   position: relative;
-  width: 7.5rem;
-  height: 7.5rem;
-  border-radius: 999px;
+  width: 9.5rem;
+  aspect-ratio: 2 / 3;
+  border-radius: 12px;
   overflow: hidden;
   background: #10151c;
 }
@@ -2320,7 +2410,7 @@ button:focus,
   display: grid;
   place-items: center;
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: 2.4rem;
   color: var(--prairie-amber);
   background: linear-gradient(160deg, #243041, #141820);
 }
@@ -2328,12 +2418,14 @@ button:focus,
 .cast-card__name {
   margin: 0;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 1rem;
+  line-height: 1.25;
 }
 
 .cast-card__role {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
+  line-height: 1.3;
 }
 
 .detail-facts-table {
