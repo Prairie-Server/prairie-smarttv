@@ -10,13 +10,30 @@ describe("subtitleFormats", () => {
 
   it("rejects bitmap/ASS and non-WebVTT text tracks", () => {
     expect(isClientRenderableSubtitleUrl("https://x/a.sup")).toBe(false);
+    expect(isClientRenderableSubtitleUrl(undefined)).toBe(false);
+    expect(isClientRenderableSubtitleUrl(null)).toBe(false);
+    expect(isClientRenderableSubtitleUrl("")).toBe(false);
     expect(
       filterClientRenderableSubtitles([
         { url: "https://x/a.vtt" },
+        { url: "https://x/a.vtt", codec: "webvtt" },
+        { url: "https://x/b.vtt", codec: "vtt" },
         { url: "https://x/a.srt", codec: "srt" },
+        { url: "https://x/a.smi", codec: "smi" },
+        { url: "https://x/a.sami", codec: "sami" },
+        { url: "https://x/a.ttml", codec: "ttml" },
+        { url: "https://x/a.dfxp", codec: "dfxp" },
         { url: "https://x/a.sup", codec: "pgs" },
+        { url: "https://x/a.sup", codec: "hdmv" },
+        { url: "https://x/a.sup", codec: "sup" },
         { url: "https://x/a.ass", codec: "ass" },
+        { url: "https://x/a.ssa", codec: "ssa" },
+        { url: "https://x/a.srt" },
       ]),
-    ).toEqual([{ url: "https://x/a.vtt" }]);
+    ).toEqual([
+      { url: "https://x/a.vtt" },
+      { url: "https://x/a.vtt", codec: "webvtt" },
+      { url: "https://x/b.vtt", codec: "vtt" },
+    ]);
   });
 });

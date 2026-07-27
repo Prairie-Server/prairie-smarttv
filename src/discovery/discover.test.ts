@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COMMON_CIDRS,
   DEEP_SCAN_PORTS,
   HEALTH_PATH,
   allHostsForCidr,
   buildCandidates,
+  localIpv4Addresses,
   mergeHits,
   parseCidr,
   parseHealth,
@@ -13,6 +14,10 @@ import {
 } from "./discover";
 
 describe("discover", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("parses ok health payloads and rejects down servers", () => {
     expect(parseHealth({ status: "ok", server_name: "Prairie Home", server_id: "abc" })).toEqual({
       serverName: "Prairie Home",
@@ -72,6 +77,11 @@ describe("discover", () => {
     });
     expect(hits).toHaveLength(1);
     expect(hits[0]?.serverName).toBe("Two");
+    hits = mergeHits(hits, "https://prairie.example.com", {
+      serverName: "",
+      serverId: "",
+    });
+    expect(hits[0]?.serverName).toBe("Two");
   });
 
   it("probes local device IP when provided", () => {
@@ -82,5 +92,27 @@ describe("discover", () => {
       extraCidrs: [],
     });
     expect(candidates.some((url) => url.includes("10.0.0.42"))).toBe(true);
+  });
+
+  it("reads local IPv4 from webapis when available", () => {
+    vi.stubGlobal("window", {
+      webapis: {
+        network: {
+          getIp: () => "192.168.1.20",
+        },
+      },
+    });
+    expect(localIpv4Addresses()).toEqual(["192.168.1.20"]);
+
+    vi.stubGlobal("window", {
+      webapis: {
+        network: {
+          getIp: () => {
+            throw new Error("denied");
+          },
+        },
+      },
+    });
+    expect(localIpv4Addresses()).toEqual([]);
   });
 });

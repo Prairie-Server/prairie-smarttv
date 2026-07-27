@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PLAYBACK_SETTINGS,
+  describePlayMethodPreference,
   loadPlaybackSettings,
   normalizePlaybackSettings,
   resolveForcedPlayMethod,
@@ -105,8 +106,34 @@ describe("playbackSettings", () => {
   it("resolves preferred subtitle language index", () => {
     const tracks = [{ language: "spa" }, { language: "eng" }, { language: "eng-US" }];
     expect(resolvePreferredSubtitleIndex(tracks, "")).toBe(-1);
+    expect(resolvePreferredSubtitleIndex([], "eng")).toBe(-1);
     expect(resolvePreferredSubtitleIndex(tracks, "eng")).toBe(1);
     expect(resolvePreferredSubtitleIndex(tracks, "eng-us")).toBe(2);
+    expect(resolvePreferredSubtitleIndex(tracks, "en")).toBe(1);
     expect(resolvePreferredSubtitleIndex(tracks, "deu")).toBe(-1);
+    expect(resolvePreferredSubtitleIndex([{ index: 0 }], "eng")).toBe(-1);
+  });
+
+  it("normalizes invalid backends and non-string preferred language", () => {
+    const normalized = normalizePlaybackSettings({
+      // @ts-expect-error intentional malformed
+      playerBackend: "flash",
+      // @ts-expect-error intentional malformed
+      preferredSubtitleLanguage: 12,
+    });
+    expect(normalized.playerBackend).toBe("auto");
+    expect(normalized.preferredSubtitleLanguage).toBe("");
+    expect(normalizePlaybackSettings(null).playerBackend).toBe("auto");
+    expect(describePlayMethodPreference(DEFAULT_PLAYBACK_SETTINGS)).toBe("auto");
+    expect(
+      describePlayMethodPreference({
+        ...DEFAULT_PLAYBACK_SETTINGS,
+        forceTranscode: true,
+      }),
+    ).toBe("transcode");
+  });
+
+  it("returns defaults when storage is empty", () => {
+    expect(loadPlaybackSettings(memoryStorage())).toEqual(DEFAULT_PLAYBACK_SETTINGS);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sessionClient } from "./sessionClient";
+import { sessionClient, setSessionUnauthorizedHandler } from "./sessionClient";
 
 describe("sessionClient", () => {
   it("maps session fields onto ApiClientOptions", () => {
@@ -23,5 +23,27 @@ describe("sessionClient", () => {
       fetchImpl,
       onUnauthorized: undefined,
     });
+  });
+
+  it("wires the session unauthorized handler", () => {
+    const handler = () => undefined;
+    setSessionUnauthorizedHandler(handler);
+    expect(
+      sessionClient({
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        username: "ada",
+        profileId: "p1",
+      }).onUnauthorized,
+    ).toBe(handler);
+    setSessionUnauthorizedHandler(undefined);
+    expect(
+      sessionClient({
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        username: "ada",
+        profileId: "p1",
+      }).onUnauthorized,
+    ).toBeUndefined();
   });
 });

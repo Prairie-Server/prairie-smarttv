@@ -71,6 +71,15 @@ describe("channelDisplayLabel", () => {
     expect(channelDisplayLabel({ ...channel, name: "", callsign: "", number: "7" })).toBe(
       "Channel 7",
     );
+    expect(
+      channelDisplayLabel({
+        ...channel,
+        name: "",
+        callsign: "",
+        number: "",
+        number_override: "9.1",
+      }),
+    ).toBe("Channel 9.1");
   });
 });
 
@@ -111,6 +120,10 @@ describe("guide helpers", () => {
     expect(currentProgramForChannel(programs, "ch-1", now)?.title).toBe("Now Show");
     expect(nextProgramForChannel(programs, "ch-1", now)?.title).toBe("Next Show");
     expect(currentProgramForChannel(programs, "missing", now)).toBeNull();
+    expect(nextProgramForChannel(programs, "missing", now)).toBeNull();
+    expect(
+      currentProgramForChannel([{ ...programs[0]!, start: "bad", stop: "bad" }], "ch-1", now),
+    ).toBeNull();
   });
 });
 
@@ -182,5 +195,9 @@ describe("Live TV API", () => {
     const recording = await scheduleLiveTvRecording(session, { program_id: "p1" }, recordFetch);
     expect(recording.id).toBe("rec-1");
     expect(recording.status).toBe("scheduled");
+
+    await expect(scheduleLiveTvRecording(session, { program_id: "  " })).rejects.toThrow(
+      /Missing program id/i,
+    );
   });
 });

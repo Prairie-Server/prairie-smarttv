@@ -71,6 +71,21 @@ describe("spatialFocus", () => {
     expect(document.activeElement).toBe(b);
     expect(event.defaultPrevented).toBe(true);
     expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "Enter" }))).toBe(false);
+    expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowUp" }))).toBe(false);
+  });
+
+  it("returns early when fewer than two focusables or no neighbor", () => {
+    const alone = document.createElement("button");
+    document.body.append(alone);
+    place(alone, 0, 0);
+    alone.focus();
+    expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowRight" }))).toBe(
+      false,
+    );
+    expect(findSpatialNeighbor(alone, "ArrowRight", [])).toBeNull();
+    expect(findSpatialNeighbor(alone, "ArrowUp", [alone])).toBeNull();
+    expect(isArrowKey("ArrowUp")).toBe(true);
+    expect(isArrowKey("ArrowDown")).toBe(true);
   });
 
   it("keeps left/right on the button row instead of jumping to a full-width input above", () => {
@@ -78,7 +93,6 @@ describe("spatialFocus", () => {
     const signIn = document.createElement("button");
     const back = document.createElement("button");
     document.body.append(password, signIn, back);
-    // Full-width password field sits above the action row.
     place(password, 0, 0, 400, 48);
     place(signIn, 0, 80, 120, 48);
     place(back, 140, 80, 160, 48);

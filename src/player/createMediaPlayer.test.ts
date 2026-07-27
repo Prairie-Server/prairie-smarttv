@@ -68,6 +68,8 @@ describe("createMediaPlayer", () => {
     player.play();
     player.pause();
     void player.seekTo(3);
+    expect(player.getCurrentTime()).toBe(0);
+    expect(player.getDuration()).toBe(0);
     void player.setTextTrack("https://example/sub.vtt", "English");
     player.destroy();
   });
