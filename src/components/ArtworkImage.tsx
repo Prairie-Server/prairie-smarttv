@@ -7,12 +7,16 @@ import {
   type ImgHTMLAttributes,
 } from "react";
 import { artworkCandidates } from "../lib/artworkUrl";
+import { resolveArtworkUrl } from "../lib/resolveArtworkUrl";
+import { useServerUrl } from "../serverUrlContext";
 
 export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
   /** Canonical artwork URL (typically a .webp object key or signed URL). */
   src: string | null | undefined;
   /** Optional letter/initial shown in the shimmer until the image decodes. */
   placeholderLabel?: string;
+  /** Override server origin used to absolutize relative `/artwork/...` paths. */
+  serverUrl?: string | null;
 };
 
 /**
@@ -21,8 +25,8 @@ export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
  * missing siblings). Keeps a sized placeholder visible until the first
  * successful decode to avoid empty→image layout flashes.
  *
- * TV browsers often serve cached images with `complete === true` without firing
- * `load`, so we also promote those to the loaded state in layout.
+ * Relative `/artwork/...` paths are joined to the connected Prairie origin —
+ * packaged TV apps are not same-origin with the server.
  */
 export function ArtworkImage({
   src,
@@ -32,9 +36,12 @@ export function ArtworkImage({
   placeholderLabel = "",
   className,
   style,
+  serverUrl: serverUrlProp,
   ...rest
 }: ArtworkImageProps) {
-  const normalizedSrc = src?.trim();
+  const contextServerUrl = useServerUrl();
+  const serverUrl = serverUrlProp?.trim() || contextServerUrl;
+  const normalizedSrc = resolveArtworkUrl(src, serverUrl) || undefined;
   const candidates = artworkCandidates(normalizedSrc);
   const [failedCount, setFailedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -42,7 +49,6 @@ export function ArtworkImage({
   const imgRef = useRef<HTMLImageElement | null>(null);
   const isSrcChange = prevNormalizedSrc.current !== normalizedSrc;
 
-  // Update ref during render (safe, doesn't trigger rerenders).
   if (isSrcChange) prevNormalizedSrc.current = normalizedSrc;
 
   useEffect(() => {

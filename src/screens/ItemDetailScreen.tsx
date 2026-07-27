@@ -1,5 +1,5 @@
 import { ArrowLeft, Play } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   fetchEpisodes,
@@ -12,6 +12,7 @@ import {
 import { fetchWatchDetail, selectPlaybackFileId, type WatchDetail } from "../api/watch";
 import { ArtworkImage } from "../components/ArtworkImage";
 import { FocusButton } from "../components/FocusButton";
+import { useBackKey } from "../focus/useBackKey";
 import type { PlayerLaunch } from "./PlayerScreen";
 import type { PrairieSession } from "../storage/session";
 
@@ -46,6 +47,11 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
   const [loading, setLoading] = useState(true);
   const [busyPlay, setBusyPlay] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleBack = useCallback(() => {
+    onBack();
+  }, [onBack]);
+  useBackKey(handleBack);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,9 +145,10 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
         )}
         <div className="detail-hero__shade" />
         <div className="detail-hero__content">
-          <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack}>
-            Back
-          </FocusButton>
+          <button type="button" className="detail-back" onClick={handleBack} aria-label="Back">
+            <ArrowLeft size={22} aria-hidden="true" />
+            <span>Back</span>
+          </button>
           {loading ? <p className="muted">Loading…</p> : null}
           {detail ? (
             <div className="detail-hero__body">

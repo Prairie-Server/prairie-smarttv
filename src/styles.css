@@ -717,64 +717,58 @@ button:focus,
   box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.28);
 }
 
-.settings-dropdown {
-  display: grid;
-  gap: 0.75rem;
-  padding: 1rem 1.1rem 1.15rem;
-  border-radius: 16px;
-  border: 1px solid rgba(224, 168, 74, 0.35);
-  background: linear-gradient(180deg, rgba(34, 43, 56, 0.96), rgba(20, 24, 32, 0.98));
+/* Compact Litefin-style settings menu (anchored, no full-width CLS). */
+.settings-row-wrap {
+  position: relative;
 }
 
-.settings-dropdown__header {
+.settings-row-wrap.is-open .settings-row {
+  border-color: rgba(224, 168, 74, 0.45);
+}
+
+.settings-menu {
+  position: absolute;
+  right: 0.65rem;
+  top: calc(100% - 0.25rem);
+  z-index: 8;
+  min-width: 11rem;
+  width: max-content;
+  max-width: min(18rem, 70vw);
   display: grid;
   gap: 0.2rem;
+  padding: 0.4rem;
+  border-radius: 12px;
+  border: 1px solid rgba(224, 168, 74, 0.35);
+  background: rgba(16, 21, 28, 0.98);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
 }
 
-.settings-dropdown__label {
-  margin: 0;
-  font-weight: 600;
-  font-size: 1.1rem;
-}
-
-.settings-dropdown__hint {
-  margin: 0;
-  font-size: 0.9rem;
-}
-
-.settings-dropdown__options {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.settings-dropdown__option,
-.settings-dropdown__cancel {
+.settings-menu__option {
   width: 100%;
   text-align: left;
-  border-radius: 12px;
-  border: 1px solid rgba(243, 239, 230, 0.1);
-  background: rgba(10, 14, 20, 0.45);
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
   color: inherit;
-  padding: 0.85rem 1rem;
+  padding: 0.7rem 0.85rem;
   cursor: pointer;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+  white-space: nowrap;
 }
 
-.settings-dropdown__option.is-selected {
-  border-color: rgba(224, 168, 74, 0.45);
+.settings-menu__option.is-selected {
   color: var(--prairie-amber);
   font-weight: 600;
+  background: rgba(224, 168, 74, 0.12);
 }
 
-.settings-dropdown__option:focus,
-.settings-dropdown__cancel:focus {
-  background: rgba(224, 168, 74, 0.18);
-  border-color: rgba(224, 168, 74, 0.6);
-  transform: scale(1.015);
-  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.3);
+.settings-menu__option:focus {
+  background: rgba(224, 168, 74, 0.2);
+  border-color: rgba(224, 168, 74, 0.45);
+  outline: none;
+}
+
+.settings-dropdown {
+  display: none;
 }
 
 .settings-about {
@@ -883,12 +877,71 @@ button:focus,
   justify-content: flex-end;
   gap: 0.85rem;
   padding: clamp(1.25rem, 3vw, 2.5rem);
-  background: linear-gradient(180deg, transparent 35%, rgba(8, 10, 14, 0.88) 78%);
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 14, 0.55) 0%,
+    transparent 28%,
+    rgba(8, 10, 14, 0.92) 78%
+  );
   pointer-events: none;
 }
 
 .player-chrome > * {
   pointer-events: auto;
+}
+
+.player-error {
+  position: relative;
+  z-index: 3;
+  min-height: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 0.85rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  background:
+    radial-gradient(900px 500px at 20% 10%, rgba(224, 112, 112, 0.16), transparent 55%),
+    linear-gradient(165deg, #10151c 0%, #0a0c10 100%);
+}
+
+.player-error h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  max-width: 36rem;
+}
+
+.player-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  border: 0;
+  background: rgba(10, 12, 16, 0.35);
+  color: var(--prairie-ink);
+  padding: 0.55rem 0.85rem 0.55rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition:
+    background 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.detail-back:focus {
+  outline: none;
+  background: rgba(224, 168, 74, 0.22);
+  transform: scale(1.04);
+  box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.35);
 }
 
 .player-top-bar {

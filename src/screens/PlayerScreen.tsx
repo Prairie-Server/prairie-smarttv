@@ -135,7 +135,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           forcedPlayMethod: forced,
           startPosition: launch.startPositionSeconds,
         });
-        if (cancelled) return;
+        if (cancelled) {
+          // StrictMode remount / abandon — stop the orphaned session so AVPlay
+          // does not open a stream that the server already tore down.
+          void stopPlaybackSession(session, started.session_id).catch(() => undefined);
+          return;
+        }
         setPlayback(started);
         setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken));
         setPlaying(true);
@@ -161,17 +166,25 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     settings,
   ]);
 
-  useEffect(() => {
-    return () => {
-      const sid = playbackRef.current?.session_id;
-      if (!sid || exitedRef.current) return;
-      void stopPlaybackSession(session, sid).catch(() => undefined);
-    };
-  }, [session]);
+  // Do not DELETE the playback session on React effect cleanup / StrictMode
+  // remount — that races AVPlay and surfaces PLAYER_ERR_CONNECTION_FAILED.
+  // Sessions are stopped only via handleExit (Back / error dismiss).
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const key = event.key;
+      if (
+        key === "Escape" ||
+        key === "Backspace" ||
+        key === "XF86Back" ||
+        key === "BrowserBack" ||
+        key === "GoBack"
+      ) {
+        event.preventDefault();
+        void handleExitRef.current();
+        return;
+      }
+      if (error) return;
       if (key === "Enter" || key === " " || key === "MediaPlayPause") {
         if (menu !== "none") return;
         event.preventDefault();
@@ -187,24 +200,17 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       if (key === "MediaFastForward" || (key === "ArrowRight" && event.altKey)) {
         event.preventDefault();
         seekByRef.current(SEEK_STEP_SECONDS);
-        return;
-      }
-      if (
-        key === "Escape" ||
-        key === "Backspace" ||
-        key === "XF86Back" ||
-        key === "BrowserBack" ||
-        key === "GoBack"
-      ) {
-        event.preventDefault();
-        void handleExitRef.current();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menu]);
+  }, [menu, error]);
 
   function bumpControls() {
+    if (error) {
+      setControlsVisible(true);
+      return;
+    }
     setControlsVisible(true);
     if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
@@ -213,6 +219,41 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         return m;
       });
     }, 4000);
+  }
+
+  function handlePlaybackError(message: string) {
+    setError(message);
+    setPlaying(false);
+    setControlsVisible(true);
+    if (hideTimer.current != null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }
+
+  async function retryPlayback() {
+    setError(null);
+    setLoading(true);
+    setControlsVisible(true);
+    try {
+      const forced = resolveForcedPlayMethod(settings);
+      const started = await startPlayback(session, {
+        fileId: launch.fileId,
+        profileId: session.profileId,
+        forcedPlayMethod: forced,
+        startPosition: currentTime > 0 ? currentTime : launch.startPositionSeconds,
+      });
+      setPlayback(started);
+      setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken));
+      setPlaying(true);
+      if (started.duration_seconds) setDuration(started.duration_seconds);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else if (err instanceof Error) setError(err.message);
+      else setError("Playback failed to start");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function reportProgress(force = false, isPaused = !playing) {
@@ -353,7 +394,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           initialSubtitleUrl={streamSubtitleSeed.url}
           initialSubtitleLabel={streamSubtitleSeed.label}
           allowedServerUrl={session.serverUrl}
-          onError={setError}
+          onError={handlePlaybackError}
           onReady={(player) => {
             playerRef.current = player;
             const resume = pendingResumeRef.current;
@@ -381,7 +422,21 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         />
       ) : null}
 
-      {controlsVisible || menu !== "none" ? (
+      {error ? (
+        <div className="player-error" role="alertdialog" aria-labelledby="player-error-title">
+          <p className="eyebrow">Playback error</p>
+          <h1 id="player-error-title">{title}</h1>
+          <p className="form-error">{error}</p>
+          <div className="player-error__actions">
+            <FocusButton autoFocus icon={<Play />} onClick={() => void retryPlayback()}>
+              Try again
+            </FocusButton>
+            <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={() => void handleExit()}>
+              Back to title
+            </FocusButton>
+          </div>
+        </div>
+      ) : controlsVisible || menu !== "none" ? (
         <div className="player-chrome" onMouseMove={bumpControls}>
           <div className="player-top-bar">
             <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={() => void handleExit()}>
@@ -413,7 +468,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
               variant="ghost"
               icon={<Rewind />}
               onClick={() => seekBy(-SEEK_STEP_SECONDS)}
-              disabled={!streamUrl || Boolean(error)}
+              disabled={!streamUrl}
             >
               −15s
             </FocusButton>
@@ -428,7 +483,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
                 });
                 bumpControls();
               }}
-              disabled={!streamUrl || Boolean(error)}
+              disabled={!streamUrl}
             >
               {playing ? "Pause" : "Play"}
             </FocusButton>
@@ -436,7 +491,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
               variant="ghost"
               icon={<FastForward />}
               onClick={() => seekBy(SEEK_STEP_SECONDS)}
-              disabled={!streamUrl || Boolean(error)}
+              disabled={!streamUrl}
             >
               +15s
             </FocusButton>
@@ -509,11 +564,6 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             </div>
           ) : null}
 
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
           <p className="hint muted">OK toggles play · −15s / +15s seek · Back exits</p>
         </div>
       ) : (
