@@ -373,6 +373,48 @@ describe("spatialFocus", () => {
     unregister();
   });
 
+  it("reveals virtualized indices when focusCount is absent", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    const a = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+
+    const b = document.createElement("button");
+    b.dataset.focusIndex = "1";
+    place(b, 120, 0);
+    const unregister = registerFocusReveal(row, (index) => {
+      if (index !== 1) return null;
+      row.append(b);
+      return b;
+    });
+
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+    unregister();
+  });
+
+  it("navigates a grid without stamped indices via DOM order", () => {
+    const grid = document.createElement("div");
+    grid.dataset.focusContainer = "grid";
+    grid.dataset.focusColumns = "2";
+    const buttons = [0, 1, 2, 3].map(() => {
+      const button = document.createElement("button");
+      grid.append(button);
+      return button;
+    });
+    document.body.append(grid);
+    place(buttons[0]!, 0, 0);
+    place(buttons[1]!, 120, 0);
+    place(buttons[2]!, 0, 160);
+    place(buttons[3]!, 120, 160);
+
+    expect(findSpatialNeighbor(buttons[0]!, "ArrowRight")).toBe(buttons[1]);
+    expect(findSpatialNeighbor(buttons[0]!, "ArrowDown")).toBe(buttons[2]);
+    expect(findSpatialNeighbor(buttons[2]!, "ArrowDown")).toBeNull();
+  });
+
   it("navigates a vertical focus container with up/down", () => {
     const col = document.createElement("div");
     col.dataset.focusContainer = "vertical";

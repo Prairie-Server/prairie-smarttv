@@ -82,12 +82,6 @@ function parseAbsoluteIndex(el: HTMLElement, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function containerTotal(container: HTMLElement, renderedCount: number): number {
-  const parsed = Number(container.dataset.focusCount);
-  if (Number.isFinite(parsed) && parsed >= renderedCount) return parsed;
-  return renderedCount;
-}
-
 function revealIndex(container: HTMLElement, index: number): HTMLElement | null {
   const handler = revealHandlers.get(container);
   if (handler) {
@@ -107,7 +101,7 @@ function revealIndex(container: HTMLElement, index: number): HTMLElement | null 
 }
 
 function focusAtContainerIndex(container: HTMLElement, index: number): HTMLElement | null {
-  if (!Number.isFinite(index)) return null;
+  if (!Number.isFinite(index) || index < 0) return null;
 
   // Fast path: mounted node already stamped with this index (common D-pad step).
   // Do not clamp to data-focus-count first — undercounted totals must still reach
@@ -123,7 +117,7 @@ function focusAtContainerIndex(container: HTMLElement, index: number): HTMLEleme
   }
 
   const counted = Number(container.dataset.focusCount);
-  if (Number.isFinite(counted) && counted > 0 && index >= 0 && index < counted) {
+  if (Number.isFinite(counted) && counted > 0 && index < counted) {
     const revealed = revealIndex(container, index);
     if (revealed) {
       lastIndexByContainer.set(container, index);
@@ -131,18 +125,23 @@ function focusAtContainerIndex(container: HTMLElement, index: number): HTMLEleme
     }
   }
 
-  const items = listContainerFocusables(container);
-  const total = containerTotal(container, items.length);
-  if (total <= 0) return null;
-  const clamped = Math.max(0, Math.min(index, total - 1));
-  const existing = items.find((el, i) => parseAbsoluteIndex(el, i) === clamped);
+  // Exact match only — never clamp to the last item. Clamping made ArrowDown
+  // past the final grid row land on the last card instead of exiting the grid.
+  const existing = listContainerFocusables(container).find(
+    (el, i) => parseAbsoluteIndex(el, i) === index,
+  );
   if (existing) {
-    lastIndexByContainer.set(container, clamped);
+    lastIndexByContainer.set(container, index);
     return existing;
   }
-  const revealed = revealIndex(container, clamped);
-  if (revealed) lastIndexByContainer.set(container, clamped);
-  return revealed;
+  if (!Number.isFinite(counted) || counted <= 0) {
+    const revealed = revealIndex(container, index);
+    if (revealed) {
+      lastIndexByContainer.set(container, index);
+      return revealed;
+    }
+  }
+  return null;
 }
 
 function estimateGridColumns(container: HTMLElement, items: HTMLElement[]): number {
@@ -189,34 +188,57 @@ function navigateContainer(
   container: HTMLElement,
 ): HTMLElement | null {
   const orientation = (container.dataset.focusContainer || "horizontal").toLowerCase();
-  const items = listContainerFocusables(container);
-  if (!items.length) return null;
 
-  const localIndex = items.indexOf(active);
-  const absoluteIndex = parseAbsoluteIndex(active, localIndex >= 0 ? localIndex : 0);
-  const total = containerTotal(container, items.length);
+  // Prefer stamped indices so a 60-card grid does not querySelectorAll + filter
+  // on every D-pad press. Fall back to listing only when the active node lacks
+  // data-focus-index (ungrouped buttons, legacy markup).
+  const stamped = Number(active.dataset.focusIndex);
+  const hasStamp = Number.isFinite(stamped);
+  let absoluteIndex: number;
+  let cols = 1;
+
+  if (hasStamp) {
+    absoluteIndex = stamped;
+    if (orientation === "grid") {
+      const parsedCols = Number(container.dataset.focusColumns);
+      if (Number.isFinite(parsedCols) && parsedCols > 0) {
+        cols = Math.floor(parsedCols);
+      } else {
+        cols = estimateGridColumns(container, listContainerFocusables(container));
+      }
+    }
+  } else {
+    const items = listContainerFocusables(container);
+    if (!items.length) return null;
+    const localIndex = items.indexOf(active);
+    absoluteIndex = parseAbsoluteIndex(active, localIndex >= 0 ? localIndex : 0);
+    if (orientation === "grid") {
+      cols = estimateGridColumns(container, items);
+    }
+  }
   lastIndexByContainer.set(container, absoluteIndex);
 
+  // Probe the next index instead of trusting data-focus-count alone — a stale
+  // undercount used to stop navigation one card early. focusAtContainerIndex
+  // already falls back to the mounted DOM / reveal handler.
   if (orientation === "grid") {
-    const cols = estimateGridColumns(container, items);
     if (key === "ArrowLeft") {
-      return absoluteIndex > 0 ? focusAtContainerIndex(container, absoluteIndex - 1) : active;
+      return absoluteIndex > 0
+        ? (focusAtContainerIndex(container, absoluteIndex - 1) ?? active)
+        : active;
     }
     if (key === "ArrowRight") {
-      return absoluteIndex < total - 1
-        ? focusAtContainerIndex(container, absoluteIndex + 1)
-        : active;
+      return focusAtContainerIndex(container, absoluteIndex + 1) ?? active;
     }
     if (key === "ArrowUp") {
       if (absoluteIndex >= cols) {
-        return focusAtContainerIndex(container, absoluteIndex - cols);
+        return focusAtContainerIndex(container, absoluteIndex - cols) ?? active;
       }
       return findAcrossContainers(container, "ArrowUp", absoluteIndex % cols);
     }
     if (key === "ArrowDown") {
-      if (absoluteIndex + cols < total) {
-        return focusAtContainerIndex(container, absoluteIndex + cols);
-      }
+      const next = focusAtContainerIndex(container, absoluteIndex + cols);
+      if (next) return next;
       return findAcrossContainers(container, "ArrowDown", absoluteIndex % cols);
     }
     /* v8 ignore next -- ArrowKey union is exhaustive above */
@@ -229,11 +251,13 @@ function navigateContainer(
   const exitForward = orientation === "vertical" ? "ArrowRight" : "ArrowDown";
   const exitBackward = orientation === "vertical" ? "ArrowLeft" : "ArrowUp";
 
-  if (key === forward && absoluteIndex < total - 1) {
-    return focusAtContainerIndex(container, absoluteIndex + 1);
+  if (key === forward) {
+    return focusAtContainerIndex(container, absoluteIndex + 1) ?? active;
   }
-  if (key === backward && absoluteIndex > 0) {
-    return focusAtContainerIndex(container, absoluteIndex - 1);
+  if (key === backward) {
+    return absoluteIndex > 0
+      ? (focusAtContainerIndex(container, absoluteIndex - 1) ?? active)
+      : active;
   }
   if (key === exitForward) {
     return findAcrossContainers(container, "ArrowDown", absoluteIndex);
@@ -241,8 +265,6 @@ function navigateContainer(
   if (key === exitBackward) {
     return findAcrossContainers(container, "ArrowUp", absoluteIndex);
   }
-  // Stay put at horizontal/vertical edges instead of geometry-jumping into another row mid-rail.
-  if (key === forward || key === backward) return active;
   /* v8 ignore next -- exit keys already returned above */
   return null;
 }

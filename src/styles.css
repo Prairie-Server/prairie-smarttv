@@ -14,6 +14,9 @@
   --font-display: "Fraunces", "Georgia", serif;
   --radius: 14px;
   --focus-outline: 3px solid var(--prairie-ring);
+  /* Solid (unblurred) ring that follows border-radius — used on low/balanced
+   * tiers instead of CSS outline, which paints as a square on Tizen/webOS. */
+  --focus-ring-solid: 0 0 0 3px var(--prairie-ring);
   /* 1 = 1920×1080 design; applyViewportScale() updates on real TVs. */
   --ui-scale: 1;
 }
@@ -2801,7 +2804,11 @@ button:focus,
 
 /* Perf tiers: never animate box-shadow on low/balanced TVs. A blurred shadow
  * transition repaints a large region every frame of every D-pad move, so these
- * tiers get a static outline and animate transform/colour only.
+ * tiers keep a static solid ring (no blur) and animate transform/colour only.
+ *
+ * Do not use CSS `outline` for the focus affordance — Chromium 69–85 on Tizen
+ * paints outlines as the element's rectangular bounding box, ignoring
+ * border-radius, which makes every focused card look like a hard square.
  *
  * Every selector whose base rule animates box-shadow must appear here;
  * styles.perf.test.ts fails the build when a new one is added without cover.
@@ -2882,8 +2889,8 @@ html[data-perf="low"] input[type="password"]:focus,
 html[data-perf="balanced"] input[type="password"]:focus,
 html[data-perf="low"] input[type="number"]:focus,
 html[data-perf="balanced"] input[type="number"]:focus {
-  box-shadow: none;
-  outline: var(--focus-outline);
+  outline: none;
+  box-shadow: var(--focus-ring-solid);
 }
 
 /* Recoverable render-failure fallback. The stack is shown on screen because

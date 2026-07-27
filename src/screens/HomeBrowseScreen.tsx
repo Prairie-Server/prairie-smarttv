@@ -30,11 +30,11 @@ const INITIAL_ROW_COUNT = 1;
 const ROW_MOUNT_CHUNK = 2;
 /**
  * Mount a row once its reserved slot comes within this much of the viewport.
- * Rows further down stay placeholders: an 8K panel scales cards up (ui-scale
- * 1.55), so mounting every row put >300 cards and images on screen at once and
- * buried the SoC in decode work for tens of seconds.
+ * Must be pixels: IntersectionObserver % margins follow CSS margin rules where
+ * percentages are relative to the root WIDTH, so "60%" was >1 viewport tall on
+ * 16:9 and mounted almost every Home row immediately.
  */
-const ROW_PREFETCH_MARGIN = "60% 0px";
+const ROW_PREFETCH_MARGIN = "280px 0px";
 /** How long entry focus waits for On now before settling on the first row. */
 const ON_NOW_FOCUS_GRACE_MS = 700;
 
