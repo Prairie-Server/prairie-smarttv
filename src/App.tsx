@@ -7,6 +7,7 @@ import { setSessionUnauthorizedHandler } from "./api/sessionClient";
 import { ShellNav, type ShellTab } from "./components/ShellNav";
 import type { DiscoveryHit } from "./discovery/discover";
 import { handleSpatialArrowKey } from "./focus/spatialFocus";
+import { ServerUrlContext } from "./serverUrlContext";
 import { CollectionBrowseScreen } from "./screens/CollectionBrowseScreen";
 import { CollectionsScreen } from "./screens/CollectionsScreen";
 import { ConnectScreen } from "./screens/ConnectScreen";
@@ -293,38 +294,46 @@ export function App() {
 
   if (route.name === "settings") {
     return (
-      <PlaybackSettingsScreen
-        onBack={() => setRoute(route.back)}
-        onSwitchServer={() => setRoute({ name: "servers", back: "home", autoScan: true })}
-      />
+      <ServerUrlContext.Provider value={session.serverUrl}>
+        <PlaybackSettingsScreen
+          onBack={() => setRoute(route.back)}
+          onSwitchServer={() => setRoute({ name: "servers", back: "home", autoScan: true })}
+        />
+      </ServerUrlContext.Provider>
     );
   }
 
   if (route.name === "player") {
     return (
-      <PlayerScreen session={session} launch={route.launch} onExit={() => setRoute(route.back)} />
+      <ServerUrlContext.Provider value={session.serverUrl}>
+        <PlayerScreen session={session} launch={route.launch} onExit={() => setRoute(route.back)} />
+      </ServerUrlContext.Provider>
     );
   }
 
   if (route.name === "livetv-player") {
     return (
-      <LiveTvPlayerScreen
-        session={session}
-        channel={route.channel}
-        onExit={() => setRoute(route.back)}
-      />
+      <ServerUrlContext.Provider value={session.serverUrl}>
+        <LiveTvPlayerScreen
+          session={session}
+          channel={route.channel}
+          onExit={() => setRoute(route.back)}
+        />
+      </ServerUrlContext.Provider>
     );
   }
 
   if (route.name === "detail") {
     return (
-      <ItemDetailScreen
-        session={session}
-        contentId={route.contentId}
-        onBack={() => setRoute(route.back)}
-        onPlay={(launch) => setRoute({ name: "player", launch, back: route })}
-        onOpenItem={(contentId) => setRoute({ name: "detail", contentId, back: route })}
-      />
+      <ServerUrlContext.Provider value={session.serverUrl}>
+        <ItemDetailScreen
+          session={session}
+          contentId={route.contentId}
+          onBack={() => setRoute(route.back)}
+          onPlay={(launch) => setRoute({ name: "player", launch, back: route })}
+          onOpenItem={(contentId) => setRoute({ name: "detail", contentId, back: route })}
+        />
+      </ServerUrlContext.Provider>
     );
   }
 
@@ -382,44 +391,46 @@ export function App() {
   }
 
   return (
-    <div className="shell">
-      <ShellNav
-        active={tab}
-        profileName={session.profileName}
-        showLiveTv={liveTvAvailable}
-        onNavigate={(next) => {
-          switch (next) {
-            case "home":
-              setRoute({ name: "home" });
-              break;
-            case "libraries":
-              setRoute({ name: "libraries" });
-              break;
-            case "collections":
-              setRoute({ name: "collections" });
-              break;
-            case "search":
-              setRoute({ name: "search" });
-              break;
-            case "livetv":
-              setRoute({ name: "livetv" });
-              break;
+    <ServerUrlContext.Provider value={session.serverUrl}>
+      <div className="shell">
+        <ShellNav
+          active={tab}
+          profileName={session.profileName}
+          showLiveTv={liveTvAvailable}
+          onNavigate={(next) => {
+            switch (next) {
+              case "home":
+                setRoute({ name: "home" });
+                break;
+              case "libraries":
+                setRoute({ name: "libraries" });
+                break;
+              case "collections":
+                setRoute({ name: "collections" });
+                break;
+              case "search":
+                setRoute({ name: "search" });
+                break;
+              case "livetv":
+                setRoute({ name: "livetv" });
+                break;
+            }
+          }}
+          onProfiles={() =>
+            setRoute({
+              name: "profiles",
+              auth: {
+                serverUrl: session.serverUrl,
+                accessToken: session.accessToken,
+                username: session.username,
+              },
+            })
           }
-        }}
-        onProfiles={() =>
-          setRoute({
-            name: "profiles",
-            auth: {
-              serverUrl: session.serverUrl,
-              accessToken: session.accessToken,
-              username: session.username,
-            },
-          })
-        }
-        onSettings={() => setRoute({ name: "settings", back: route })}
-        onDisconnect={disconnect}
-      />
-      <main className="shell__main">{body}</main>
-    </div>
+          onSettings={() => setRoute({ name: "settings", back: route })}
+          onDisconnect={disconnect}
+        />
+        <main className="shell__main">{body}</main>
+      </div>
+    </ServerUrlContext.Provider>
   );
 }

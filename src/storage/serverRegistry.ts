@@ -1,4 +1,5 @@
 import { SERVER_REGISTRY_KEY, loadLastServerUrl, normalizeServerUrl } from "./persist";
+import { scheduleDurablePersist } from "./durableStorage";
 import { loadSession, type PrairieSession } from "./session";
 
 export { SERVER_REGISTRY_KEY };
@@ -116,6 +117,7 @@ export function saveRegistry(
     }
   }
   storage.setItem(SERVER_REGISTRY_KEY, JSON.stringify(payload));
+  scheduleDurablePersist();
 }
 
 export function findIndex(registry: ServerRegistry, serverId: string): number {

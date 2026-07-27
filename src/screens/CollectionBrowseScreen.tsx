@@ -1,9 +1,10 @@
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
+import { useBackKey } from "../focus/useBackKey";
 import { catalogItemSubtitle } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
 
@@ -30,6 +31,8 @@ export function CollectionBrowseScreen({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const handleBack = useCallback(() => onBack(), [onBack]);
+  useBackKey(handleBack);
 
   useEffect(() => {
     let cancelled = false;

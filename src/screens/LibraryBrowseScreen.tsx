@@ -1,9 +1,10 @@
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
+import { useBackKey } from "../focus/useBackKey";
 import { catalogItemSubtitle, LIBRARY_SORT_OPTIONS } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
 
@@ -37,6 +38,8 @@ export function LibraryBrowseScreen({
   const showTypeFilter = libraryType === "series" || libraryType === "show" || libraryType === "tv";
   const [typeFilter, setTypeFilter] = useState<"series" | "episode">("series");
   const effectiveType = showTypeFilter ? typeFilter : undefined;
+  const handleBack = useCallback(() => onBack(), [onBack]);
+  useBackKey(handleBack);
 
   useEffect(() => {
     let cancelled = false;

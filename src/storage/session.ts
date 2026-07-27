@@ -1,4 +1,5 @@
 import { SESSION_KEY, normalizeServerUrl, saveLastServerUrl } from "./persist";
+import { scheduleDurablePersist } from "./durableStorage";
 
 export { SESSION_KEY, normalizeServerUrl };
 
@@ -148,6 +149,7 @@ export function saveSession(
 
   // Keep last server URL even if the user later disconnects (pre-fill Connect).
   saveLastServerUrl(normalized.serverUrl, storage);
+  scheduleDurablePersist();
   return normalized;
 }
 

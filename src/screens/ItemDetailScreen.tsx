@@ -1,5 +1,5 @@
 import { ArrowLeft, Bookmark, CheckCircle2, Heart, Play, RotateCcw, Star } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   fetchEpisodes,
@@ -16,6 +16,7 @@ import { ArtworkImage } from "../components/ArtworkImage";
 import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
+import { useBackKey } from "../focus/useBackKey";
 import {
   crewLine,
   episodeProgressRatio,
@@ -99,6 +100,11 @@ export function ItemDetailScreen({
   const [busyPlay, setBusyPlay] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleBack = useCallback(() => {
+    onBack();
+  }, [onBack]);
+  useBackKey(handleBack);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,9 +333,10 @@ export function ItemDetailScreen({
         )}
         <div className="detail-hero__shade" />
         <div className="detail-hero__content">
-          <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={onBack}>
-            Back
-          </FocusButton>
+          <button type="button" className="detail-back" onClick={handleBack} aria-label="Back">
+            <ArrowLeft size={22} aria-hidden="true" />
+            <span>Back</span>
+          </button>
           {loading ? <p className="muted">Loading…</p> : null}
           {detail ? (
             <div className="detail-hero__body">
