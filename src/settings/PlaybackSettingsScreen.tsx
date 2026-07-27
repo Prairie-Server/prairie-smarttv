@@ -1,7 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FocusButton } from "../components/FocusButton";
 import { detectPlatform } from "../platform/detect";
 import type { PlayerBackendPreference } from "../platform/types";
+import {
+  changelogUrlOrNull,
+  latestVersionLabel,
+  statusLabel,
+  type AppUpdateStatus,
+} from "../update/appUpdateStatus";
+import { checkAppUpdate } from "../update/checkAppUpdate";
 import {
   loadPlaybackSettings,
   savePlaybackSettings,
@@ -35,9 +42,23 @@ const OPACITY_STEPS = [0, 25, 50, 75, 100];
 
 export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSettingsScreenProps) {
   const [settings, setSettings] = useState<PlaybackSettings>(() => loadPlaybackSettings());
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ kind: "checking" });
+  const [changelogFallbackUrl, setChangelogFallbackUrl] = useState<string | null>(null);
   const platform = detectPlatform();
   const appearance = settings.subtitleAppearance;
   const previewVars = subtitleAppearanceCssVars(appearance);
+  const latestLabel = latestVersionLabel(updateStatus);
+  const changelogUrl = changelogUrlOrNull(updateStatus);
+
+  useEffect(() => {
+    let cancelled = false;
+    void checkAppUpdate({ currentVersionName: __APP_VERSION__ }).then((status) => {
+      if (!cancelled) setUpdateStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function update(partial: Partial<PlaybackSettings>) {
     setSettings((prev) => {
@@ -52,6 +73,13 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
     update({
       subtitleAppearance: { ...appearance, ...partial },
     });
+  }
+
+  function openChangelog(url: string) {
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      setChangelogFallbackUrl(url);
+    }
   }
 
   return (
@@ -262,6 +290,31 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
             <span className="toggle-hint">play_method: &quot;transcode&quot;</span>
           </span>
         </label>
+      </div>
+
+      <div className="settings-block">
+        <h2>About</h2>
+        <p className="muted settings-note">
+          Version: <strong>{__APP_VERSION__}</strong>
+        </p>
+        <p className="muted settings-note">
+          Update status: <strong>{statusLabel(updateStatus)}</strong>
+        </p>
+        {latestLabel ? (
+          <p className="muted settings-note">
+            Latest version: <strong>{latestLabel}</strong>
+          </p>
+        ) : null}
+        {changelogUrl ? (
+          <>
+            <FocusButton variant="ghost" onClick={() => openChangelog(changelogUrl)}>
+              Changelog
+            </FocusButton>
+            {changelogFallbackUrl ? (
+              <p className="muted settings-note">{changelogFallbackUrl}</p>
+            ) : null}
+          </>
+        ) : null}
       </div>
     </section>
   );

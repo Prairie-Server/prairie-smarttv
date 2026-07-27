@@ -47,6 +47,9 @@ interface TizenDownloadManager {
 }
 
 declare global {
+  /** Marketing semver injected from package.json via Vite `define`. */
+  const __APP_VERSION__: string;
+
   // Augment Vite's ImportMetaEnv (must stay inside declare global while this
   // file is a module via `export {}`).
   interface ImportMetaEnv {

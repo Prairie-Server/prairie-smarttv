@@ -1,9 +1,20 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+
+const rootDir = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8")) as {
+  version: string;
+};
 
 export default defineConfig({
   plugins: [react()],
   base: "./",
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   build: {
     outDir: "dist",
     sourcemap: true,
@@ -38,6 +49,7 @@ export default defineConfig({
         "src/platform/tizen/subtitleOverlay.ts",
         "src/platform/tizen/downloadSubtitle.ts",
         "src/platform/tizen/avplayTracks.ts",
+        "src/update/**/*.ts",
       ],
       exclude: ["src/**/*.test.ts"],
       thresholds: {
