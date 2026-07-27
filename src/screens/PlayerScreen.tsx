@@ -401,6 +401,16 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const title = launch.title?.trim() || watch?.title || `File ${launch.fileId}`;
+  const streamMimeType = useMemo(() => {
+    const streamType = (playback?.playback_info?.stream_type ?? "").toLowerCase();
+    if (streamType === "hls" || streamUrl?.includes(".m3u8")) {
+      return "application/vnd.apple.mpegurl";
+    }
+    if (streamType === "mp4" || streamUrl?.includes(".mp4")) {
+      return "video/mp4";
+    }
+    return undefined;
+  }, [playback?.playback_info?.stream_type, streamUrl]);
 
   return (
     <section className="screen player-screen">
@@ -410,6 +420,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           url={streamUrl}
           backend={backend}
           playing={playing}
+          mimeType={streamMimeType}
           subtitleAppearance={settings.subtitleAppearance}
           initialSubtitleUrl={streamSubtitleSeed.url}
           initialSubtitleLabel={streamSubtitleSeed.label}

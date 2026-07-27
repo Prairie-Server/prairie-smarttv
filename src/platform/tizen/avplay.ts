@@ -165,7 +165,10 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
    */
   const displayRectForContainer = () => {
     const rect = options.container.getBoundingClientRect();
-    const clientWidth = Math.max(1, window.document.documentElement.clientWidth || window.innerWidth);
+    const clientWidth = Math.max(
+      1,
+      window.document.documentElement.clientWidth || window.innerWidth,
+    );
     const ratio = 1920 / clientWidth;
     return {
       x: Math.max(0, Math.floor(rect.left * ratio)),

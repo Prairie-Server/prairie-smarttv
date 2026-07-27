@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildTranscodeStartRequest,
-  needsHlsBootstrap,
-  preparePlayableSession,
-} from "./transcode";
+import { buildTranscodeStartRequest, needsHlsBootstrap, preparePlayableSession } from "./transcode";
 import type { PlaybackSessionResponse } from "../player/types";
 import type { PrairieSession } from "../storage/session";
 
