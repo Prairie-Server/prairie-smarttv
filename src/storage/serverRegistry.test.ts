@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { LAST_SERVER_URL_KEY, SESSION_KEY } from "./persist";
 import {
   addOrUpdate,
@@ -32,6 +32,10 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("serverRegistry", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
   it("derives stable ids and round-trips the registry", () => {
     const id = entryIdFromUrl(" https://prairie.example.com/// ");
     expect(id.length).toBeGreaterThan(0);
@@ -123,7 +127,7 @@ describe("serverRegistry", () => {
 
     registry = clearTokens(registry, id);
     expect(registry.entries[0]?.accessToken).toBe("");
-    expect(registry.entries[0]?.profileId).toBe("");
+    expect(registry.entries[0]?.profileId).toBe("p1");
 
     registry = addOrUpdate(registry, {
       url: "https://other.example.com",

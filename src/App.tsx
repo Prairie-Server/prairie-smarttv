@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { CollectionCard } from "./api/collections";
+import { checkServer } from "./api/checkServer";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
 import type { Library } from "./api/libraries";
 import { setSessionUnauthorizedHandler } from "./api/sessionClient";
@@ -164,7 +165,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [route.name]);
 
-  function handleSelectSaved(entry: ServerEntry) {
+  async function handleSelectSaved(entry: ServerEntry): Promise<void> {
     let registry = loadRegistry();
     const idx = findIndex(registry, entry.id);
     if (idx < 0) return;
@@ -178,13 +179,27 @@ export function App() {
       setRoute({ name: "home" });
       return;
     }
-    openLogin(full.url, {
-      serverName: full.fetchedName,
+    const setupError =
+      "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.";
+    const probe = await checkServer(full.url);
+    if (!probe.ok) throw new Error(probe.message);
+    if (probe.needsSetup) throw new Error(setupError);
+
+    if (probe.serverName?.trim() && probe.serverName.trim() !== full.fetchedName.trim()) {
+      registry = addOrUpdate(registry, {
+        url: probe.serverUrl,
+        fetchedName: probe.serverName.trim(),
+      });
+      saveRegistry(registry);
+    }
+
+    openLogin(probe.serverUrl, {
+      serverName: probe.serverName?.trim() || full.fetchedName,
       initialUsername: full.username || undefined,
     });
   }
 
-  function handleSelectDiscovery(hit: DiscoveryHit) {
+  async function handleSelectDiscovery(hit: DiscoveryHit): Promise<void> {
     if (hit.serverName.trim()) {
       const registry = addOrUpdate(loadRegistry(), {
         url: hit.url,
@@ -192,7 +207,23 @@ export function App() {
       });
       saveRegistry(registry);
     }
-    openLogin(hit.url, { serverName: hit.serverName.trim() || undefined });
+    const setupError =
+      "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.";
+    const probe = await checkServer(hit.url);
+    if (!probe.ok) throw new Error(probe.message);
+    if (probe.needsSetup) throw new Error(setupError);
+
+    if (probe.serverName?.trim()) {
+      const registry = addOrUpdate(loadRegistry(), {
+        url: probe.serverUrl,
+        fetchedName: probe.serverName.trim(),
+      });
+      saveRegistry(registry);
+    }
+
+    openLogin(probe.serverUrl, {
+      serverName: probe.serverName?.trim() || hit.serverName.trim() || undefined,
+    });
   }
 
   if (route.name === "servers") {
@@ -212,7 +243,7 @@ export function App() {
       <ManualServerScreen
         initialUrl={route.initialUrl}
         onBack={() => goServers(false)}
-        onContinue={(serverUrl) => openLogin(serverUrl)}
+        onContinue={(serverUrl, options) => openLogin(serverUrl, options)}
       />
     );
   }

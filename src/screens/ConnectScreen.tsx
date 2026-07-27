@@ -6,8 +6,10 @@ import {
   startDeviceLogin,
   type DeviceLoginStartResponse,
 } from "../api/auth";
+import { networkFailureMessage } from "../api/checkServer";
 import { ApiError } from "../api/client";
 import { FocusButton } from "../components/FocusButton";
+import { validateServerUrl } from "../storage/serverUrl";
 import type { AuthTokens } from "../storage/session";
 
 interface ConnectScreenProps {
@@ -61,28 +63,31 @@ export function ConnectScreen({
       setQuickConnect({ status: "failed", message: "No server selected" });
       return;
     }
+    const validated = validateServerUrl(trimmedUrl);
+    if (!validated.ok) {
+      setQuickConnect({ status: "failed", message: validated.message });
+      return;
+    }
     pollCancelled.current = false;
     setQuickConnect({ status: "starting" });
     setError(null);
     try {
-      const setup = await fetchSetupStatus(trimmedUrl);
+      const setup = await fetchSetupStatus(validated.url);
       if (setup.needs_setup) {
         throw new Error(
           "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.",
         );
       }
-      const session = await startDeviceLogin(trimmedUrl, {
+      const session = await startDeviceLogin(validated.url, {
         device_name: "Prairie Smart TV",
         device_platform: devicePlatformLabel(),
       });
       setQuickConnect({ status: "waiting", session });
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Could not start Quick Connect";
+        err instanceof ApiError && err.code !== "timeout"
+          ? err.message || "Could not start Quick Connect"
+          : networkFailureMessage(err);
       setQuickConnect({ status: "failed", message });
     }
   }, [trimmedUrl]);
@@ -99,6 +104,8 @@ export function ConnectScreen({
       return;
     }
     const session = quickConnect.session;
+    const validated = validateServerUrl(trimmedUrl);
+    const pollUrl = validated.ok ? validated.url : trimmedUrl;
     let cancelled = false;
     let timer: number | undefined;
 
@@ -107,13 +114,13 @@ export function ConnectScreen({
         return;
       }
       try {
-        const result = await pollDeviceLogin(trimmedUrl, session.device_code);
+        const result = await pollDeviceLogin(pollUrl, session.device_code);
         if (cancelled || pollCancelled.current) {
           return;
         }
         if (result.status === "approved" && result.access_token && result.user) {
           completeAuth({
-            serverUrl: trimmedUrl,
+            serverUrl: pollUrl,
             accessToken: result.access_token,
             refreshToken: result.refresh_token,
             username: result.user.username,
@@ -139,17 +146,18 @@ export function ConnectScreen({
         if (cancelled || pollCancelled.current) {
           return;
         }
-        // Transient network errors: keep polling.
-        const waitMs = Math.max(2, session.interval || 3) * 1000;
-        timer = window.setTimeout(() => {
-          void poll();
-        }, waitMs);
         if (err instanceof ApiError && err.status === 404) {
           setQuickConnect({
             status: "failed",
             message: "Quick Connect code expired. Generate a new one.",
           });
+          return;
         }
+        // Transient network errors: keep polling.
+        const waitMs = Math.max(2, session.interval || 3) * 1000;
+        timer = window.setTimeout(() => {
+          void poll();
+        }, waitMs);
       }
     };
 
@@ -167,22 +175,12 @@ export function ConnectScreen({
     setError(null);
     setBusy(true);
     try {
-      if (!trimmedUrl) {
-        throw new Error("No server selected");
-      }
-      let parsed: URL;
-      try {
-        parsed = new URL(trimmedUrl);
-      } catch {
-        throw new Error("Server URL must be a valid http(s) address");
-      }
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new Error("Server URL must use http or https");
-      }
-      if (parsed.username || parsed.password) {
-        throw new Error("Server URL must not include credentials");
-      }
-      const setup = await fetchSetupStatus(trimmedUrl);
+      if (!trimmedUrl) throw new Error("No server selected");
+
+      const validated = validateServerUrl(trimmedUrl);
+      if (!validated.ok) throw new Error(validated.message);
+
+      const setup = await fetchSetupStatus(validated.url);
       if (setup.needs_setup) {
         // Do not echo the server URL here — the connect field already shows it,
         // and repeating it in an action prompt aids phishing of mistyped hosts.
@@ -190,20 +188,20 @@ export function ConnectScreen({
           "This server has not been set up yet. Open its web UI in a browser on another device to create the first account, then return here to sign in.",
         );
       }
-      const auth = await login(trimmedUrl, { username: username.trim(), password });
+      const auth = await login(validated.url, { username: username.trim(), password });
       completeAuth({
-        serverUrl: trimmedUrl,
+        serverUrl: validated.url,
         accessToken: auth.access_token,
         refreshToken: auth.refresh_token,
         username: auth.user.username,
       });
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else if (err instanceof Error) {
-        setError(err.message);
+      // Prefer ApiError bodies for auth/setup HTTP failures; remap transport
+      // errors ("Failed to fetch") so wrong http/https is actionable on TV.
+      if (err instanceof ApiError && err.code !== "timeout") {
+        setError(err.message || "Could not connect");
       } else {
-        setError("Could not connect");
+        setError(networkFailureMessage(err));
       }
     } finally {
       setBusy(false);
