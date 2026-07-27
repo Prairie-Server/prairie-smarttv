@@ -1,8 +1,5 @@
 import { useState, type FormEvent } from "react";
-import {
-  buildManualUrlCandidates,
-  checkServerCandidates,
-} from "../api/checkServer";
+import { buildManualUrlCandidates, checkServerCandidates } from "../api/checkServer";
 import { FocusButton } from "../components/FocusButton";
 
 export interface ManualServerScreenProps {

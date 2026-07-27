@@ -206,9 +206,7 @@ export function ServerListScreen({
                   }`}
                   autoFocus={index === 0}
                   onFocus={() => setFocusedId(entry.id)}
-                  onClick={() =>
-                    void runSelect(displayName(entry), () => onSelectSaved(entry))
-                  }
+                  onClick={() => void runSelect(displayName(entry), () => onSelectSaved(entry))}
                   disabled={controlsLocked}
                 >
                   <span className="server-card__name">{displayName(entry)}</span>

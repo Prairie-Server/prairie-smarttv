@@ -186,7 +186,10 @@ export function App() {
     if (probe.needsSetup) throw new Error(setupError);
 
     if (probe.serverName?.trim() && probe.serverName.trim() !== full.fetchedName.trim()) {
-      registry = addOrUpdate(registry, { url: probe.serverUrl, fetchedName: probe.serverName.trim() });
+      registry = addOrUpdate(registry, {
+        url: probe.serverUrl,
+        fetchedName: probe.serverName.trim(),
+      });
       saveRegistry(registry);
     }
 
@@ -218,7 +221,9 @@ export function App() {
       saveRegistry(registry);
     }
 
-    openLogin(probe.serverUrl, { serverName: probe.serverName?.trim() || hit.serverName.trim() || undefined });
+    openLogin(probe.serverUrl, {
+      serverName: probe.serverName?.trim() || hit.serverName.trim() || undefined,
+    });
   }
 
   if (route.name === "servers") {
