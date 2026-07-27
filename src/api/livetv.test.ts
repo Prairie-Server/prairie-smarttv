@@ -50,7 +50,7 @@ describe("playableLiveUrl", () => {
     ).toBe("/hls.m3u8");
   });
 
-  it("returns mpegts proxy path when transport=mpegts", () => {
+  it("returns mpegts proxy path when transport=mpegts and no HLS is available", () => {
     expect(
       playableLiveUrl({
         session_id: "s",
@@ -58,6 +58,17 @@ describe("playableLiveUrl", () => {
         transport: "mpegts",
       }),
     ).toBe("/api/v1/livetv/sessions/s1/stream");
+  });
+
+  it("prefers HLS over mpegts transport when hls_url is present", () => {
+    expect(
+      playableLiveUrl({
+        session_id: "s",
+        hls_url: "/api/v1/livetv/live-hls/ticket/index.m3u8",
+        stream_url: "/api/v1/livetv/sessions/s1/stream",
+        transport: "mpegts",
+      }),
+    ).toBe("/api/v1/livetv/live-hls/ticket/index.m3u8");
   });
 
   it("prefers HLS-looking URLs when transport is omitted", () => {
@@ -84,7 +95,7 @@ describe("playableLiveUrl", () => {
 });
 
 describe("isWatchableHls", () => {
-  it("is false for mpegts transport even when a URL is present", () => {
+  it("is false for mpegts-only streams", () => {
     expect(
       isWatchableHls({
         session_id: "s",
@@ -92,6 +103,17 @@ describe("isWatchableHls", () => {
         transport: "mpegts",
       }),
     ).toBe(false);
+  });
+
+  it("is true when mpegts transport includes an HLS remux URL", () => {
+    expect(
+      isWatchableHls({
+        session_id: "s",
+        hls_url: "/api/v1/livetv/live-hls/ticket/index.m3u8",
+        stream_url: "/api/v1/livetv/sessions/s1/stream",
+        transport: "mpegts",
+      }),
+    ).toBe(true);
   });
 
   it("is true for hls transport with a URL", () => {
@@ -131,6 +153,9 @@ describe("resolveLivePlaybackUrl", () => {
     expect(resolveLivePlaybackUrl("https://prairie.example", "/live.m3u8", "tok")).toBe(
       "https://prairie.example/live.m3u8?token=tok",
     );
+    expect(
+      resolveLivePlaybackUrl("https://prairie.example", "/live.m3u8", "tok", "profile-1"),
+    ).toBe("https://prairie.example/live.m3u8?token=tok&profile_id=profile-1");
   });
 
   it("allows same-origin absolute URLs", () => {
@@ -139,8 +164,9 @@ describe("resolveLivePlaybackUrl", () => {
         "https://prairie.example",
         "https://prairie.example/api/v1/livetv/proxy.m3u8",
         "tok",
+        "profile-1",
       ),
-    ).toBe("https://prairie.example/api/v1/livetv/proxy.m3u8?token=tok");
+    ).toBe("https://prairie.example/api/v1/livetv/proxy.m3u8?token=tok&profile_id=profile-1");
   });
 
   it("rejects cross-origin absolute tuner URLs", () => {

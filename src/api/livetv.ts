@@ -65,7 +65,6 @@ function looksLikeHlsUrl(url: string): boolean {
 
 /** True when the session exposes an HLS stream Smart TV can play. */
 export function isWatchableHls(start: LiveTvSessionStart): boolean {
-  if (start.transport === "mpegts") return false;
   const url = playableLiveUrl(start);
   if (!url) return false;
   return start.transport === "hls" || looksLikeHlsUrl(url);
@@ -79,13 +78,13 @@ export function playableLiveUrl(start: LiveTvSessionStart): string | null {
   if (start.transport === "hls") {
     return hls || stream || null;
   }
-  if (start.transport === "mpegts") {
-    return stream || hls || null;
-  }
 
   if (hls && looksLikeHlsUrl(hls)) return hls;
   if (stream && looksLikeHlsUrl(stream)) return stream;
   if (hls) return hls;
+  if (start.transport === "mpegts") {
+    return stream || null;
+  }
   return stream || null;
 }
 
@@ -98,6 +97,7 @@ export function resolveLivePlaybackUrl(
   serverUrl: string,
   streamPath: string,
   token: string | null,
+  profileId?: string | null,
 ): string {
   const trimmed = streamPath.trim();
   if (!trimmed) {
@@ -107,7 +107,7 @@ export function resolveLivePlaybackUrl(
   if (isAbsoluteHttp && !isSameServerOrigin(serverUrl, trimmed)) {
     throw new Error("Live TV requires a server-proxied stream");
   }
-  return buildStreamUrl(serverUrl, trimmed, token);
+  return buildStreamUrl(serverUrl, trimmed, token, profileId);
 }
 
 export async function fetchLiveTvChannels(

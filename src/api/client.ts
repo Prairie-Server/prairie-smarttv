@@ -174,16 +174,20 @@ export function buildStreamUrl(
   serverUrl: string,
   streamPath: string,
   token: string | null,
+  profileId?: string | null,
 ): string {
   const base =
     streamPath.startsWith("http://") || streamPath.startsWith("https://")
       ? streamPath
       : joinUrl(serverUrl, streamPath);
 
-  if (!token || !isSameServerOrigin(serverUrl, base)) return base;
+  if (!isSameServerOrigin(serverUrl, base)) return base;
 
   const params = new URLSearchParams();
-  params.set("token", token);
+  if (token) params.set("token", token);
+  if (profileId) params.set("profile_id", profileId);
+  if ([...params.keys()].length === 0) return base;
+
   const separator = base.includes("?") ? "&" : "?";
   return `${base}${separator}${params.toString()}`;
 }

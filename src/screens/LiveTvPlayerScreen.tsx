@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   channelDisplayLabel,
-  isWatchableHls,
   playableLiveUrl,
   releaseLiveTvSession,
   resolveLivePlaybackUrl,
@@ -56,14 +55,16 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
           return;
         }
         liveSessionId.current = started.session_id;
-        if (!isWatchableHls(started)) {
-          throw new Error(
-            "This Live TV stream uses MPEG-TS, which Smart TV cannot play. Enable HLS remux on the Prairie server.",
-          );
-        }
         const raw = playableLiveUrl(started);
         if (!raw) throw new Error("Live TV session returned no stream URL");
-        setStreamUrl(resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken));
+        setStreamUrl(
+          resolveLivePlaybackUrl(
+            session.serverUrl,
+            raw,
+            session.accessToken,
+            session.profileId,
+          ),
+        );
         setNote(started.note ?? null);
         setPlaying(true);
       } catch (err) {
