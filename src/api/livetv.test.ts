@@ -36,6 +36,7 @@ describe("playableLiveUrl", () => {
   it("prefers hls_url then stream_url", () => {
     expect(playableLiveUrl({ session_id: "s", hls_url: "/hls" })).toBe("/hls");
     expect(playableLiveUrl({ session_id: "s", stream_url: "/raw" })).toBe("/raw");
+    expect(playableLiveUrl({ session_id: "s", hls_url: "   ", stream_url: "  " })).toBeNull();
     expect(playableLiveUrl({ session_id: "s" })).toBeNull();
   });
 });
@@ -58,6 +59,9 @@ describe("resolveLivePlaybackUrl", () => {
   });
 
   it("rejects cross-origin absolute tuner URLs", () => {
+    expect(() => resolveLivePlaybackUrl("https://prairie.example", "   ", "tok")).toThrow(
+      "Live TV session returned no stream URL",
+    );
     expect(() =>
       resolveLivePlaybackUrl("https://prairie.example", "http://tuner.local:5004/auto/v4.1", "tok"),
     ).toThrow("Live TV requires a server-proxied stream");
@@ -144,12 +148,15 @@ describe("Live TV API", () => {
 
     const missing = vi.fn(async () => new Response("nope", { status: 404 }));
     await expect(fetchLiveTvChannels(session, missing)).resolves.toEqual([]);
+
+    const boom = vi.fn(async () => new Response("nope", { status: 500 }));
+    await expect(fetchLiveTvChannels(session, boom)).rejects.toThrow();
   });
 
   it("loads guide, starts, and releases sessions", async () => {
     const guideFetch = vi.fn(async (url: RequestInfo | URL) => {
       expect(String(url)).toContain("/api/v1/livetv/guide?channels=ch-1");
-      return new Response(JSON.stringify({ programs: [] }), { status: 200 });
+      return new Response(JSON.stringify({}), { status: 200 });
     });
     await expect(fetchLiveTvGuide(session, ["ch-1"], guideFetch)).resolves.toEqual([]);
     await expect(fetchLiveTvGuide(session, [])).resolves.toEqual([]);

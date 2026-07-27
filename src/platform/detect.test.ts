@@ -42,6 +42,12 @@ describe("detectPlatform", () => {
     vi.stubGlobal("navigator", { userAgent: "Chrome" });
     expect(detectPlatform()).toBe("browser");
   });
+
+  it("falls back to browser when window is unavailable", () => {
+    vi.stubGlobal("window", undefined);
+    vi.stubGlobal("navigator", { userAgent: "SMART-TV; Tizen; Samsung TV" });
+    expect(detectPlatform()).toBe("browser");
+  });
 });
 
 describe("isTvPlatform", () => {
@@ -49,5 +55,14 @@ describe("isTvPlatform", () => {
     expect(isTvPlatform("tizen")).toBe(true);
     expect(isTvPlatform("webos")).toBe(true);
     expect(isTvPlatform("browser")).toBe(false);
+  });
+
+  it("uses detected platform by default", () => {
+    vi.stubGlobal("window", {
+      webapis: { avplay: {} },
+      navigator: { userAgent: "Mozilla" },
+    });
+    vi.stubGlobal("navigator", { userAgent: "Mozilla" });
+    expect(isTvPlatform()).toBe(true);
   });
 });

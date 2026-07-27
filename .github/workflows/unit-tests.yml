@@ -43,7 +43,7 @@ jobs:
         run: |
           npm run typecheck
           npm run build
-          # Vitest thresholds: 90% stmts/branches/funcs/lines on logic modules
+          # Vitest thresholds: 95% stmts/branches/funcs/lines on logic modules
           # (src/api/**, src/storage/**, playback settings, player selection,
           # platform detect). See vite.config.ts coverage.include.
           npm run test:coverage

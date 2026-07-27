@@ -75,4 +75,30 @@ describe("runLanDiscovery", () => {
     expect(hits).toEqual([]);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("ignores failed and unhealthy probes without reporting hits", async () => {
+    const onHit = vi.fn();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("192.168.1.1:8080")) {
+        throw new Error("network down");
+      }
+      return new Response(JSON.stringify({ status: "down" }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const hits = await runLanDiscovery({
+      extraCidrs: ["192.168.1.0/24"],
+      deepScan: false,
+      maxHostsPerCidr: 1,
+      concurrency: 1,
+      timeoutMs: 50,
+      localIps: [],
+      fetchImpl,
+      onHit,
+    });
+
+    expect(hits).toEqual([]);
+    expect(onHit).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalled();
+  });
 });
