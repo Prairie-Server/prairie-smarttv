@@ -17,7 +17,8 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Sourcemaps stay out of the TV package; it is read from flash on launch.
+    sourcemap: false,
     target: "es2019",
     cssCodeSplit: false,
   },

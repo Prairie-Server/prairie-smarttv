@@ -1,9 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource/sora/400.css";
-import "@fontsource/sora/600.css";
-import "@fontsource/fraunces/600.css";
-import "@fontsource/fraunces/700.css";
+import "@fontsource/sora/latin-400.css";
+import "@fontsource/sora/latin-600.css";
+import "@fontsource/fraunces/latin-600.css";
+import "@fontsource/fraunces/latin-700.css";
 import "./styles.css";
 import { App } from "./App";
 import { detectImageFormats } from "./lib/imageFormats";
