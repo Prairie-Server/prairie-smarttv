@@ -63,16 +63,18 @@ async function probeFormats(): Promise<RasterFormat[]> {
   return out;
 }
 
+import { preferredRasterFormatsForTier, resolvePerformanceTier } from "../perf/performanceTier";
+
 export function getImageFormats(): RasterFormat[] {
-  if (cached) return cached;
+  if (cached) return preferredRasterFormatsForTier(resolvePerformanceTier(), cached);
   if (typeof localStorage !== "undefined") {
     const stored = parseStored(localStorage.getItem(STORAGE_KEY));
     if (stored) {
       cached = stored;
-      return stored;
+      return preferredRasterFormatsForTier(resolvePerformanceTier(), stored);
     }
   }
-  return DEFAULT_FORMATS;
+  return preferredRasterFormatsForTier(resolvePerformanceTier(), DEFAULT_FORMATS);
 }
 
 export async function detectImageFormats(): Promise<RasterFormat[]> {

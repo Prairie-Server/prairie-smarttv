@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
+import { PosterGrid } from "../components/PosterGrid";
 import { useBackKey } from "../focus/useBackKey";
 import { catalogItemSubtitle, LIBRARY_SORT_OPTIONS } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
@@ -156,7 +157,7 @@ export function LibraryBrowseScreen({
         <p className="muted">No titles in this library yet.</p>
       ) : null}
 
-      <div className="poster-grid">
+      <PosterGrid>
         {loading
           ? Array.from({ length: 12 }).map((_, index) => (
               <PosterCard
@@ -197,7 +198,7 @@ export function LibraryBrowseScreen({
               />
             ))
           : null}
-      </div>
+      </PosterGrid>
       {hasMore && !loading ? (
         <div className="row-actions">
           <FocusButton

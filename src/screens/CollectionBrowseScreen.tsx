@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
+import { PosterGrid } from "../components/PosterGrid";
 import { useBackKey } from "../focus/useBackKey";
 import { catalogItemSubtitle } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
@@ -111,7 +112,7 @@ export function CollectionBrowseScreen({
       {!loading && !error && items.length === 0 ? (
         <p className="muted">This collection is empty.</p>
       ) : null}
-      <div className="poster-grid">
+      <PosterGrid>
         {loading
           ? Array.from({ length: 12 }).map((_, index) => (
               <PosterCard
@@ -152,7 +153,7 @@ export function CollectionBrowseScreen({
               />
             ))
           : null}
-      </div>
+      </PosterGrid>
       {hasMore && !loading ? (
         <div className="row-actions">
           <FocusButton

@@ -2,10 +2,9 @@
  * Durable key/value mirror for packaged TV apps.
  *
  * Tizen/webOS WebView localStorage is wiped on many sideload reinstalls.
- * Moonfin webOS uses Luna DB8; on Tizen they still use localStorage — store
- * updates keep the same package id so data survives. Prairie mirrors preserved
- * keys into the Tizen documents folder (when available) so a localStorage wipe
- * can be restored on the next boot without changing package id (`PrairieApp`).
+ * Prairie mirrors preserved keys into the Tizen documents folder (when available)
+ * so a localStorage wipe can be restored on the next boot without changing
+ * package id (`PrairieApp`).
  */
 
 import {
@@ -15,6 +14,7 @@ import {
   SESSION_KEY,
   STORAGE_SCHEMA_KEY,
 } from "./persist";
+import { PERFORMANCE_MODE_KEY } from "../perf/performanceTier";
 
 const MIRROR_KEYS = [
   SESSION_KEY,
@@ -22,6 +22,7 @@ const MIRROR_KEYS = [
   SERVER_REGISTRY_KEY,
   PLAYBACK_SETTINGS_KEY,
   STORAGE_SCHEMA_KEY,
+  PERFORMANCE_MODE_KEY,
   "prairie.session.accessToken",
   "prairie.session.profileToken",
 ] as const;

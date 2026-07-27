@@ -102,31 +102,35 @@ export function CollectionsScreen({ session, onOpenCollection }: CollectionsScre
         <p className="muted">No collections yet.</p>
       ) : null}
       {libraryCollections.length > 0 ? (
-        <MediaRow title="Library collections">
-          {libraryCollections.map((card, index) => (
+        <MediaRow
+          title="Library collections"
+          items={libraryCollections}
+          getItemKey={(card) => `lib-${card.library_id}-${card.id}`}
+          renderItem={(card, index) => (
             <PosterCard
-              key={`lib-${card.library_id}-${card.id}`}
               title={card.title ?? card.name ?? "Collection"}
               subtitle={card.item_count != null ? `${card.item_count} titles` : null}
               posterUrl={card.poster_url}
               autoFocus={index === 0}
               onSelect={() => onOpenCollection(card)}
             />
-          ))}
-        </MediaRow>
+          )}
+        />
       ) : null}
       {personal.length > 0 ? (
-        <MediaRow title="Your collections">
-          {personal.map((card) => (
+        <MediaRow
+          title="Your collections"
+          items={personal}
+          getItemKey={(card) => `user-${card.id}`}
+          renderItem={(card) => (
             <PosterCard
-              key={`user-${card.id}`}
               title={card.title ?? card.name ?? "Collection"}
               subtitle={card.item_count != null ? `${card.item_count} titles` : null}
               posterUrl={card.poster_url}
               onSelect={() => onOpenCollection(card)}
             />
-          ))}
-        </MediaRow>
+          )}
+        />
       ) : null}
     </section>
   );

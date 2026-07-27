@@ -102,8 +102,13 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
         ? rows.map((section, sectionIndex) => {
             const landscape = usesLandscapeCards(section.section_type, section.items);
             return (
-              <MediaRow key={section.id || section.title} title={section.title}>
-                {section.items.map((item, itemIndex) => {
+              <MediaRow
+                key={section.id || section.title}
+                title={section.title}
+                variant={landscape ? "landscape" : "poster"}
+                items={section.items}
+                getItemKey={(item, itemIndex) => `${section.id}-${item.content_id}-${itemIndex}`}
+                renderItem={(item, itemIndex) => {
                   const progress = catalogItemProgress(item);
                   const autoFocus = !featured && sectionIndex === 0 && itemIndex === 0;
                   if (landscape) {
@@ -113,7 +118,6 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
                         : null;
                     return (
                       <LandscapeCard
-                        key={`${section.id}-${item.content_id}-${itemIndex}`}
                         title={item.title}
                         subtitle={
                           item.series_title
@@ -136,7 +140,6 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
                   }
                   return (
                     <PosterCard
-                      key={`${section.id}-${item.content_id}-${itemIndex}`}
                       title={item.title}
                       subtitle={catalogItemSubtitle(item)}
                       posterUrl={item.poster_url}
@@ -148,8 +151,8 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
                       onSelect={() => onOpenItem(item.content_id)}
                     />
                   );
-                })}
-              </MediaRow>
+                }}
+              />
             );
           })
         : null}
