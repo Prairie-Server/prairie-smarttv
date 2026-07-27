@@ -4,6 +4,14 @@ export function isArrowKey(key: string): key is ArrowKey {
   return key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight";
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement) return true;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLSelectElement) return true;
+  return target.isContentEditable;
+}
+
 export function listFocusables(root: ParentNode = document): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>(
@@ -94,6 +102,9 @@ export function findSpatialNeighbor(
 /** Handle an arrow keydown with spatial focus. Returns true when focus moved. */
 export function handleSpatialArrowKey(event: KeyboardEvent): boolean {
   if (!isArrowKey(event.key)) return false;
+  if (event.defaultPrevented) return false;
+  if (event.altKey || event.ctrlKey || event.metaKey) return false;
+  if (isEditableTarget(event.target)) return false;
   const focusables = listFocusables();
   if (focusables.length < 2) return false;
   const active = document.activeElement as HTMLElement | null;

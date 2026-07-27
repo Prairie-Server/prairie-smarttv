@@ -66,7 +66,26 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
         <h1 className="browse-title">Home</h1>
         <p className="muted">Continue watching and fresh arrivals from your Prairie libraries.</p>
       </div>
-      {loading ? <p className="muted">Loading…</p> : null}
+      {loading ? (
+        <>
+          {Array.from({ length: 2 }).map((_, rowIndex) => (
+            <MediaRow key={`home-skel-${rowIndex}`} title="">
+              {Array.from({ length: 8 }).map((__, cardIndex) => (
+                <PosterCard
+                  key={`home-skel-${rowIndex}-${cardIndex}`}
+                  title=""
+                  subtitle={null}
+                  posterUrl={null}
+                  disabled
+                  onSelect={() => {
+                    // Disabled skeleton; no-op.
+                  }}
+                />
+              ))}
+            </MediaRow>
+          ))}
+        </>
+      ) : null}
       {error ? (
         <p className="form-error" role="alert">
           {error}
@@ -84,6 +103,7 @@ export function HomeBrowseScreen({ session, onOpenItem }: HomeBrowseScreenProps)
               subtitle={itemSubtitle(item)}
               posterUrl={item.poster_url}
               progress={itemProgress(item)}
+              imageLoading={sectionIndex === 0 && itemIndex < 6 ? "eager" : "lazy"}
               autoFocus={sectionIndex === 0 && itemIndex === 0}
               onSelect={() => onOpenItem(item.content_id)}
             />

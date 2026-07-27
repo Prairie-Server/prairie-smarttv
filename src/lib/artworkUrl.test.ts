@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { artworkCandidates, webPAVIFSibling, webPPNGSibling } from "./artworkUrl";
+import { resetImageFormatsCacheForTests } from "./imageFormats";
 
 describe("webPAVIFSibling", () => {
   it("rewrites WebP object keys to AVIF siblings", () => {
@@ -38,10 +39,15 @@ describe("webPPNGSibling", () => {
 });
 
 describe("artworkCandidates", () => {
-  it("orders AVIF → WebP → PNG for WebP artwork", () => {
+  beforeEach(() => {
+    resetImageFormatsCacheForTests();
+    localStorage.setItem("prairie.imageFormats", "webp,avif,png");
+  });
+
+  it("orders WebP → AVIF → PNG for WebP artwork", () => {
     expect(artworkCandidates("/art/original.rev.webp")).toEqual([
-      "/art/original.rev.avif",
       "/art/original.rev.webp",
+      "/art/original.rev.avif",
       "/art/original.rev.png",
     ]);
   });

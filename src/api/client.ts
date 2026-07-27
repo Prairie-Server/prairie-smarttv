@@ -1,3 +1,5 @@
+import { imageFormatsHeaderValue } from "../lib/imageFormats";
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -80,6 +82,7 @@ export async function apiRequest<T>(
   }
   headers.set("X-Prairie-Device-Platform", "smarttv");
   headers.set("X-Prairie-Device-Name", "Prairie Smart TV");
+  headers.set("X-Prairie-Image-Formats", imageFormatsHeaderValue());
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();

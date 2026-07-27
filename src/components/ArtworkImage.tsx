@@ -1,4 +1,4 @@
-import { useState, type ImgHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type ImgHTMLAttributes } from "react";
 import { artworkCandidates } from "../lib/artworkUrl";
 
 export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
@@ -12,18 +12,24 @@ export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
  * missing siblings).
  */
 export function ArtworkImage({ src, alt, onError, onLoad, ...rest }: ArtworkImageProps) {
-  const candidates = artworkCandidates(src);
+  const normalizedSrc = src?.trim();
+  const candidates = artworkCandidates(normalizedSrc);
   const [failedCount, setFailedCount] = useState(0);
+  const prevNormalizedSrc = useRef<string | undefined>(undefined);
+  const isSrcChange = prevNormalizedSrc.current !== normalizedSrc;
 
-  const [prevSrc, setPrevSrc] = useState(src);
-  if (src !== prevSrc) {
-    setPrevSrc(src);
+  // Update ref during render (safe, doesn't trigger rerenders).
+  if (isSrcChange) prevNormalizedSrc.current = normalizedSrc;
+
+  useEffect(() => {
+    // Reset the fallback chain when the canonical artwork URL changes.
     setFailedCount(0);
-  }
+  }, [normalizedSrc]);
 
-  if (!src || candidates.length === 0) return null;
+  if (!normalizedSrc || candidates.length === 0) return null;
 
-  const index = Math.min(failedCount, candidates.length - 1);
+  const effectiveFailedCount = isSrcChange ? 0 : failedCount;
+  const index = Math.min(effectiveFailedCount, candidates.length - 1);
   const current = candidates[index]!;
 
   return (

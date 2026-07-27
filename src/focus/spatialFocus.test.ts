@@ -74,6 +74,22 @@ describe("spatialFocus", () => {
     expect(handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowUp" }))).toBe(false);
   });
 
+  it("does not run spatial navigation while typing in an input", () => {
+    const input = document.createElement("input");
+    const button = document.createElement("button");
+    document.body.append(input, button);
+    place(input, 0, 0, 200, 48);
+    place(button, 220, 0, 120, 48);
+    input.focus();
+
+    const event = new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true });
+    Object.defineProperty(event, "target", { configurable: true, value: input });
+
+    expect(handleSpatialArrowKey(event)).toBe(false);
+    expect(document.activeElement).toBe(input);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("returns early when fewer than two focusables or no neighbor", () => {
     const alone = document.createElement("button");
     document.body.append(alone);

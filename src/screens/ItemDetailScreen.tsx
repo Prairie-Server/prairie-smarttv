@@ -112,16 +112,15 @@ export function ItemDetailScreen({ session, contentId, onBack, onPlay }: ItemDet
   }
 
   const isSeries = detail?.type === "series" || detail?.type === "show" || detail?.type === "tv";
+  const heroBackdropUrl = detail?.backdrop_url?.trim();
+  const heroPosterUrl = detail?.poster_url?.trim();
+  const heroSrc = heroBackdropUrl || heroPosterUrl;
 
   return (
     <section className="screen detail-screen">
       <div className="detail-hero">
-        {detail?.backdrop_url || detail?.poster_url ? (
-          <ArtworkImage
-            className="detail-hero__art"
-            src={detail.backdrop_url || detail.poster_url || ""}
-            alt=""
-          />
+        {heroSrc ? (
+          <ArtworkImage className="detail-hero__art" src={heroSrc} alt="" />
         ) : (
           <div className="detail-hero__art detail-hero__art--empty" />
         )}

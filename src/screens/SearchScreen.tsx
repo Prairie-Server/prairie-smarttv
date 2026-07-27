@@ -78,7 +78,6 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
         </label>
         <FocusButton type="submit">Search</FocusButton>
       </form>
-      {loading ? <p className="muted">Searching…</p> : null}
       {error ? (
         <p className="form-error" role="alert">
           {error}
@@ -88,15 +87,29 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
         <p className="muted">No matches for “{submitted}”.</p>
       ) : null}
       <div className="poster-grid">
-        {visibleItems.map((item, index) => (
-          <PosterCard
-            key={`${item.content_id}-${index}`}
-            title={item.title}
-            subtitle={item.year ? String(item.year) : item.type}
-            posterUrl={item.poster_url}
-            onSelect={() => onOpenItem(item.content_id)}
-          />
-        ))}
+        {loading && submitted.trim()
+          ? Array.from({ length: 12 }).map((_, index) => (
+              <PosterCard
+                key={`search-skel-${index}`}
+                title=""
+                subtitle={null}
+                posterUrl={null}
+                disabled
+                onSelect={() => {
+                  // Disabled skeleton; no-op.
+                }}
+              />
+            ))
+          : visibleItems.map((item, index) => (
+              <PosterCard
+                key={`${item.content_id}-${index}`}
+                title={item.title}
+                subtitle={item.year ? String(item.year) : item.type}
+                posterUrl={item.poster_url}
+                imageLoading={index < 12 ? "eager" : "lazy"}
+                onSelect={() => onOpenItem(item.content_id)}
+              />
+            ))}
       </div>
     </section>
   );

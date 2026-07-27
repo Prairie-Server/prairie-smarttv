@@ -90,18 +90,31 @@ export function LibraryBrowseScreen({
         </p>
       ) : null}
       <div className="poster-grid">
-        {items.map((item, index) => (
-          <PosterCard
-            key={`${item.content_id}-${index}`}
-            title={item.title}
-            subtitle={item.year ? String(item.year) : item.type}
-            posterUrl={item.poster_url}
-            autoFocus={index === 0}
-            onSelect={() => onOpenItem(item.content_id)}
-          />
-        ))}
+        {loading
+          ? Array.from({ length: 12 }).map((_, index) => (
+              <PosterCard
+                key={`lib-skel-${index}`}
+                title=""
+                subtitle={null}
+                posterUrl={null}
+                disabled
+                onSelect={() => {
+                  // Disabled skeleton; no-op.
+                }}
+              />
+            ))
+          : items.map((item, index) => (
+              <PosterCard
+                key={`${item.content_id}-${index}`}
+                title={item.title}
+                subtitle={item.year ? String(item.year) : item.type}
+                posterUrl={item.poster_url}
+                imageLoading={index < 12 ? "eager" : "lazy"}
+                autoFocus={index === 0}
+                onSelect={() => onOpenItem(item.content_id)}
+              />
+            ))}
       </div>
-      {loading ? <p className="muted">Loading…</p> : null}
       {hasMore && !loading ? (
         <div className="row-actions">
           <FocusButton onClick={() => void loadMore()}>Load more</FocusButton>
