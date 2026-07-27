@@ -97,15 +97,19 @@ function isInDirection(
   key: ArrowKey,
   fromRect: DOMRect,
   toRect: DOMRect,
+  options?: { looseHorizontal?: boolean },
 ): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   switch (key) {
     case "ArrowLeft":
     case "ArrowRight": {
-      // Keep left/right on the same row so full-width inputs above a button row
-      // (e.g. password) don't steal focus when moving between action buttons.
-      const rowSlop = Math.max(fromRect.height, toRect.height, 40) * 0.75;
+      // Strict: keep left/right on the same row so full-width inputs above a
+      // button row don't steal focus. Loose: allow cross-column targets
+      // (e.g. Connect Sign in → Show QR).
+      const rowSlop = options?.looseHorizontal
+        ? Math.max(fromRect.height, toRect.height, 40) * 4.5
+        : Math.max(fromRect.height, toRect.height, 40) * 0.75;
       if (Math.abs(dy) > rowSlop) return false;
       return key === "ArrowLeft" ? dx < -2 : dx > 2;
     }
@@ -124,6 +128,32 @@ function scoreCandidate(from: Point, to: Point, key: ArrowKey): number {
   return primary * 1000 + secondary;
 }
 
+function pickNeighbor(
+  active: HTMLElement,
+  key: ArrowKey,
+  candidates: HTMLElement[],
+  looseHorizontal: boolean,
+): HTMLElement | null {
+  const fromRect = active.getBoundingClientRect();
+  const from = center(fromRect);
+  let best: HTMLElement | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    if (candidate === active) continue;
+    const toRect = candidate.getBoundingClientRect();
+    const to = center(toRect);
+    if (!isInDirection(from, to, key, fromRect, toRect, { looseHorizontal })) continue;
+    const score = scoreCandidate(from, to, key);
+    if (score < bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
 /**
  * Pick the nearest focusable in the arrow direction using geometry, not DOM order.
  * Falls back to null when nothing lies in that direction.
@@ -138,29 +168,25 @@ export function findSpatialNeighbor(
     return candidates[0] ?? null;
   }
 
-  const fromRect = active.getBoundingClientRect();
-  const from = center(fromRect);
-  let best: HTMLElement | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (const candidate of candidates) {
-    if (candidate === active) continue;
-    const toRect = candidate.getBoundingClientRect();
-    const to = center(toRect);
-    if (!isInDirection(from, to, key, fromRect, toRect)) continue;
-    const score = scoreCandidate(from, to, key);
-    if (score < bestScore) {
-      bestScore = score;
-      best = candidate;
-    }
+  const strict = pickNeighbor(active, key, candidates, false);
+  if (strict) return strict;
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    return pickNeighbor(active, key, candidates, true);
   }
-
-  return best;
+  return null;
 }
 
 function focusWithoutPageJump(el: HTMLElement): void {
   el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const rect = el.getBoundingClientRect();
+  const fullyVisible =
+    rect.top >= 0 &&
+    rect.left >= 0 &&
+    rect.bottom <= window.innerHeight &&
+    rect.right <= window.innerWidth;
+  if (!fullyVisible) {
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 
 /** Handle an arrow keydown with spatial focus. Returns true when focus moved. */

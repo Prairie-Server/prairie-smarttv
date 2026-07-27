@@ -1,5 +1,6 @@
 import type { ForcedPlayMethod, PlayerBackendPreference, PlayMethod } from "../platform/types";
 import { PLAYBACK_SETTINGS_KEY } from "../storage/persist";
+import { scheduleDurablePersist } from "../storage/durableStorage";
 import {
   DEFAULT_SUBTITLE_APPEARANCE,
   normalizeSubtitleAppearance,
@@ -83,6 +84,7 @@ export function savePlaybackSettings(
 ): PlaybackSettings {
   const normalized = normalizePlaybackSettings(settings);
   storage.setItem(PLAYBACK_SETTINGS_KEY, JSON.stringify(normalized));
+  scheduleDurablePersist();
   return normalized;
 }
 

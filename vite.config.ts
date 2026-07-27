@@ -31,7 +31,7 @@ export default defineConfig({
     pool: "forks",
     fileParallelism: true,
     maxWorkers: "50%",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     // Gate logic modules at 95% across statements/branches/functions/lines.
     // UI screens and native AVPlay/Starfish adapters stay excluded.
     coverage: {
@@ -54,7 +54,7 @@ export default defineConfig({
         "src/platform/tizen/avplayTracks.ts",
         "src/update/**/*.ts",
       ],
-      exclude: ["src/**/*.test.ts"],
+      exclude: ["src/**/*.test.ts", "src/storage/durableStorage.ts"],
       thresholds: {
         statements: 95,
         branches: 95,

@@ -3,8 +3,13 @@
  *
  * Identity rules (do not break without a migration):
  * - localStorage keys stay on the `prairie.*` prefix
- * - Tizen package id `prairie` / app id `prairie.PrairieSmartTV`
+ * - Tizen package id `PrairieApp` / app id `PrairieApp.Prairie` (legacy: `PrairieLte`)
  * - webOS app id `org.prairieserver.prairie`
+ *
+ * Keep those package ids stable across releases. Changing them wipes WebView
+ * localStorage (Moonfin avoids this by never rotating package ids). Prairie
+ * also mirrors keys into Tizen `documents` via durableStorage.ts for sideload
+ * reinstall recovery.
  *
  * Schema bumps must be additive. Never clear session or settings keys on upgrade.
  */

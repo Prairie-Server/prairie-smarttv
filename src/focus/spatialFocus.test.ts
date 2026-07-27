@@ -250,4 +250,14 @@ describe("spatialFocus", () => {
     expect(findSpatialNeighbor(back, "ArrowLeft")).toBe(signIn);
     expect(findSpatialNeighbor(signIn, "ArrowUp")).toBe(password);
   });
+
+  it("reaches a vertically offset Show QR control with ArrowRight", () => {
+    const signIn = document.createElement("button");
+    const showQr = document.createElement("button");
+    document.body.append(signIn, showQr);
+    place(signIn, 40, 320, 140, 48);
+    place(showQr, 420, 180, 160, 48);
+
+    expect(findSpatialNeighbor(signIn, "ArrowRight")).toBe(showQr);
+  });
 });

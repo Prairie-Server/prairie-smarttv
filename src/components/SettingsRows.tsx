@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { isBackKey } from "../focus/spatialFocus";
 
 interface SettingsRowProps {
@@ -9,7 +9,7 @@ interface SettingsRowProps {
   autoFocus?: boolean;
 }
 
-/** Full-width TV settings row that opens a choice list on Enter / click. */
+/** Full-width TV settings row that opens a compact value menu on Enter / click. */
 export function SettingsCycleRow({ label, hint, value, onActivate, autoFocus }: SettingsRowProps) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Enter" || event.key === " ") {
@@ -71,6 +71,10 @@ interface SettingsChoiceRowProps<T extends string> {
   onChange: (next: T) => void;
 }
 
+/**
+ * Litefin-style compact dropdown: the settings row stays put; options open in a
+ * small menu anchored to the value (no full-width layout swap / CLS).
+ */
 export function SettingsChoiceRow<T extends string>({
   label,
   hint,
@@ -80,6 +84,7 @@ export function SettingsChoiceRow<T extends string>({
 }: SettingsChoiceRowProps<T>) {
   const [open, setOpen] = useState(false);
   const listId = useId();
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const index = Math.max(
     0,
     options.findIndex((opt) => opt.value === value),
@@ -98,14 +103,16 @@ export function SettingsChoiceRow<T extends string>({
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [open]);
 
-  if (open) {
-    return (
-      <div className="settings-dropdown" role="listbox" aria-label={label} id={listId}>
-        <div className="settings-dropdown__header">
-          <p className="settings-dropdown__label">{label}</p>
-          {hint ? <p className="muted settings-dropdown__hint">{hint}</p> : null}
-        </div>
-        <div className="settings-dropdown__options">
+  return (
+    <div className={`settings-row-wrap${open ? " is-open" : ""}`} ref={wrapRef}>
+      <SettingsCycleRow
+        label={label}
+        hint={hint}
+        value={current?.label ?? String(value)}
+        onActivate={() => setOpen((prev) => !prev)}
+      />
+      {open ? (
+        <div className="settings-menu" role="listbox" aria-label={label} id={listId}>
           {options.map((opt, optIndex) => {
             const selected = opt.value === value;
             return (
@@ -114,7 +121,7 @@ export function SettingsChoiceRow<T extends string>({
                 type="button"
                 role="option"
                 aria-selected={selected}
-                className={`settings-dropdown__option${selected ? " is-selected" : ""}`}
+                className={`settings-menu__option${selected ? " is-selected" : ""}`}
                 autoFocus={selected || (optIndex === 0 && !current)}
                 onClick={() => {
                   onChange(opt.value);
@@ -126,20 +133,8 @@ export function SettingsChoiceRow<T extends string>({
             );
           })}
         </div>
-        <button type="button" className="settings-dropdown__cancel" onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <SettingsCycleRow
-      label={label}
-      hint={hint}
-      value={current?.label ?? String(value)}
-      onActivate={() => setOpen(true)}
-    />
+      ) : null}
+    </div>
   );
 }
 
