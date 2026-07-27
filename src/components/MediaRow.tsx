@@ -29,6 +29,14 @@ const VARIANT_METRICS_DESIGN: Record<
   landscape: { itemWidth: 352, gap: 14, minHeight: "14.5rem" },
 };
 
+/**
+ * Reserved height for a row that has not mounted yet. Deferred rows use this so
+ * progressive mounting cannot reflow the rows above them.
+ */
+export function mediaRowMinHeight(variant: MediaRowVariant): string {
+  return VARIANT_METRICS_DESIGN[variant].minHeight;
+}
+
 interface MediaRowBaseProps {
   title: string;
   /** Shimmer title bar for skeleton rows (avoids empty→title height jump). */
@@ -94,8 +102,9 @@ function MediaRowInner<T>(props: MediaRowProps<T>) {
   const items = isVirtual ? props.items : null;
   const count = items?.length ?? 0;
   const itemStride = metrics.itemWidth + metrics.gap;
-  // Wide enough that a single D-pad step stays inside the mounted window.
-  const overscan = variant === "landscape" ? 6 : 8;
+  // Wide enough that a single D-pad step stays inside the mounted window even
+  // when the rAF-coalesced scroll position is a frame stale.
+  const overscan = variant === "landscape" ? 8 : 12;
 
   useLayoutEffect(() => {
     const updateScale = () => setScale(viewportScaleFactor(currentViewportWidth()));
@@ -142,6 +151,25 @@ function MediaRowInner<T>(props: MediaRowProps<T>) {
     };
   }, []);
 
+  /**
+   * Grow the mounted window around `index` on the next commit (no flushSync).
+   * Called after every in-window step so the following step is already mounted
+   * and the keydown handler never has to render + lay out synchronously.
+   */
+  const prefetchAround = useCallback(
+    (index: number) => {
+      const start = Math.max(0, index - overscan);
+      const end = Math.min(count, index + overscan + 1);
+      setForcedRange((prev) => {
+        if (prev && prev.start <= start && prev.end >= end) return prev;
+        return prev
+          ? { start: Math.min(prev.start, start), end: Math.max(prev.end, end) }
+          : { start, end };
+      });
+    },
+    [count, overscan],
+  );
+
   const reveal = useCallback(
     (index: number) => {
       const el = scrollerRef.current;
@@ -158,6 +186,7 @@ function MediaRowInner<T>(props: MediaRowProps<T>) {
           el.scrollLeft = targetLeft;
           setScrollLeft(el.scrollLeft);
         }
+        prefetchAround(index);
         return existing;
       }
 
@@ -176,7 +205,7 @@ function MediaRowInner<T>(props: MediaRowProps<T>) {
       }
       return el.querySelector<HTMLElement>(`[data-focus-index="${index}"]`);
     },
-    [items, count, overscan, itemStride, metrics.itemWidth],
+    [items, count, overscan, itemStride, metrics.itemWidth, prefetchAround],
   );
 
   useEffect(() => {
@@ -185,11 +214,14 @@ function MediaRowInner<T>(props: MediaRowProps<T>) {
     return registerFocusReveal(el, reveal);
   }, [isVirtual, reveal]);
 
+  // Release the forced window once scrolling has caught up to it, rather than on
+  // a timer that could unmount the focused card mid-navigation.
   useEffect(() => {
     if (!forcedRange) return;
-    const handle = window.setTimeout(() => setForcedRange(null), 400);
-    return () => window.clearTimeout(handle);
-  }, [forcedRange]);
+    if (windowRange.start <= forcedRange.start && windowRange.end >= forcedRange.end) {
+      setForcedRange(null);
+    }
+  }, [forcedRange, windowRange.start, windowRange.end]);
 
   const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
