@@ -21,7 +21,6 @@ import { probeTvPlaybackCapabilities } from "../platform/tizen/deviceCapabilitie
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
 import { humanizePlaybackError } from "../player/humanizePlaybackError";
-import { watchFileRequiresForcedTranscode } from "../player/audioCompatibility";
 import { filterClientRenderableSubtitles } from "../player/subtitleFormats";
 import { formatPlaybackClock } from "../player/timeFormat";
 import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../player/types";
@@ -31,7 +30,6 @@ import {
   resolvePreferredSubtitleIndex,
   savePlaybackSettings,
 } from "../settings/playbackSettings";
-import type { ForcedPlayMethod } from "../platform/types";
 import type { PrairieSession } from "../storage/session";
 import { buildStreamUrl } from "../api/client";
 
@@ -152,19 +150,13 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       hlsFallbackTriedRef.current = false;
       pendingResumeRef.current = launch.startPositionSeconds ?? null;
       try {
-        let detail = launch.watch ?? null;
-        if (!detail && launch.contentId) {
-          detail = await fetchWatchDetail(session, launch.contentId);
+        if (!launch.watch && launch.contentId) {
+          const detail = await fetchWatchDetail(session, launch.contentId);
           if (!cancelled) setWatch(detail);
         }
-        const settingsForced = resolveForcedPlayMethod(settings);
-        const needsAudioTranscode = watchFileRequiresForcedTranscode(detail, launch.fileId);
-        const forced: ForcedPlayMethod =
-          settingsForced ?? (needsAudioTranscode ? "transcode" : null);
-        if (needsAudioTranscode) {
-          // TrueHD/DTS/etc. cannot remux-copy on TV — skip a doomed Direct/Remux attempt.
-          hlsFallbackTriedRef.current = true;
-        }
+        // Advertise probed codecs and let Prairie choose Direct / Remux(+AAC) /
+        // Transcode. Do not force full video transcode just because audio is TrueHD.
+        const forced = resolveForcedPlayMethod(settings);
         const started = await startPlayback(session, {
           fileId: launch.fileId,
           profileId: session.profileId,
@@ -353,9 +345,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     setBuffering(false);
     setControlsVisible(true);
     try {
-      const settingsForced = resolveForcedPlayMethod(settings);
-      const needsAudioTranscode = watchFileRequiresForcedTranscode(watch, launch.fileId);
-      const forced: ForcedPlayMethod = settingsForced ?? (needsAudioTranscode ? "transcode" : null);
+      const forced = resolveForcedPlayMethod(settings);
       const seekAt = currentTime > 0 ? currentTime : (launch.startPositionSeconds ?? 0);
       const oldSid = playbackRef.current?.session_id;
       if (oldSid) {

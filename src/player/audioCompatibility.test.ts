@@ -1,70 +1,88 @@
 import { describe, expect, it } from "vitest";
 import {
-  isTvSafeAudioCodec,
-  requiresForcedTranscodeAudio,
-  versionRequiresForcedTranscode,
-  watchFileRequiresForcedTranscode,
+  isAudioCodecSupported,
+  normalizeAudioCodec,
+  primaryAudioCodec,
+  versionNeedsAudioRemux,
+  watchFileNeedsAudioRemux,
 } from "./audioCompatibility";
 import type { WatchDetail } from "../api/watch";
 
 describe("audioCompatibility", () => {
-  it("treats common TV codecs as safe", () => {
-    expect(isTvSafeAudioCodec("aac")).toBe(true);
-    expect(isTvSafeAudioCodec("ac3")).toBe(true);
-    expect(isTvSafeAudioCodec("e-ac-3")).toBe(true);
-    expect(isTvSafeAudioCodec("")).toBe(true);
-    expect(isTvSafeAudioCodec(null)).toBe(true);
-    expect(requiresForcedTranscodeAudio("aac")).toBe(false);
-    expect(requiresForcedTranscodeAudio("")).toBe(false);
+  const base = ["aac", "ac3", "eac3", "mp3"];
+
+  it("normalizes codec labels", () => {
+    expect(normalizeAudioCodec("TrueHD")).toBe("truehd");
+    expect(normalizeAudioCodec("e-ac-3")).toBe("eac3");
+    expect(normalizeAudioCodec(null)).toBe("");
   });
 
-  it("forces transcode for TrueHD / DTS / FLAC / PCM", () => {
-    expect(requiresForcedTranscodeAudio("truehd")).toBe(true);
-    expect(requiresForcedTranscodeAudio("TrueHD")).toBe(true);
-    expect(requiresForcedTranscodeAudio("mlp")).toBe(true);
-    expect(requiresForcedTranscodeAudio("dts-hd")).toBe(true);
-    expect(requiresForcedTranscodeAudio("flac")).toBe(true);
-    expect(requiresForcedTranscodeAudio("opus")).toBe(true);
-    expect(requiresForcedTranscodeAudio("pcm_s24le")).toBe(true);
-    expect(requiresForcedTranscodeAudio("unknown-codec")).toBe(true);
+  it("matches advertised codecs and aliases", () => {
+    expect(isAudioCodecSupported("aac", base)).toBe(true);
+    expect(isAudioCodecSupported("e-ac-3", base)).toBe(true);
+    expect(isAudioCodecSupported("ac3", ["eac3"])).toBe(true);
+    expect(isAudioCodecSupported("ec3", ["eac3"])).toBe(true);
+    expect(isAudioCodecSupported("truehd", base)).toBe(false);
+    expect(isAudioCodecSupported("truehd", [...base, "truehd"])).toBe(true);
+    expect(isAudioCodecSupported("truehd atmos", ["truehd"])).toBe(true);
+    expect(isAudioCodecSupported("aac", ["aac "])).toBe(true);
+    expect(isAudioCodecSupported("dts", ["truehd"])).toBe(false);
+    expect(isAudioCodecSupported("", base)).toBe(true);
+    expect(isAudioCodecSupported(null, base)).toBe(true);
   });
 
-  it("inspects watch file versions and tracks", () => {
-    expect(versionRequiresForcedTranscode(null)).toBe(false);
+  it("detects when a version needs audio remux from capabilities", () => {
+    expect(versionNeedsAudioRemux(null, base)).toBe(false);
+    expect(versionNeedsAudioRemux({ file_id: 1, codec_audio: "aac", audio_tracks: [] }, base)).toBe(
+      false,
+    );
     expect(
-      versionRequiresForcedTranscode({
-        file_id: 1,
-        codec_audio: "aac",
-        audio_tracks: [],
-      }),
+      versionNeedsAudioRemux({ file_id: 2, codec_audio: "truehd", audio_tracks: [] }, base),
+    ).toBe(true);
+    expect(
+      versionNeedsAudioRemux(
+        {
+          file_id: 3,
+          codec_audio: null,
+          audio_tracks: [{ codec: "dts", default: true }],
+        },
+        base,
+      ),
+    ).toBe(true);
+    expect(
+      versionNeedsAudioRemux(
+        {
+          file_id: 4,
+          codec_audio: null,
+          audio_tracks: [{ codec: "truehd", default: true }],
+        },
+        [...base, "truehd"],
+      ),
     ).toBe(false);
     expect(
-      versionRequiresForcedTranscode({
-        file_id: 2,
-        codec_audio: "aac",
-        audio_tracks: [
-          { codec: "aac", language: "eng" },
-          { codec: "truehd", language: "eng", default: true },
-        ],
-      }),
-    ).toBe(true);
+      versionNeedsAudioRemux(
+        {
+          file_id: 5,
+          codec_audio: null,
+          audio_tracks: [],
+        },
+        base,
+      ),
+    ).toBe(false);
+
+    expect(primaryAudioCodec({ file_id: 5, codec_audio: "flac" })).toBe("flac");
+    expect(primaryAudioCodec(null)).toBe(null);
+    expect(primaryAudioCodec({ file_id: 6, audio_tracks: [{ codec: "opus" }] })).toBe("opus");
 
     const watch: WatchDetail = {
       content_id: "m1",
       type: "movie",
       title: "Roger Rabbit",
-      versions: [
-        {
-          file_id: 9,
-          codec_video: "hevc",
-          codec_audio: "truehd",
-          audio_tracks: [{ codec: "truehd", language: "eng", default: true }],
-        },
-      ],
+      versions: [{ file_id: 9, codec_audio: "truehd" }],
     };
-    expect(versionRequiresForcedTranscode(watch.versions[0])).toBe(true);
-    expect(watchFileRequiresForcedTranscode(watch, 9)).toBe(true);
-    expect(watchFileRequiresForcedTranscode(watch, 99)).toBe(false);
-    expect(watchFileRequiresForcedTranscode(null, 9)).toBe(false);
+    expect(watchFileNeedsAudioRemux(watch, 9, base)).toBe(true);
+    expect(watchFileNeedsAudioRemux(watch, 9, [...base, "truehd"])).toBe(false);
+    expect(watchFileNeedsAudioRemux(null, 9, base)).toBe(false);
+    expect(watchFileNeedsAudioRemux(watch, 99, base)).toBe(false);
   });
 });
