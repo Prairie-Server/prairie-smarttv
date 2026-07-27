@@ -1,5 +1,6 @@
-import type { KeyboardEvent } from "react";
+import { memo, type KeyboardEvent } from "react";
 import { Check } from "lucide-react";
+import { POSTER_WIDTH } from "../lib/artworkUrl";
 import { ArtworkImage } from "./ArtworkImage";
 
 interface PosterCardProps {
@@ -19,7 +20,7 @@ interface PosterCardProps {
   "data-focus-index"?: number;
 }
 
-export function PosterCard({
+function PosterCardInner({
   title,
   subtitle,
   posterUrl,
@@ -61,6 +62,9 @@ export function PosterCard({
             src={normalizedPosterUrl}
             alt=""
             placeholderLabel={title}
+            widthHint={POSTER_WIDTH}
+            width={155}
+            height={232}
             loading={imageLoading}
             decoding="async"
             fetchPriority={imageLoading === "eager" ? "high" : "auto"}
@@ -91,3 +95,5 @@ export function PosterCard({
     </button>
   );
 }
+
+export const PosterCard = memo(PosterCardInner);

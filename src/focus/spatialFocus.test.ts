@@ -511,4 +511,146 @@ describe("spatialFocus", () => {
     Object.defineProperty(empty, "offsetParent", { configurable: true, get: () => document.body });
     expect(findSpatialNeighbor(a, "ArrowDown")).toBeNull();
   });
+
+  it("swallows edge stay-put on the index fast path without geometry", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "1";
+    const a = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+    a.focus();
+    const event = new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true });
+    expect(handleSpatialArrowKey(event)).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(a);
+  });
+
+  it("blurs an editable target when index navigation moves focus", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "2";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = "hi";
+    input.setSelectionRange(2, 2);
+    input.dataset.focusIndex = "0";
+    const b = document.createElement("button");
+    b.dataset.focusIndex = "1";
+    row.append(input, b);
+    document.body.append(row);
+    place(input, 0, 0, 200, 40);
+    place(b, 220, 0);
+    input.focus();
+    const event = new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true });
+    Object.defineProperty(event, "target", { configurable: true, value: input });
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(b);
+  });
+
+  it("uses container-local geometry when index exit fails but a sibling is below", () => {
+    // Horizontal container with stacked siblings: ArrowDown exits index-nav (null),
+    // then local geometry still finds the sibling without a document sweep.
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    row.append(a, b);
+    document.body.append(row);
+    place(a, 0, 0);
+    place(b, 0, 120);
+    a.focus();
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true });
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(b);
+  });
+
+  it("falls back to document geometry when the active container has a single item", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    const a = document.createElement("button");
+    const outside = document.createElement("button");
+    row.append(a);
+    document.body.append(row, outside);
+    place(a, 0, 0);
+    place(outside, 0, 160);
+    a.focus();
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true });
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it("skips nested-container index hits when resolving focus by data-focus-index", () => {
+    const outer = document.createElement("div");
+    outer.dataset.focusContainer = "horizontal";
+    outer.dataset.focusCount = "2";
+    const a = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    const nested = document.createElement("div");
+    nested.dataset.focusContainer = "horizontal";
+    const nestedBtn = document.createElement("button");
+    nestedBtn.dataset.focusIndex = "1";
+    nested.append(nestedBtn);
+    const b = document.createElement("button");
+    b.dataset.focusIndex = "1";
+    outer.append(a, nested, b);
+    document.body.append(outer);
+    place(a, 0, 0);
+    place(nestedBtn, 40, 80);
+    place(b, 120, 0);
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+  });
+
+  it("resolves reveal by list order when stamped indices are absent", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "2";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    // `b` is discoverable only via list order (no data-focus-index).
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+    place(b, 120, 0);
+    registerFocusReveal(row, () => {
+      row.append(b);
+      return null;
+    });
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+  });
+
+  it("clamps an overshot index onto the last mounted item via the list path", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    // Undercounted focusCount forces rendered-length total after the counted reveal miss.
+    row.dataset.focusCount = "1";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    // Intentionally omit data-focus-index so the direct query misses.
+    row.append(a, b);
+    document.body.append(row);
+    place(a, 0, 0);
+    place(b, 120, 0);
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+  });
+
+  it("blurs editable targets on the local geometry fallback path", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    const input = document.createElement("input");
+    input.type = "text";
+    const b = document.createElement("button");
+    row.append(input, b);
+    document.body.append(row);
+    place(input, 0, 0, 200, 40);
+    place(b, 0, 120);
+    input.focus();
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true });
+    Object.defineProperty(event, "target", { configurable: true, value: input });
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(b);
+  });
 });

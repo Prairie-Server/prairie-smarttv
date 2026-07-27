@@ -2,6 +2,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -11,6 +12,7 @@ import {
   type CSSProperties,
   type ReactElement,
   type ReactNode,
+  type UIEvent,
 } from "react";
 import { flushSync } from "react-dom";
 import { registerFocusReveal } from "../focus/spatialFocus";
@@ -71,7 +73,7 @@ function stampFocusIndex(node: ReactNode, index: number): ReactNode {
   return cloneElement(element, { "data-focus-index": index });
 }
 
-export function MediaRow<T>(props: MediaRowProps<T>) {
+function MediaRowInner<T>(props: MediaRowProps<T>) {
   const { title, skeleton = false, variant = "poster", className = "" } = props;
   const [scale, setScale] = useState(() => viewportScaleFactor(currentViewportWidth()));
   const design = VARIANT_METRICS_DESIGN[variant];
@@ -86,12 +88,14 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewport, setViewport] = useState(() => designPx(1280, scale));
+  const scrollRafRef = useRef<number | null>(null);
 
   const isVirtual = "items" in props && Array.isArray(props.items) && props.renderItem != null;
   const items = isVirtual ? props.items : null;
   const count = items?.length ?? 0;
   const itemStride = metrics.itemWidth + metrics.gap;
-  const overscan = variant === "landscape" ? 3 : 5;
+  // Wide enough that a single D-pad step stays inside the mounted window.
+  const overscan = variant === "landscape" ? 6 : 8;
 
   useLayoutEffect(() => {
     const updateScale = () => setScale(viewportScaleFactor(currentViewportWidth()));
@@ -130,10 +134,33 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     return () => ro.disconnect();
   }, [scale]);
 
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
+
   const reveal = useCallback(
     (index: number) => {
       const el = scrollerRef.current;
       if (!el || !items) return null;
+
+      // Common case: already mounted — no flushSync / React commit.
+      const existing = el.querySelector<HTMLElement>(`[data-focus-index="${index}"]`);
+      if (existing) {
+        const targetLeft = Math.max(
+          0,
+          index * itemStride - Math.max(0, (el.clientWidth - metrics.itemWidth) / 2),
+        );
+        if (Math.abs(el.scrollLeft - targetLeft) > 2) {
+          el.scrollLeft = targetLeft;
+          setScrollLeft(el.scrollLeft);
+        }
+        return existing;
+      }
+
       const nextStart = Math.max(0, index - overscan);
       const nextEnd = Math.min(count, index + overscan + 1);
       flushSync(() => {
@@ -163,6 +190,15 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     const handle = window.setTimeout(() => setForcedRange(null), 400);
     return () => window.clearTimeout(handle);
   }, [forcedRange]);
+
+  const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const target = event.currentTarget;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      setScrollLeft(target.scrollLeft);
+    });
+  }, []);
 
   let body: ReactNode;
   let focusCount: number | undefined;
@@ -236,10 +272,12 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
             scrollPaddingInline: designPx(12, scale),
           } satisfies CSSProperties
         }
-        onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
+        onScroll={onScroll}
       >
         {body}
       </div>
     </section>
   );
 }
+
+export const MediaRow = memo(MediaRowInner) as typeof MediaRowInner;

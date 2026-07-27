@@ -3,11 +3,18 @@
  * Canonical cache keys stay .webp; clients pick the best sibling immediately
  * using one-time decode capability detection (see imageFormats.ts).
  *
- * Path rewriting is skipped for SigV4-style signed URLs (rewriting the path
- * would invalidate the signature).
+ * Width variants live in the object key (`/original.`, `/w300.`, `/w500.`, …),
+ * not query params. Path rewriting is skipped for SigV4-style signed URLs.
  */
 
 import { getImageFormats, orderRasterCandidates } from "./imageFormats";
+
+/** Poster/still ladder used for ~155 CSS-px TV cards (× DPR ≈ 300–500). */
+export const POSTER_WIDTH = 300;
+/** Landscape / backdrop cards (~352 CSS-px). */
+export const LANDSCAPE_WIDTH = 500;
+/** Title logos on detail hero. */
+export const LOGO_WIDTH = 500;
 
 function pathExtension(pathname: string): string {
   const base = pathname.split("/").pop() ?? "";
@@ -58,6 +65,48 @@ export function webPAVIFSibling(objectPath: string | null | undefined): string {
  */
 export function webPPNGSibling(objectPath: string | null | undefined): string {
   return webPFormatSibling(objectPath, ".png");
+}
+
+function rewritePathWidthVariant(pathname: string, width: number): string {
+  return pathname.replace(/\/(original|w\d+)(?=\.)/, `/w${width}`);
+}
+
+/**
+ * Rewrites an artwork URL's width variant segment (`original` / `w300` / …)
+ * to `w{width}`. Returns "" when the URL cannot safely be rewritten.
+ */
+export function artworkWidthVariant(objectPath: string | null | undefined, width: number): string {
+  const trimmed = objectPath?.trim() ?? "";
+  if (!trimmed || !Number.isFinite(width) || width <= 0) return "";
+  if (isSignedArtworkURL(trimmed)) return "";
+
+  if (trimmed.includes("://")) {
+    try {
+      const u = new URL(trimmed);
+      const next = rewritePathWidthVariant(u.pathname, width);
+      if (next === u.pathname) return "";
+      u.pathname = next;
+      return u.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  const next = rewritePathWidthVariant(trimmed, width);
+  return next === trimmed ? "" : next;
+}
+
+/**
+ * Prefer a width-variant rewrite when possible; otherwise keep the canonical URL.
+ */
+export function artworkSized(
+  objectPath: string | null | undefined,
+  width: number | null | undefined,
+): string {
+  const trimmed = objectPath?.trim() ?? "";
+  if (!trimmed) return "";
+  if (width == null || !Number.isFinite(width) || width <= 0) return trimmed;
+  return artworkWidthVariant(trimmed, width) || trimmed;
 }
 
 /**

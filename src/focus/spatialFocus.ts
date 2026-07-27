@@ -94,14 +94,36 @@ function revealIndex(container: HTMLElement, index: number): HTMLElement | null 
     const revealed = handler(index);
     if (revealed) return revealed;
   }
+  const matches = container.querySelectorAll<HTMLElement>(`[data-focus-index="${index}"]`);
+  for (const el of matches) {
+    if (closestFocusContainer(el) === container) return el;
+  }
   return (
-    container.querySelector<HTMLElement>(`[data-focus-index="${index}"]`) ??
-    listContainerFocusables(container).find((el, i) => parseAbsoluteIndex(el, i) === index) ??
-    null
+    listContainerFocusables(container).find((el, i) => parseAbsoluteIndex(el, i) === index) ?? null
   );
 }
 
 function focusAtContainerIndex(container: HTMLElement, index: number): HTMLElement | null {
+  if (!Number.isFinite(index)) return null;
+
+  // Fast path: mounted node already stamped with this index (common D-pad step).
+  // Do not clamp to data-focus-count first — undercounted totals must still reach
+  // sibling nodes that are already in the DOM.
+  const direct = container.querySelector<HTMLElement>(`[data-focus-index="${index}"]`);
+  if (direct && closestFocusContainer(direct) === container) {
+    lastIndexByContainer.set(container, index);
+    return direct;
+  }
+
+  const counted = Number(container.dataset.focusCount);
+  if (Number.isFinite(counted) && counted > 0 && index >= 0 && index < counted) {
+    const revealed = revealIndex(container, index);
+    if (revealed) {
+      lastIndexByContainer.set(container, index);
+      return revealed;
+    }
+  }
+
   const items = listContainerFocusables(container);
   const total = containerTotal(container, items.length);
   if (total <= 0) return null;
@@ -289,31 +311,36 @@ function pickNeighbor(
 
 /**
  * Prefer index navigation inside focus containers; fall back to geometry.
+ * Pass `candidates` when the caller already has a list; otherwise geometry
+ * scans the document only after index navigation fails.
  */
 export function findSpatialNeighbor(
   active: HTMLElement | null,
   key: ArrowKey,
-  candidates: HTMLElement[] = listFocusables(),
+  candidates?: HTMLElement[],
 ): HTMLElement | null {
-  if (!candidates.length) return null;
-  if (!active || !candidates.includes(active)) {
-    return candidates[0] ?? null;
-  }
-
-  const container = closestFocusContainer(active);
-  if (container) {
-    const indexed = navigateContainer(active, key, container);
-    if (indexed) {
-      // "Stay put" sentinel when already at an edge.
-      if (indexed === active) return null;
-      return indexed;
+  if (active) {
+    const container = closestFocusContainer(active);
+    if (container) {
+      const indexed = navigateContainer(active, key, container);
+      if (indexed) {
+        // "Stay put" sentinel when already at an edge.
+        if (indexed === active) return null;
+        return indexed;
+      }
     }
   }
 
-  const strict = pickNeighbor(active, key, candidates, false);
+  const pool = candidates ?? listFocusables();
+  if (!pool.length) return null;
+  if (!active || !pool.includes(active)) {
+    return pool[0] ?? null;
+  }
+
+  const strict = pickNeighbor(active, key, pool, false);
   if (strict) return strict;
   if (key === "ArrowLeft" || key === "ArrowRight") {
-    return pickNeighbor(active, key, candidates, true);
+    return pickNeighbor(active, key, pool, true);
   }
   return null;
 }
@@ -337,11 +364,55 @@ export function handleSpatialArrowKey(event: KeyboardEvent): boolean {
   if (event.defaultPrevented) return false;
   if (event.altKey || event.ctrlKey || event.metaKey) return false;
   if (shouldDeferToEditableCaret(event.target, event.key)) return false;
-  const focusables = listFocusables();
-  if (focusables.length < 2) return false;
+
   const active =
     (isEditableTarget(event.target) ? (event.target as HTMLElement) : null) ??
-    (document.activeElement as HTMLElement | null);
+    (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+
+  // Fast path: index navigation inside a focus container — no document-wide
+  // getBoundingClientRect sweep (the main D-pad lag source on TV).
+  if (active) {
+    const container = closestFocusContainer(active);
+    if (container) {
+      const indexed = navigateContainer(active, event.key, container);
+      if (indexed) {
+        if (indexed === active) {
+          // Stay put at an edge — swallow the key so the browser does not scroll.
+          event.preventDefault();
+          return false;
+        }
+        if (isEditableTarget(event.target) && event.target instanceof HTMLElement) {
+          event.target.blur();
+        }
+        focusWithoutPageJump(indexed);
+        event.preventDefault();
+        return true;
+      }
+    }
+  }
+
+  // Geometry fallback only when index nav cannot resolve a neighbor.
+  // Prefer the active container so we do not rect-sweep the whole document.
+  if (active) {
+    const container = closestFocusContainer(active);
+    if (container) {
+      const local = listContainerFocusables(container);
+      if (local.length >= 2) {
+        const localNext = findSpatialNeighbor(active, event.key, local);
+        if (localNext) {
+          if (isEditableTarget(event.target) && event.target instanceof HTMLElement) {
+            event.target.blur();
+          }
+          focusWithoutPageJump(localNext);
+          event.preventDefault();
+          return true;
+        }
+      }
+    }
+  }
+
+  const focusables = listFocusables();
+  if (focusables.length < 2) return false;
   const next = findSpatialNeighbor(active, event.key, focusables);
   if (!next) return false;
   if (isEditableTarget(event.target) && event.target instanceof HTMLElement) {

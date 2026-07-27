@@ -2,6 +2,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,7 +18,7 @@ import { registerFocusReveal } from "../focus/spatialFocus";
 const DEFAULT_MIN_COLUMN_WIDTH = 150;
 const DEFAULT_GAP = 16;
 const DEFAULT_ROW_HEIGHT = 320;
-const DEFAULT_OVERSCAN_ROWS = 2;
+const DEFAULT_OVERSCAN_ROWS = 4;
 
 interface PosterGridProps {
   children?: ReactNode;
@@ -41,7 +42,7 @@ function columnCountForWidth(width: number, minColumnWidth: number, gap: number)
   return Math.max(1, Math.floor((width + gap) / (minColumnWidth + gap)));
 }
 
-export function PosterGrid({
+function PosterGridInner({
   children,
   className = "",
   itemCount,
@@ -58,6 +59,7 @@ export function PosterGrid({
   );
   const [gridOffsetTop, setGridOffsetTop] = useState(0);
   const [forcedRows, setForcedRows] = useState<{ start: number; end: number } | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   const childArray = useMemo(() => Children.toArray(children), [children]);
   const count = itemCount ?? childArray.length;
@@ -84,15 +86,24 @@ export function PosterGrid({
 
   useEffect(() => {
     const onScroll = () => {
-      setScrollY(window.scrollY || document.documentElement.scrollTop || 0);
-      const el = rootRef.current;
-      if (el) {
-        setGridOffsetTop(el.getBoundingClientRect().top + (window.scrollY || 0));
-      }
+      if (scrollRafRef.current != null) return;
+      scrollRafRef.current = window.requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        setScrollY(window.scrollY || document.documentElement.scrollTop || 0);
+        const el = rootRef.current;
+        if (el) {
+          setGridOffsetTop(el.getBoundingClientRect().top + (window.scrollY || 0));
+        }
+      });
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollRafRef.current != null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
   }, []);
 
   const naturalStartRow = Math.max(
@@ -111,6 +122,13 @@ export function PosterGrid({
     (index: number) => {
       const el = rootRef.current;
       if (!el) return null;
+
+      const existing = el.querySelector<HTMLElement>(`[data-focus-index="${index}"]`);
+      if (existing) {
+        existing.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return existing;
+      }
+
       const row = Math.floor(index / Math.max(columns, 1));
       flushSync(() => {
         setForcedRows({
@@ -175,3 +193,5 @@ export function PosterGrid({
     </div>
   );
 }
+
+export const PosterGrid = memo(PosterGridInner);

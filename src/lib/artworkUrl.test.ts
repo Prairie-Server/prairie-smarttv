@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   artworkCandidates,
+  artworkSized,
+  artworkWidthVariant,
   isSignedArtworkURL,
   webPAVIFSibling,
   webPPNGSibling,
@@ -47,6 +49,42 @@ describe("isSignedArtworkURL", () => {
     expect(isSignedArtworkURL("https://x/?Signature=1")).toBe(true);
     expect(isSignedArtworkURL("https://x/?verify=token")).toBe(true);
     expect(isSignedArtworkURL("https://x/art.webp")).toBe(false);
+  });
+});
+
+describe("artworkWidthVariant", () => {
+  it("rewrites original / wN path segments to the requested width", () => {
+    expect(artworkWidthVariant("library/1/poster/original.abc.webp", 300)).toBe(
+      "library/1/poster/w300.abc.webp",
+    );
+    expect(artworkWidthVariant("library/1/poster/w780.abc.webp", 300)).toBe(
+      "library/1/poster/w300.abc.webp",
+    );
+    expect(artworkWidthVariant("https://cdn.example.com/art/original.rev.webp", 500)).toBe(
+      "https://cdn.example.com/art/w500.rev.webp",
+    );
+  });
+
+  it("returns empty for signed URLs, missing width segments, or bad input", () => {
+    expect(
+      artworkWidthVariant("https://cdn.example.com/art/original.webp?X-Amz-Signature=1", 300),
+    ).toBe("");
+    expect(artworkWidthVariant("poster.jpg", 300)).toBe("");
+    expect(artworkWidthVariant("", 300)).toBe("");
+    expect(artworkWidthVariant("library/1/poster/original.abc.webp", 0)).toBe("");
+  });
+});
+
+describe("artworkSized", () => {
+  it("prefers a width variant and falls back to the canonical URL", () => {
+    expect(artworkSized("library/1/poster/original.abc.webp", 300)).toBe(
+      "library/1/poster/w300.abc.webp",
+    );
+    expect(artworkSized("poster.jpg", 300)).toBe("poster.jpg");
+    expect(artworkSized("library/1/poster/original.abc.webp", null)).toBe(
+      "library/1/poster/original.abc.webp",
+    );
+    expect(artworkSized("", 300)).toBe("");
   });
 });
 

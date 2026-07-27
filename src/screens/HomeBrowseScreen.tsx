@@ -145,7 +145,7 @@ export function HomeBrowseScreen({
                         imageUrl={item.backdrop_url || item.poster_url}
                         progress={progress}
                         watched={Boolean(item.user_state?.played)}
-                        imageLoading={sectionIndex === 0 && itemIndex < 4 ? "eager" : "lazy"}
+                        imageLoading={sectionIndex === 0 && itemIndex < 2 ? "eager" : "lazy"}
                         autoFocus={autoFocus}
                         onSelect={() => onOpenItem(item.content_id)}
                       />
@@ -159,7 +159,7 @@ export function HomeBrowseScreen({
                       progress={progress}
                       watched={Boolean(item.user_state?.played)}
                       favorite={Boolean(item.user_state?.is_favorite)}
-                      imageLoading={sectionIndex === 0 && itemIndex < 6 ? "eager" : "lazy"}
+                      imageLoading={sectionIndex === 0 && itemIndex < 3 ? "eager" : "lazy"}
                       autoFocus={autoFocus}
                       onSelect={() => onOpenItem(item.content_id)}
                     />
