@@ -5,6 +5,7 @@ import {
   fetchEpisodes,
   fetchItemDetail,
   fetchSeasons,
+  type CatalogItem,
   type EpisodeSummary,
   type ItemDetail,
   type SeasonSummary,
@@ -45,6 +46,14 @@ import {
 } from "../lib/detailMetadata";
 import type { PlayerLaunch } from "./PlayerScreen";
 import type { PrairieSession } from "../storage/session";
+
+/** Cards per recommendations row, and how many item-detail calls run at once. */
+const SIMILAR_LIMIT = 6;
+const SIMILAR_FETCH_BATCH = 2;
+/** Only fetch once the row is genuinely being approached. */
+const SIMILAR_PREFETCH_MARGIN = "10% 0px";
+/** And not before the hero's own requests and decodes have had a head start. */
+const SIMILAR_HERO_GRACE_MS = 900;
 
 interface ItemDetailScreenProps {
   session: PrairieSession;
@@ -109,7 +118,7 @@ export function ItemDetailScreen({
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
-  const [similar, setSimilar] = useState<ItemDetail[]>([]);
+  const [similar, setSimilar] = useState<CatalogItem[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyPlay, setBusyPlay] = useState(false);
@@ -118,10 +127,44 @@ export function ItemDetailScreen({
   const playButtonRef = useRef<HTMLButtonElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  const [similarNear, setSimilarNear] = useState(false);
+  const [heroSettled, setHeroSettled] = useState(false);
+  const similarObserverRef = useRef<IntersectionObserver | null>(null);
+  const similarSlotRef = useCallback((node: HTMLElement | null) => {
+    if (!node) return;
+    if (typeof IntersectionObserver === "undefined") {
+      // No observer: fall back to fetching after the hero grace period.
+      setSimilarNear(true);
+      return;
+    }
+    similarObserverRef.current?.disconnect();
+    similarObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setSimilarNear(true);
+          similarObserverRef.current?.disconnect();
+        }
+      },
+      { rootMargin: SIMILAR_PREFETCH_MARGIN },
+    );
+    similarObserverRef.current.observe(node);
+  }, []);
+  useEffect(() => {
+    return () => similarObserverRef.current?.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!detail) return;
+    const handle = window.setTimeout(() => setHeroSettled(true), SIMILAR_HERO_GRACE_MS);
+    return () => window.clearTimeout(handle);
+  }, [detail]);
+
+  const similarWanted = similarNear && heroSettled;
+
   const selectSimilar = useStableItemSelect(onOpenItem);
-  const similarItemKey = useCallback((item: ItemDetail) => item.content_id, []);
+  const similarItemKey = useCallback((item: CatalogItem) => item.content_id, []);
   const renderSimilarItem = useCallback(
-    (item: ItemDetail) => (
+    (item: CatalogItem) => (
       <PosterCard
         title={item.title}
         subtitle={item.year ? String(item.year) : item.type}
@@ -147,6 +190,8 @@ export function ItemDetailScreen({
       setEpisodes([]);
       setSeasonNumber(null);
       setSimilar([]);
+      setSimilarNear(false);
+      setHeroSettled(false);
       try {
         const item = await fetchItemDetail(session, contentId);
         if (cancelled) return;
@@ -186,25 +231,43 @@ export function ItemDetailScreen({
     };
   }, [session, contentId, detail]);
 
+  // Recommendations only return ids, so each card costs a full item-detail
+  // request. Opening a title used to fan out 12 of them (plus 12 poster decodes)
+  // before the viewer had scrolled anywhere near the row, which dominated the
+  // time to a usable detail page. Wait until the row is approached, then fetch a
+  // capped set in small batches so the connection pool stays free.
   useEffect(() => {
-    if (!detail) return;
+    if (!detail || !similarWanted) return;
     let cancelled = false;
     void (async () => {
       setSimilarLoading(true);
       try {
-        const refs = await fetchSimilarItems(session, contentId);
-        const details = (
-          await Promise.all(
-            refs.slice(0, 12).map(async (ref) => {
+        const { refs, cards } = await fetchSimilarItems(session, contentId);
+        if (cancelled) return;
+        if (cards.length > 0) {
+          // Server hydrated the row: no per-card lookup needed.
+          setSimilar(cards.slice(0, SIMILAR_LIMIT));
+          return;
+        }
+        // Older server: fall back to one item-detail request per card.
+        const wanted = refs.slice(0, SIMILAR_LIMIT);
+        const details: CatalogItem[] = [];
+        for (let index = 0; index < wanted.length; index += SIMILAR_FETCH_BATCH) {
+          if (cancelled) return;
+          const batch = await Promise.all(
+            wanted.slice(index, index + SIMILAR_FETCH_BATCH).map(async (ref) => {
               try {
                 return await fetchItemDetail(session, ref.media_item_id);
               } catch {
                 return null;
               }
             }),
-          )
-        ).filter((entry): entry is ItemDetail => entry != null);
-        if (!cancelled) setSimilar(details);
+          );
+          for (const entry of batch) {
+            if (entry) details.push(entry);
+          }
+          if (!cancelled) setSimilar([...details]);
+        }
       } catch {
         if (!cancelled) setSimilar([]);
       } finally {
@@ -214,7 +277,7 @@ export function ItemDetailScreen({
     return () => {
       cancelled = true;
     };
-  }, [session, contentId, detail]);
+  }, [session, contentId, detail, similarWanted]);
 
   useEffect(() => {
     if (seasonNumber == null || !detail) return;
@@ -854,10 +917,10 @@ export function ItemDetailScreen({
             renderItem={renderSimilarItem}
           />
         </div>
-      ) : similarLoading && detail ? (
-        <div className="detail-body-section">
+      ) : detail ? (
+        <div className="detail-body-section" ref={similarSlotRef}>
           <p className="eyebrow">More Like This</p>
-          <p className="muted">Loading…</p>
+          <p className="muted">{similarLoading ? "Loading…" : ""}</p>
         </div>
       ) : null}
     </section>

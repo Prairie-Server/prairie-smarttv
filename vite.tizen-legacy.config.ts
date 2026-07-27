@@ -32,7 +32,8 @@ export default defineConfig({
   build: {
     outDir: "dist-tizen-legacy-web",
     emptyOutDir: true,
-    sourcemap: true,
+    // Sourcemaps stay out of the TV package; it is read from flash on launch.
+    sourcemap: false,
     cssCodeSplit: false,
     cssTarget: "chrome69",
   },

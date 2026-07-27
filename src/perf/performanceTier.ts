@@ -114,15 +114,17 @@ export function prefersReducedEffects(tier: PerformanceTier = resolvePerformance
   return tier === "low" || tier === "balanced";
 }
 
-/** Low tier skips AVIF (CPU decode cost on weak SoCs). */
+/**
+ * Only the high tier requests AVIF. AVIF decode is markedly slower than WebP on
+ * TV SoCs, and mid-tier panels (Tizen 6.x) have enough cards on screen for that
+ * difference to show up as scroll and input lag.
+ */
 export function preferredRasterFormatsForTier(
   tier: PerformanceTier,
   detected: readonly ("avif" | "webp" | "png")[],
 ): Array<"avif" | "webp" | "png"> {
-  if (tier === "low") {
-    return detected.filter((format) => format !== "avif");
-  }
-  return [...detected];
+  if (tier === "high") return [...detected];
+  return detected.filter((format) => format !== "avif");
 }
 
 export function cyclePerformanceMode(mode: PerformanceMode): PerformanceMode {

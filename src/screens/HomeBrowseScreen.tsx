@@ -9,6 +9,7 @@ import { LiveTvOnNowRow, type OnNowStatus } from "../components/LiveTvOnNowRow";
 import { MediaRow, mediaRowMinHeight, type MediaRowVariant } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { catalogItemProgress, catalogItemSubtitle, usesLandscapeCards } from "../lib/browseCards";
+import { loadCachedHomeSections, saveCachedHomeSections } from "../lib/homeSectionsCache";
 import { formatRuntimeSeconds } from "../lib/detailMetadata";
 import { useStableItemSelect } from "../hooks/useStableItemSelect";
 import type { PrairieSession } from "../storage/session";
@@ -126,8 +127,14 @@ export function HomeBrowseScreen({
   onOpenLiveChannel,
   showOnNow = false,
 }: HomeBrowseScreenProps) {
-  const [sections, setSections] = useState<HomeSection[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the previous launch so the first paint shows real rows instead of
+  // shimmer while the request completes.
+  const cachedSections = useRef<HomeSection[] | null>(null);
+  if (cachedSections.current === null) {
+    cachedSections.current = loadCachedHomeSections(session.serverUrl, session.profileId) ?? [];
+  }
+  const [sections, setSections] = useState<HomeSection[]>(() => cachedSections.current ?? []);
+  const [loading, setLoading] = useState(() => (cachedSections.current?.length ?? 0) === 0);
   const [error, setError] = useState<string | null>(null);
   const [heroIndex, setHeroIndex] = useState(0);
   const [mountedRows, setMountedRows] = useState<ReadonlySet<number>>(
@@ -140,14 +147,15 @@ export function HomeBrowseScreen({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setLoading(true);
       setError(null);
       try {
         const next = await fetchHomeSections(session);
         if (!cancelled) {
-          setSections(next.filter((s) => s.items.length > 0));
+          const populated = next.filter((s) => s.items.length > 0);
+          setSections(populated);
           setHeroIndex(0);
           setMountedRows(new Set(Array.from({ length: INITIAL_ROW_COUNT }, (_, i) => i)));
+          saveCachedHomeSections(populated, session.serverUrl, session.profileId);
         }
       } catch (err) {
         if (cancelled) return;
@@ -320,7 +328,7 @@ export function HomeBrowseScreen({
         </>
       ) : null}
 
-      {error ? (
+      {error && sections.length === 0 ? (
         <p className="form-error" role="alert">
           {error}
         </p>

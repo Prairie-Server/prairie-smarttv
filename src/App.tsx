@@ -69,6 +69,9 @@ type Route =
   | { name: "settings"; back: Route }
   | { name: "player"; launch: PlayerLaunch; back: Route };
 
+/** Let the first screen's own requests finish before probing Live TV. */
+const LIVE_TV_PROBE_DELAY_MS = 1200;
+
 function shellTabFor(route: Route): ShellTab | null {
   switch (route.name) {
     case "home":
@@ -172,16 +175,22 @@ export function App() {
       return;
     }
     let cancelled = false;
-    void (async () => {
-      try {
-        const channels = await fetchLiveTvChannels(session);
-        if (!cancelled) setLiveTvProbe(channels.length > 0);
-      } catch {
-        if (!cancelled) setLiveTvProbe(false);
-      }
-    })();
+    // Runs after the first screen has had a chance to paint: this probe only
+    // decides whether a nav tab and the On now row appear, and competing with
+    // the Home request for the TV's connection pool delays what users see.
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const channels = await fetchLiveTvChannels(session);
+          if (!cancelled) setLiveTvProbe(channels.length > 0);
+        } catch {
+          if (!cancelled) setLiveTvProbe(false);
+        }
+      })();
+    }, LIVE_TV_PROBE_DELAY_MS);
     return () => {
       cancelled = true;
+      window.clearTimeout(handle);
     };
   }, [session]);
 
