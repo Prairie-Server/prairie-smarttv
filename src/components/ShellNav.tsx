@@ -1,13 +1,4 @@
-import {
-  FolderOpen,
-  Home,
-  Library,
-  Search,
-  Settings,
-  Tv,
-  Unplug,
-  Users,
-} from "lucide-react";
+import { FolderOpen, Home, Library, Search, Settings, Tv, Unplug, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { FocusButton } from "./FocusButton";
 

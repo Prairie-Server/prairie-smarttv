@@ -1,12 +1,4 @@
-import {
-  ArrowLeft,
-  Captions,
-  FastForward,
-  Pause,
-  Play,
-  Rewind,
-  Volume2,
-} from "lucide-react";
+import { ArrowLeft, Captions, FastForward, Pause, Play, Rewind, Volume2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
