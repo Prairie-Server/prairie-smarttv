@@ -26,8 +26,11 @@ export default defineConfig({
     port: 5174,
   },
   test: {
-    environment: "jsdom",
+    environment: "happy-dom",
     globals: true,
+    pool: "forks",
+    fileParallelism: true,
+    maxWorkers: "50%",
     include: ["src/**/*.test.ts"],
     // Gate logic modules at 95% across statements/branches/functions/lines.
     // UI screens and native AVPlay/Starfish adapters stay excluded.
