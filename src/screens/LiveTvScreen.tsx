@@ -130,6 +130,11 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   async function handleRecord(program: LiveTvProgram) {
     const programId = program.id?.trim();
     if (!programId || recordingInFlight.current) return;
+    const stopMs = Date.parse(program.stop);
+    if (Number.isFinite(stopMs) && stopMs <= Date.now()) {
+      showRecordingMessage("error", "Program already ended");
+      return;
+    }
     recordingInFlight.current = true;
     setRecordingBusy(true);
     try {

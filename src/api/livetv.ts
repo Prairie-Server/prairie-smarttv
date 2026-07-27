@@ -142,6 +142,10 @@ export async function fetchLiveTvGuide(
   if (!channelIds.length) return [];
   const params = new URLSearchParams();
   params.set("channels", channelIds.join(","));
+  const now = Date.now();
+  // Align with web: guide window starts at now (overlap still returns in-progress shows).
+  params.set("start", new Date(now).toISOString());
+  params.set("end", new Date(now + 6 * 60 * 60 * 1000).toISOString());
   const data = await apiRequest<{ programs?: LiveTvProgram[] }>(
     sessionClient(session, fetchImpl),
     `/api/v1/livetv/guide?${params.toString()}`,

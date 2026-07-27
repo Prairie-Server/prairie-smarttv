@@ -266,7 +266,11 @@ describe("Live TV API", () => {
 
   it("loads guide, starts, and releases sessions", async () => {
     const guideFetch = vi.fn(async (url: RequestInfo | URL) => {
-      expect(String(url)).toContain("/api/v1/livetv/guide?channels=ch-1");
+      const href = String(url);
+      expect(href).toContain("/api/v1/livetv/guide?");
+      expect(href).toContain("channels=ch-1");
+      expect(href).toContain("start=");
+      expect(href).toContain("end=");
       return new Response(JSON.stringify({}), { status: 200 });
     });
     await expect(fetchLiveTvGuide(session, ["ch-1"], guideFetch)).resolves.toEqual([]);
