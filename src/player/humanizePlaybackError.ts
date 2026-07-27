@@ -4,6 +4,9 @@ export function humanizePlaybackError(raw: string): string {
   if (!text) return "Playback failed";
 
   const upper = text.toUpperCase();
+  if (upper.includes("TRANSCODE TIMED OUT") || upper.includes("TRANSCODE_TIMED_OUT")) {
+    return "Transcode timed out";
+  }
   if (upper.includes("PLAYER_ERR_CONNECTION_FAILED") || upper.includes("CONNECTION")) {
     return "Could not connect to the stream. Check your network and try again.";
   }

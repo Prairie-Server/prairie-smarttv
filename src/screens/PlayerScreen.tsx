@@ -660,7 +660,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
                     : playback?.play_method === "transcode"
                       ? " · Transcode"
                       : ""}
-                {loading ? " · Starting…" : buffering ? " · Buffering…" : ""}
+                {loading ? " · Preparing…" : buffering ? " · Buffering…" : ""}
               </p>
             </div>
           </div>

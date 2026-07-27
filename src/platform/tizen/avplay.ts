@@ -382,8 +382,18 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     if (destroyed || prepareStarted) return;
     void (async () => {
       if (hls) {
-        await waitForHlsManifest(options.url);
+        // preparePlayableSession already waited for segment 0; this is a short
+        // safety poll for paths that hand AVPlay a URL without that gate.
+        const ready = await waitForHlsManifest(options.url, {
+          timeoutMs: 15_000,
+          requireSegment: true,
+          throwOnTimeout: false,
+        });
         if (destroyed) return;
+        if (!ready) {
+          options.onError?.("Transcode timed out");
+          return;
+        }
       }
       try {
         openSession();

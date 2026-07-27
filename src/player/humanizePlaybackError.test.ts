@@ -6,6 +6,10 @@ describe("humanizePlaybackError", () => {
     expect(humanizePlaybackError("PLAYER_ERR_CONNECTION_FAILED")).toMatch(/connect/i);
   });
 
+  it("maps transcode startup timeout", () => {
+    expect(humanizePlaybackError("Transcode timed out")).toBe("Transcode timed out");
+  });
+
   it("maps network errors", () => {
     expect(humanizePlaybackError("PLAYER_ERR_NETWORK_UNAVAILABLE")).toMatch(/Network/i);
   });

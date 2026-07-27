@@ -1,11 +1,18 @@
 import { ApiError, apiRequest, buildStreamUrl } from "./client";
+import { reportPlaybackProgress } from "./playbackSession";
 import { sessionClient } from "./sessionClient";
+import {
+  TranscodeStartupTimeoutError,
+  waitForHlsManifest,
+} from "../platform/tizen/waitForHlsManifest";
 import type {
   PlaybackSessionResponse,
   TranscodeStartRequest,
   TranscodeStartResponse,
 } from "../player/types";
 import type { PrairieSession } from "../storage/session";
+
+export { TranscodeStartupTimeoutError };
 
 /** Remux/transcode sessions need an HLS encode job before the player has a real URL. */
 export function needsHlsBootstrap(playMethod: string | null | undefined): boolean {
@@ -59,10 +66,17 @@ export interface PreparedPlayback {
   playerStartSeconds: number;
 }
 
+/** How long to wait for the first HLS segment after /transcode/start. */
+export const TRANSCODE_STARTUP_TIMEOUT_MS = 90_000;
+
 /**
  * Mirror web/Apple/Android legacy: after /playback/start, remux and transcode
  * must POST /playback/transcode/start and play `manifest_url` (not the
  * informational placeholder `stream_url`).
+ *
+ * After a 202 Accepted, poll until the first media segment exists (encoded
+ * sessions publish a synthetic VOD playlist immediately) and POST progress
+ * keepalives so the server does not mark the session inactive during startup.
  */
 export async function preparePlayableSession(
   session: PrairieSession,
@@ -112,9 +126,10 @@ export async function preparePlayableSession(
   }
 
   const playMethod = transcode.can_seek_anywhere ? "transcode" : "remux";
+  const sessionId = transcode.session_id || started.session_id;
   const next: PlaybackSessionResponse = {
     ...started,
-    session_id: transcode.session_id || started.session_id,
+    session_id: sessionId,
     play_method: playMethod,
     stream_url: transcode.manifest_url,
     position: transcode.player_start_seconds ?? started.position,
@@ -128,9 +143,22 @@ export async function preparePlayableSession(
     },
   };
 
+  const streamUrl = buildStreamUrl(session.serverUrl, transcode.manifest_url, session.accessToken);
+  const playerStartSeconds = transcode.player_start_seconds ?? seekSeconds;
+
+  await waitForHlsManifest(streamUrl, {
+    fetchImpl,
+    timeoutMs: TRANSCODE_STARTUP_TIMEOUT_MS,
+    requireSegment: true,
+    throwOnTimeout: true,
+    keepAliveEveryMs: 10_000,
+    onKeepAlive: () =>
+      reportPlaybackProgress(session, sessionId, playerStartSeconds, true, fetchImpl),
+  });
+
   return {
     session: next,
-    streamUrl: buildStreamUrl(session.serverUrl, transcode.manifest_url, session.accessToken),
-    playerStartSeconds: transcode.player_start_seconds ?? seekSeconds,
+    streamUrl,
+    playerStartSeconds,
   };
 }
