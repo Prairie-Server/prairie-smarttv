@@ -77,6 +77,43 @@ describe("session persistence", () => {
     expect(raw.refreshToken).toBeUndefined();
   });
 
+  it("migrates a legacy profileToken into sessionStorage", () => {
+    const storage = memoryStorage({
+      "prairie.session": JSON.stringify({
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        profileToken: "legacy-pin",
+        username: "ada",
+        profileId: "p1",
+        profileName: "Ada",
+      }),
+    });
+    const tokensStorage = memoryStorage();
+    expect(loadSession(storage, tokensStorage)).toEqual({
+      serverUrl: "https://prairie.example",
+      accessToken: "tok",
+      username: "ada",
+      profileId: "p1",
+      profileName: "Ada",
+      profileToken: "legacy-pin",
+    });
+    expect(tokensStorage.getItem("prairie.session.profileToken")).toBe("legacy-pin");
+    const raw = JSON.parse(storage.getItem("prairie.session")!);
+    expect(raw.profileToken).toBeUndefined();
+    expect(raw.accessToken).toBeUndefined();
+  });
+
+  it("returns null when identity exists but no access token is available", () => {
+    const storage = memoryStorage({
+      "prairie.session": JSON.stringify({
+        serverUrl: "https://prairie.example",
+        username: "ada",
+        profileId: "p1",
+      }),
+    });
+    expect(loadSession(storage, memoryStorage())).toBeNull();
+  });
+
   it("returns null for missing, incomplete, or corrupt payloads", () => {
     expect(loadSession(memoryStorage(), memoryStorage())).toBeNull();
     expect(

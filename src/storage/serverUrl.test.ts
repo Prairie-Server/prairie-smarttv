@@ -77,4 +77,24 @@ describe("validateServerUrl", () => {
     expect(validateServerUrl("https://#fragment").ok).toBe(false);
     expect(validateServerUrl("https://?server=x").ok).toBe(false);
   });
+
+  it("rejects empty, non-http(s), and empty-host inputs", () => {
+    const empty = validateServerUrl("   ");
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.message).toMatch(/Prairie server URL/i);
+
+    const ftp = validateServerUrl("ftp://prairie.example.com");
+    expect(ftp.ok).toBe(false);
+    if (!ftp.ok) expect(ftp.message).toMatch(/http or https/i);
+
+    // URL may parse, but hostname can still be empty for some authority-less forms.
+    const noHost = validateServerUrl("https:///");
+    expect(noHost.ok).toBe(false);
+  });
+
+  it("treats bracketed IPv6 hosts as private/local when applicable", () => {
+    expect(isPrivateOrLocalHost("[::1]")).toBe(true);
+    expect(isPrivateOrLocalHost("[fe80::abcd]")).toBe(true);
+    expect(isPrivateOrLocalHost("")).toBe(false);
+  });
 });

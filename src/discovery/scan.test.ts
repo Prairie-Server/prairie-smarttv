@@ -101,4 +101,49 @@ describe("runLanDiscovery", () => {
     expect(onHit).not.toHaveBeenCalled();
     expect(fetchImpl).toHaveBeenCalled();
   });
+
+  it("forwards configured baseHosts into candidate probing", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("prairie.lan")) {
+        return new Response(JSON.stringify({ status: "ok", server_name: "Lan", server_id: "l1" }), {
+          status: 200,
+        });
+      }
+      return new Response("nope", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const hits = await runLanDiscovery({
+      extraCidrs: [],
+      deepScan: false,
+      maxHostsPerCidr: 1,
+      concurrency: 4,
+      timeoutMs: 100,
+      localIps: [],
+      baseHosts: ["prairie.lan"],
+      fetchImpl,
+    });
+
+    expect(hits.some((hit) => hit.url.includes("prairie.lan"))).toBe(true);
+    expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes("prairie.lan"))).toBe(true);
+  });
+
+  it("falls back to platform local IPs when localIps is omitted", async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ status: "down" }), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    const hits = await runLanDiscovery({
+      extraCidrs: [],
+      deepScan: false,
+      maxHostsPerCidr: 1,
+      concurrency: 2,
+      timeoutMs: 50,
+      baseHosts: ["prairie.lan"],
+      fetchImpl,
+    });
+
+    expect(hits).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalled();
+  });
 });
