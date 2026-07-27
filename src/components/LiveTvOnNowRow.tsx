@@ -10,6 +10,7 @@ import {
 import type { PrairieSession } from "../storage/session";
 import { ArtworkImage } from "./ArtworkImage";
 import { MediaRow } from "./MediaRow";
+import { PosterCard } from "./PosterCard";
 
 interface OnNowCard {
   channel: LiveTvChannel;
@@ -19,9 +20,13 @@ interface OnNowCard {
   progress: number;
 }
 
+export type OnNowStatus = "loading" | "ready" | "empty";
+
 interface LiveTvOnNowRowProps {
   session: PrairieSession;
   onOpenChannel: (channel: LiveTvChannel) => void;
+  /** Lets Home reserve the slot and decide initial focus without a jump. */
+  onStatusChange?: (status: OnNowStatus) => void;
 }
 
 function formatUntil(iso: string): string {
@@ -34,10 +39,15 @@ function formatUntil(iso: string): string {
  * Home-row teaser for currently airing Live TV programmes.
  * Hidden when the server has no enabled channels / guide slots.
  */
-export function LiveTvOnNowRow({ session, onOpenChannel }: LiveTvOnNowRowProps) {
+export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveTvOnNowRowProps) {
   const [loading, setLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [cards, setCards] = useState<OnNowCard[]>([]);
+
+  const status: OnNowStatus = cards.length > 0 ? "ready" : loading ? "loading" : "empty";
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
@@ -90,8 +100,27 @@ export function LiveTvOnNowRow({ session, onOpenChannel }: LiveTvOnNowRowProps) 
     };
   }, [session, nowMs]);
 
-  if (loading && cards.length === 0) return null;
-  if (!loading && cards.length === 0) return null;
+  // First load only: hold a same-height slot so filling it in place cannot
+  // reflow Home. The 60s guide refresh keeps the real cards mounted.
+  if (loading && cards.length === 0) {
+    return (
+      <MediaRow title="On now" variant="poster" className="media-row--on-now" skeleton>
+        {Array.from({ length: 6 }).map((_, index) => (
+          <PosterCard
+            key={`on-now-skel-${index}`}
+            title=""
+            subtitle={null}
+            posterUrl={null}
+            disabled
+            onSelect={() => {
+              // Disabled skeleton; no-op.
+            }}
+          />
+        ))}
+      </MediaRow>
+    );
+  }
+  if (cards.length === 0) return null;
 
   return (
     <MediaRow
