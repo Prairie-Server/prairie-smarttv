@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Play } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Circle, Play, X } from "lucide-react";
 import { ApiError } from "../api/client";
 import {
+  cancelLiveTvRecording,
   channelDisplayLabel,
   currentProgramForChannel,
   fetchLiveTvChannels,
   fetchLiveTvGuide,
+  fetchLiveTvRecordings,
   nextProgramForChannel,
   scheduleLiveTvRecording,
   type LiveTvChannel,
   type LiveTvProgram,
+  type LiveTvRecording,
 } from "../api/livetv";
 import { FocusButton } from "../components/FocusButton";
 import type { PrairieSession } from "../storage/session";
@@ -18,6 +21,8 @@ interface LiveTvScreenProps {
   session: PrairieSession;
   onTune: (channel: LiveTvChannel) => void;
 }
+
+type LiveTvTab = "guide" | "channels" | "recordings";
 
 function formatGuideClock(iso: string): string {
   const ms = Date.parse(iso);
@@ -36,13 +41,37 @@ function programLine(program: LiveTvProgram | null, fallback: string): string {
   return when ? `${program.title} · ${when}` : program.title;
 }
 
+function formatRecordingWindow(recording: LiveTvRecording): string {
+  const start = formatGuideClock(recording.start);
+  const stop = formatGuideClock(recording.stop);
+  return [start, stop].filter(Boolean).join(" – ");
+}
+
+function recordingStatusLabel(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "scheduled") return "Scheduled";
+  if (normalized === "recording") return "Recording";
+  if (normalized === "completed") return "Completed";
+  if (normalized === "failed") return "Failed";
+  if (normalized === "cancelled") return "Cancelled";
+  return status.trim() || "Unknown";
+}
+
+function canCancelRecording(recording: LiveTvRecording): boolean {
+  const status = recording.status.trim().toLowerCase();
+  return status === "scheduled" || status === "recording";
+}
+
 export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const [channels, setChannels] = useState<LiveTvChannel[]>([]);
   const [programs, setPrograms] = useState<LiveTvProgram[]>([]);
+  const [recordings, setRecordings] = useState<LiveTvRecording[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recordingsLoading, setRecordingsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<LiveTvTab>("guide");
   const [recordingBusy, setRecordingBusy] = useState(false);
+  const [cancelBusyId, setCancelBusyId] = useState<string | null>(null);
   const [recordingMessage, setRecordingMessage] = useState<{
     kind: "success" | "error";
     text: string;
@@ -50,6 +79,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const recordingMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Synchronous guard — React state alone cannot stop double-submit. */
   const recordingInFlight = useRef(false);
+  const cancelInFlight = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -74,20 +104,62 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
     return "Could not schedule recording";
   }
 
+  function cancelRecordingErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.status === 403) return "Not allowed to cancel recordings";
+      if (err.status === 404) return "Recording not found";
+    }
+    return "Could not cancel recording";
+  }
+
+  const refreshRecordings = useCallback(async () => {
+    setRecordingsLoading(true);
+    try {
+      const list = await fetchLiveTvRecordings(session);
+      setRecordings(list);
+    } catch (err) {
+      showRecordingMessage(
+        "error",
+        err instanceof ApiError ? err.message : "Could not load recordings",
+      );
+    } finally {
+      setRecordingsLoading(false);
+    }
+  }, [session]);
+
   async function handleRecord(program: LiveTvProgram) {
     const programId = program.id?.trim();
     if (!programId || recordingInFlight.current) return;
     recordingInFlight.current = true;
     setRecordingBusy(true);
     try {
-      // Server fills channel/window/title from program_id — do not over-post.
       await scheduleLiveTvRecording(session, { program_id: programId });
       showRecordingMessage("success", "Recording scheduled");
+      if (activeTab === "recordings") {
+        await refreshRecordings();
+      }
     } catch (err) {
       showRecordingMessage("error", scheduleRecordingErrorMessage(err));
     } finally {
       recordingInFlight.current = false;
       setRecordingBusy(false);
+    }
+  }
+
+  async function handleCancel(recording: LiveTvRecording) {
+    const id = recording.id?.trim();
+    if (!id || cancelInFlight.current) return;
+    cancelInFlight.current = true;
+    setCancelBusyId(id);
+    try {
+      await cancelLiveTvRecording(session, id);
+      setRecordings((prev) => prev.filter((item) => item.id !== id));
+      showRecordingMessage("success", "Recording cancelled");
+    } catch (err) {
+      showRecordingMessage("error", cancelRecordingErrorMessage(err));
+    } finally {
+      cancelInFlight.current = false;
+      setCancelBusyId(null);
     }
   }
 
@@ -100,7 +172,6 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
         const list = await fetchLiveTvChannels(session);
         if (cancelled) return;
         setChannels(list);
-        if (list[0]) setSelectedId(list[0].id);
         if (list.length) {
           const guide = await fetchLiveTvGuide(
             session,
@@ -121,13 +192,32 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
     };
   }, [session]);
 
-  const selected = useMemo(
-    () => channels.find((ch) => ch.id === selectedId) ?? channels[0] ?? null,
-    [channels, selectedId],
+  useEffect(() => {
+    if (activeTab !== "recordings") return;
+    void refreshRecordings();
+  }, [activeTab, refreshRecordings]);
+
+  const channelById = useMemo(
+    () => new Map(channels.map((channel) => [channel.id, channel])),
+    [channels],
   );
 
-  const now = selected ? currentProgramForChannel(programs, selected.id) : null;
-  const next = selected ? nextProgramForChannel(programs, selected.id) : null;
+  const scheduledRecordings = useMemo(
+    () =>
+      recordings.filter((recording) =>
+        ["scheduled", "recording"].includes(recording.status.trim().toLowerCase()),
+      ),
+    [recordings],
+  );
+
+  const historyRecordings = useMemo(
+    () =>
+      recordings.filter(
+        (recording) =>
+          !["scheduled", "recording"].includes(recording.status.trim().toLowerCase()),
+      ),
+    [recordings],
+  );
 
   return (
     <section className="screen browse-screen livetv-screen">
@@ -168,86 +258,204 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
       ) : null}
 
       {channels.length > 0 ? (
-        <div className="livetv-layout">
-          <div className="livetv-channel-list" role="list">
-            {channels.map((channel, index) => (
+        <>
+          <div className="season-tabs livetv-tabs" role="tablist" aria-label="Live TV sections">
+            {(
+              [
+                ["guide", "Guide"],
+                ["channels", "Channels"],
+                ["recordings", "My recordings"],
+              ] as const
+            ).map(([tab, label]) => (
               <button
-                key={channel.id}
+                key={tab}
                 type="button"
-                role="listitem"
-                className={
-                  selected?.id === channel.id ? "livetv-channel is-selected" : "livetv-channel"
-                }
-                autoFocus={index === 0}
-                onClick={() => setSelectedId(channel.id)}
-                onDoubleClick={() => onTune(channel)}
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`season-chip${activeTab === tab ? " is-active" : ""}`}
+                autoFocus={tab === "guide"}
+                onClick={() => setActiveTab(tab)}
               >
-                <span className="livetv-channel__num">
-                  {channel.number_override || channel.number}
-                  {channel.hd ? " HD" : ""}
-                </span>
-                <span className="livetv-channel__body">
-                  <strong>{channelDisplayLabel(channel)}</strong>
-                  <span className="muted">
-                    {programLine(currentProgramForChannel(programs, channel.id), "No guide data")}
-                  </span>
-                </span>
+                {label}
+                {tab === "recordings" && scheduledRecordings.length > 0 ? (
+                  <span className="season-chip__count">{scheduledRecordings.length}</span>
+                ) : null}
               </button>
             ))}
           </div>
 
-          {selected ? (
-            <aside className="livetv-detail">
-              <p className="eyebrow">Selected</p>
-              <h2 className="browse-title">{channelDisplayLabel(selected)}</h2>
-              <p className="muted">
-                Channel {selected.number_override || selected.number}
-                {selected.hd ? " · HD" : ""}
-              </p>
-              <div className="livetv-now-next">
-                <div>
-                  <p className="eyebrow">Now</p>
-                  <p>{programLine(now, "Nothing listed")}</p>
-                  {now?.description ? <p className="muted">{now.description}</p> : null}
-                  {now?.id ? (
-                    <div className="row-actions">
-                      <FocusButton
-                        autoFocus={false}
-                        icon={<Circle />}
-                        disabled={recordingBusy}
-                        onClick={() => void handleRecord(now)}
-                      >
-                        {recordingBusy ? "Scheduling…" : "Record"}
-                      </FocusButton>
+          {activeTab === "guide" ? (
+            <div className="livetv-guide" role="list" aria-label="Guide">
+              {channels.map((channel, index) => {
+                const now = currentProgramForChannel(programs, channel.id);
+                const next = nextProgramForChannel(programs, channel.id);
+                return (
+                  <article
+                    key={channel.id}
+                    className="livetv-guide-row"
+                    role="listitem"
+                    tabIndex={-1}
+                  >
+                    <div className="livetv-guide-row__channel">
+                      <span className="livetv-channel__num">
+                        {channel.number_override || channel.number}
+                        {channel.hd ? " HD" : ""}
+                      </span>
+                      <div className="livetv-channel__body">
+                        <strong>{channelDisplayLabel(channel)}</strong>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-                <div>
-                  <p className="eyebrow">Next</p>
-                  <p>{programLine(next, "Nothing listed")}</p>
-                  {next?.id ? (
-                    <div className="row-actions">
-                      <FocusButton
-                        autoFocus={false}
-                        icon={<Circle />}
-                        disabled={recordingBusy}
-                        onClick={() => void handleRecord(next)}
-                      >
-                        {recordingBusy ? "Scheduling…" : "Record"}
-                      </FocusButton>
+                    <div className="livetv-guide-row__programs">
+                      <div>
+                        <p className="eyebrow">Now</p>
+                        <p>{programLine(now, "Nothing listed")}</p>
+                      </div>
+                      <div>
+                        <p className="eyebrow">Next</p>
+                        <p>{programLine(next, "Nothing listed")}</p>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="row-actions">
-                <FocusButton autoFocus={false} icon={<Play />} onClick={() => onTune(selected)}>
-                  Watch
-                </FocusButton>
-              </div>
-            </aside>
+                    <div className="row-actions livetv-guide-row__actions">
+                      <FocusButton
+                        autoFocus={index === 0}
+                        icon={<Play />}
+                        onClick={() => onTune(channel)}
+                      >
+                        Watch
+                      </FocusButton>
+                      {now?.id ? (
+                        <FocusButton
+                          icon={<Circle />}
+                          disabled={recordingBusy}
+                          onClick={() => void handleRecord(now)}
+                        >
+                          {recordingBusy ? "Scheduling…" : "Record now"}
+                        </FocusButton>
+                      ) : null}
+                      {next?.id ? (
+                        <FocusButton
+                          icon={<Circle />}
+                          disabled={recordingBusy}
+                          onClick={() => void handleRecord(next)}
+                        >
+                          {recordingBusy ? "Scheduling…" : "Record next"}
+                        </FocusButton>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           ) : null}
-        </div>
+
+          {activeTab === "channels" ? (
+            <div className="livetv-channel-list" role="list" aria-label="Channels">
+              {channels.map((channel, index) => (
+                <button
+                  key={channel.id}
+                  type="button"
+                  role="listitem"
+                  className="livetv-channel"
+                  autoFocus={index === 0}
+                  onClick={() => onTune(channel)}
+                >
+                  <span className="livetv-channel__num">
+                    {channel.number_override || channel.number}
+                    {channel.hd ? " HD" : ""}
+                  </span>
+                  <span className="livetv-channel__body">
+                    <strong>{channelDisplayLabel(channel)}</strong>
+                    <span className="muted">
+                      {programLine(
+                        currentProgramForChannel(programs, channel.id),
+                        "No guide data",
+                      )}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {activeTab === "recordings" ? (
+            <div className="livetv-recordings">
+              {recordingsLoading ? <p className="muted">Loading recordings…</p> : null}
+              <RecordingsSection
+                title="Scheduled & in progress"
+                empty="Nothing scheduled yet. Pick a programme from the guide."
+                recordings={scheduledRecordings}
+                channelById={channelById}
+                cancelBusyId={cancelBusyId}
+                onCancel={(recording) => void handleCancel(recording)}
+              />
+              <RecordingsSection
+                title="History"
+                empty="Completed and failed recordings will show up here."
+                recordings={historyRecordings}
+                channelById={channelById}
+                cancelBusyId={cancelBusyId}
+                onCancel={(recording) => void handleCancel(recording)}
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
+    </section>
+  );
+}
+
+function RecordingsSection({
+  title,
+  empty,
+  recordings,
+  channelById,
+  cancelBusyId,
+  onCancel,
+}: {
+  title: string;
+  empty: string;
+  recordings: LiveTvRecording[];
+  channelById: Map<string, LiveTvChannel>;
+  cancelBusyId: string | null;
+  onCancel: (recording: LiveTvRecording) => void;
+}) {
+  return (
+    <section className="livetv-recordings-section">
+      <h2 className="browse-title">{title}</h2>
+      {recordings.length === 0 ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <div className="livetv-recordings-list" role="list">
+          {recordings.map((recording, index) => {
+            const channel = channelById.get(recording.channel_id);
+            const cancellable = canCancelRecording(recording);
+            return (
+              <article key={recording.id} className="livetv-recording-row" role="listitem">
+                <div className="livetv-recording-row__body">
+                  <strong>{recording.title?.trim() || "Untitled recording"}</strong>
+                  <p className="muted">
+                    {channel ? channelDisplayLabel(channel) : "Unknown channel"}
+                    {" · "}
+                    {formatRecordingWindow(recording)}
+                  </p>
+                  <p className="muted">{recordingStatusLabel(recording.status)}</p>
+                </div>
+                {cancellable ? (
+                  <FocusButton
+                    autoFocus={index === 0}
+                    variant="ghost"
+                    icon={<X />}
+                    disabled={cancelBusyId === recording.id}
+                    onClick={() => onCancel(recording)}
+                  >
+                    {cancelBusyId === recording.id ? "Cancelling…" : "Cancel"}
+                  </FocusButton>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
