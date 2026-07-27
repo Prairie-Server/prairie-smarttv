@@ -233,7 +233,6 @@ export function ConnectScreen({
             <label className="field">
               <span>Username</span>
               <input
-                autoFocus
                 className="focusable"
                 type="text"
                 autoComplete="username"
@@ -292,7 +291,7 @@ export function ConnectScreen({
 
           {quickConnect.status === "idle" ? (
             <div className="quick-connect-codes">
-              <FocusButton type="button" onClick={() => void startQuickConnect()}>
+              <FocusButton type="button" autoFocus onClick={() => void startQuickConnect()}>
                 Show QR code
               </FocusButton>
             </div>

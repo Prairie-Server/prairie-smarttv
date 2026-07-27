@@ -15,6 +15,7 @@ export function createMediaPlayer(options: CreateMediaPlayerOptions): MediaPlaye
       onError: options.onError,
       onEnded: options.onEnded,
       onTimeUpdate: options.onTimeUpdate,
+      onBuffering: options.onBuffering,
     });
     return {
       backend: "avplay",

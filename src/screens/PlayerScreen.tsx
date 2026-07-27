@@ -17,8 +17,10 @@ import {
 } from "../api/watch";
 import { FocusButton } from "../components/FocusButton";
 import { detectPlatform } from "../platform/detect";
+import { probeTvPlaybackCapabilities } from "../platform/tizen/deviceCapabilities";
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
+import { humanizePlaybackError } from "../player/humanizePlaybackError";
 import { filterClientRenderableSubtitles } from "../player/subtitleFormats";
 import { formatPlaybackClock } from "../player/timeFormat";
 import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../player/types";
@@ -33,6 +35,8 @@ import { buildStreamUrl } from "../api/client";
 
 const PROGRESS_INTERVAL_MS = 10_000;
 const SEEK_STEP_SECONDS = 15;
+/** Delay before stopping the server session when the app is backgrounded. */
+const BACKGROUND_STOP_GRACE_MS = 30_000;
 
 export interface PlayerLaunch {
   fileId: number;
@@ -74,11 +78,17 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const playbackRef = useRef<PlaybackSessionResponse | null>(null);
   const lastProgressAt = useRef(0);
   const hideTimer = useRef<number | null>(null);
+  const backgroundStopTimer = useRef<number | null>(null);
   const pendingResumeRef = useRef<number | null>(launch.startPositionSeconds ?? null);
   const activeSubtitleIndexRef = useRef(-1);
   const exitedRef = useRef(false);
+  const directFallbackTriedRef = useRef(false);
+  const fallingBackRef = useRef(false);
   const seekByRef = useRef<(delta: number) => void>(() => undefined);
+  const bumpControlsRef = useRef<() => void>(() => undefined);
   const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
+
+  const deviceCaps = useMemo(() => probeTvPlaybackCapabilities(), []);
 
   const [playback, setPlayback] = useState<PlaybackSessionResponse | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -86,6 +96,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const [playing, setPlaying] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [buffering, setBuffering] = useState(false);
   const [currentTime, setCurrentTime] = useState(launch.startPositionSeconds ?? 0);
   const [duration, setDuration] = useState(0);
   const [menu, setMenu] = useState<MenuMode>("none");
@@ -115,6 +126,18 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   useEffect(() => {
     return () => {
       if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
+      if (backgroundStopTimer.current != null) window.clearTimeout(backgroundStopTimer.current);
+    };
+  }, []);
+
+  // Clear opaque app backgrounds so the AVPlay plane shows through.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("player-active");
+    document.body.classList.add("player-active");
+    return () => {
+      root.classList.remove("player-active");
+      document.body.classList.remove("player-active");
     };
   }, []);
 
@@ -123,6 +146,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     void (async () => {
       setLoading(true);
       setError(null);
+      setBuffering(false);
+      directFallbackTriedRef.current = false;
       pendingResumeRef.current = launch.startPositionSeconds ?? null;
       try {
         if (!launch.watch && launch.contentId) {
@@ -135,6 +160,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           profileId: session.profileId,
           forcedPlayMethod: forced,
           startPosition: launch.startPositionSeconds,
+          codecsVideo: deviceCaps.codecs_video,
+          codecsAudio: deviceCaps.codecs_audio,
+          containers: deviceCaps.containers,
+          maxResolution: deviceCaps.max_resolution,
+          hdr: deviceCaps.hdr,
         });
         if (cancelled) {
           // StrictMode remount / abandon — stop the orphaned session so AVPlay
@@ -162,8 +192,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
       } catch (err) {
         if (cancelled) return;
-        if (err instanceof ApiError) setError(err.message);
-        else if (err instanceof Error) setError(err.message);
+        if (err instanceof ApiError) setError(humanizePlaybackError(err.message));
+        else if (err instanceof Error) setError(humanizePlaybackError(err.message));
         else setError("Playback failed to start");
       } finally {
         if (!cancelled) setLoading(false);
@@ -179,6 +209,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     launch.watch,
     session,
     settings,
+    deviceCaps,
   ]);
 
   // Do not DELETE the playback session on React effect cleanup / StrictMode
@@ -204,7 +235,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         if (menu !== "none") return;
         event.preventDefault();
         setPlaying((p) => !p);
-        bumpControls();
+        bumpControlsRef.current();
         return;
       }
       if (key === "MediaRewind" || (key === "ArrowLeft" && event.altKey)) {
@@ -236,10 +267,60 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     }, 4000);
   }
 
-  function handlePlaybackError(message: string) {
-    setError(message);
-    setPlaying(false);
+  async function forceHlsFallback(reason: string): Promise<boolean> {
+    if (directFallbackTriedRef.current || fallingBackRef.current) return false;
+    const current = playbackRef.current;
+    if (!current || current.play_method.trim().toLowerCase() !== "direct") return false;
+    directFallbackTriedRef.current = true;
+    fallingBackRef.current = true;
+    setLoading(true);
+    setError(null);
+    setBuffering(false);
     setControlsVisible(true);
+    const seekAt = playerRef.current?.getCurrentTime() ?? currentTime;
+    const oldSid = current.session_id;
+    try {
+      await stopPlaybackSession(session, oldSid).catch(() => undefined);
+      const started = await startPlayback(session, {
+        fileId: launch.fileId,
+        profileId: session.profileId,
+        forcedPlayMethod: "transcode",
+        startPosition: seekAt,
+        codecsVideo: deviceCaps.codecs_video,
+        codecsAudio: deviceCaps.codecs_audio,
+        containers: deviceCaps.containers,
+        maxResolution: deviceCaps.max_resolution,
+        hdr: deviceCaps.hdr,
+      });
+      const prepared = await preparePlayableSession(session, started, seekAt);
+      setPlayback(prepared.session);
+      setStreamUrl(prepared.streamUrl);
+      pendingResumeRef.current = prepared.playerStartSeconds;
+      setPlaying(true);
+      if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
+      return true;
+    } catch {
+      setError(humanizePlaybackError(reason));
+      setPlaying(false);
+      setControlsVisible(false);
+      return false;
+    } finally {
+      fallingBackRef.current = false;
+      setLoading(false);
+    }
+  }
+
+  function handlePlaybackError(message: string) {
+    const current = playbackRef.current;
+    const isDirect = current?.play_method.trim().toLowerCase() === "direct";
+    if (isDirect && !directFallbackTriedRef.current) {
+      void forceHlsFallback(message);
+      return;
+    }
+    setBuffering(false);
+    setError(humanizePlaybackError(message));
+    setPlaying(false);
+    setControlsVisible(false);
     if (hideTimer.current != null) {
       window.clearTimeout(hideTimer.current);
       hideTimer.current = null;
@@ -249,15 +330,25 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   async function retryPlayback() {
     setError(null);
     setLoading(true);
+    setBuffering(false);
     setControlsVisible(true);
     try {
       const forced = resolveForcedPlayMethod(settings);
       const seekAt = currentTime > 0 ? currentTime : (launch.startPositionSeconds ?? 0);
+      const oldSid = playbackRef.current?.session_id;
+      if (oldSid) {
+        await stopPlaybackSession(session, oldSid).catch(() => undefined);
+      }
       const started = await startPlayback(session, {
         fileId: launch.fileId,
         profileId: session.profileId,
         forcedPlayMethod: forced,
         startPosition: seekAt,
+        codecsVideo: deviceCaps.codecs_video,
+        codecsAudio: deviceCaps.codecs_audio,
+        containers: deviceCaps.containers,
+        maxResolution: deviceCaps.max_resolution,
+        hdr: deviceCaps.hdr,
       });
       const prepared = await preparePlayableSession(session, started, seekAt);
       setPlayback(prepared.session);
@@ -266,8 +357,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       setPlaying(true);
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else if (err instanceof Error) setError(err.message);
+      if (err instanceof ApiError) setError(humanizePlaybackError(err.message));
+      else if (err instanceof Error) setError(humanizePlaybackError(err.message));
       else setError("Playback failed to start");
     } finally {
       setLoading(false);
@@ -291,6 +382,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   async function handleExit() {
     if (exitedRef.current) return;
     exitedRef.current = true;
+    if (backgroundStopTimer.current != null) {
+      window.clearTimeout(backgroundStopTimer.current);
+      backgroundStopTimer.current = null;
+    }
     await reportProgress(true, true);
     const sid = playbackRef.current?.session_id;
     if (sid) {
@@ -298,6 +393,34 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     }
     onExit();
   }
+
+  // After BACKGROUND_STOP_GRACE_MS hidden, report progress and stop the session.
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === "hidden") {
+        if (backgroundStopTimer.current != null) return;
+        backgroundStopTimer.current = window.setTimeout(() => {
+          backgroundStopTimer.current = null;
+          void (async () => {
+            await reportProgress(true, true);
+            const sid = playbackRef.current?.session_id;
+            if (sid && !exitedRef.current) {
+              await stopPlaybackSession(session, sid).catch(() => undefined);
+              playbackRef.current = null;
+            }
+          })();
+        }, BACKGROUND_STOP_GRACE_MS);
+        return;
+      }
+      if (backgroundStopTimer.current != null) {
+        window.clearTimeout(backgroundStopTimer.current);
+        backgroundStopTimer.current = null;
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- session stable for this mount
+  }, [session]);
 
   function seekBy(delta: number) {
     bumpControls();
@@ -311,6 +434,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   useEffect(() => {
     seekByRef.current = seekBy;
+    bumpControlsRef.current = bumpControls;
     handleExitRef.current = handleExit;
   });
 
@@ -413,21 +537,27 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   }, [playback?.playback_info?.stream_type, streamUrl]);
 
   return (
-    <section className="screen player-screen">
-      {streamUrl && !error ? (
+    <section
+      className={`screen player-screen${backend === "html5" ? " player-screen--html5" : ""}`}
+    >
+      {streamUrl ? (
         <PlayerHost
           key={streamUrl}
           url={streamUrl}
           backend={backend}
-          playing={playing}
+          playing={playing && !error}
           mimeType={streamMimeType}
           subtitleAppearance={settings.subtitleAppearance}
           initialSubtitleUrl={streamSubtitleSeed.url}
           initialSubtitleLabel={streamSubtitleSeed.label}
           allowedServerUrl={session.serverUrl}
           onError={handlePlaybackError}
+          onBuffering={(active) => {
+            if (!error) setBuffering(active);
+          }}
           onReady={(player) => {
             playerRef.current = player;
+            setBuffering(false);
             const resume = pendingResumeRef.current;
             if (resume != null && resume > 0) {
               void player.seekTo(resume);
@@ -446,6 +576,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             }
           }}
           onTimeUpdate={(time, dur) => {
+            if (error) return;
             setCurrentTime(time);
             if (dur > 0) setDuration(dur);
             void reportProgress(false);
@@ -453,18 +584,26 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         />
       ) : null}
 
+      {buffering && !error && !loading ? (
+        <div className="player-buffering" aria-live="polite">
+          <p className="player-buffering__label">Buffering…</p>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="player-error" role="alertdialog" aria-labelledby="player-error-title">
-          <p className="eyebrow">Playback error</p>
-          <h1 id="player-error-title">{title}</h1>
-          <p className="form-error">{error}</p>
-          <div className="player-error__actions">
-            <FocusButton autoFocus icon={<Play />} onClick={() => void retryPlayback()}>
-              Try again
-            </FocusButton>
-            <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={() => void handleExit()}>
-              Back to title
-            </FocusButton>
+          <div className="player-error__dialog">
+            <p className="eyebrow">Playback error</p>
+            <h1 id="player-error-title">{title}</h1>
+            <p className="form-error">{error}</p>
+            <div className="player-error__actions">
+              <FocusButton autoFocus icon={<Play />} onClick={() => void retryPlayback()}>
+                Try again
+              </FocusButton>
+              <FocusButton variant="ghost" icon={<ArrowLeft />} onClick={() => void handleExit()}>
+                Back to title
+              </FocusButton>
+            </div>
           </div>
         </div>
       ) : controlsVisible || menu !== "none" ? (
@@ -477,125 +616,137 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
               <p className="eyebrow">Now playing</p>
               <h1>{title}</h1>
               <p className="muted">
-                {backend}
-                {playback?.play_method ? ` · ${playback.play_method}` : ""}
-                {loading ? " · starting…" : ""}
+                {backend === "avplay"
+                  ? "TV player"
+                  : backend === "starfish"
+                    ? "LG player"
+                    : "Browser"}
+                {playback?.play_method === "direct"
+                  ? " · Direct"
+                  : playback?.play_method === "remux"
+                    ? " · Remux"
+                    : playback?.play_method === "transcode"
+                      ? " · Transcode"
+                      : ""}
+                {loading ? " · Starting…" : buffering ? " · Buffering…" : ""}
               </p>
             </div>
           </div>
 
-          <div className="player-scrub">
-            <div className="player-scrub-track">
-              <div className="player-scrub-fill" style={{ width: `${progressPct}%` }} />
+          <div className="player-chrome__bottom">
+            <div className="player-scrub">
+              <div className="player-scrub-track">
+                <div className="player-scrub-fill" style={{ width: `${progressPct}%` }} />
+              </div>
+              <div className="player-time-row">
+                <span>{formatPlaybackClock(currentTime)}</span>
+                <span>{formatPlaybackClock(duration)}</span>
+              </div>
             </div>
-            <div className="player-time-row">
-              <span>{formatPlaybackClock(currentTime)}</span>
-              <span>{formatPlaybackClock(duration)}</span>
-            </div>
-          </div>
 
-          <div className="player-controls">
-            <FocusButton
-              variant="ghost"
-              icon={<Rewind />}
-              onClick={() => seekBy(-SEEK_STEP_SECONDS)}
-              disabled={!streamUrl}
-            >
-              −15s
-            </FocusButton>
-            <FocusButton
-              autoFocus
-              icon={playing ? <Pause /> : <Play />}
-              onClick={() => {
-                setPlaying((p) => {
-                  const next = !p;
-                  if (!next) void reportProgress(true, true);
-                  return next;
-                });
-                bumpControls();
-              }}
-              disabled={!streamUrl}
-            >
-              {playing ? "Pause" : "Play"}
-            </FocusButton>
-            <FocusButton
-              variant="ghost"
-              icon={<FastForward />}
-              onClick={() => seekBy(SEEK_STEP_SECONDS)}
-              disabled={!streamUrl}
-            >
-              +15s
-            </FocusButton>
-            {audioTracks.length > 0 ? (
+            <div className="player-controls">
               <FocusButton
                 variant="ghost"
-                icon={<Volume2 />}
+                icon={<Rewind />}
+                onClick={() => seekBy(-SEEK_STEP_SECONDS)}
+                disabled={!streamUrl}
+              >
+                −15s
+              </FocusButton>
+              <FocusButton
+                autoFocus
+                icon={playing ? <Pause /> : <Play />}
                 onClick={() => {
-                  setMenu((m) => (m === "audio" ? "none" : "audio"));
+                  setPlaying((p) => {
+                    const next = !p;
+                    if (!next) void reportProgress(true, true);
+                    return next;
+                  });
                   bumpControls();
                 }}
+                disabled={!streamUrl}
               >
-                Audio
+                {playing ? "Pause" : "Play"}
               </FocusButton>
-            ) : null}
-            {subtitleTracks.length > 0 ? (
               <FocusButton
                 variant="ghost"
-                icon={<Captions />}
-                onClick={() => {
-                  setMenu((m) => (m === "subs" ? "none" : "subs"));
-                  bumpControls();
-                }}
+                icon={<FastForward />}
+                onClick={() => seekBy(SEEK_STEP_SECONDS)}
+                disabled={!streamUrl}
               >
-                Subs
+                +15s
               </FocusButton>
+              {audioTracks.length > 0 ? (
+                <FocusButton
+                  variant="ghost"
+                  icon={<Volume2 />}
+                  onClick={() => {
+                    setMenu((m) => (m === "audio" ? "none" : "audio"));
+                    bumpControls();
+                  }}
+                >
+                  Audio
+                </FocusButton>
+              ) : null}
+              {subtitleTracks.length > 0 ? (
+                <FocusButton
+                  variant="ghost"
+                  icon={<Captions />}
+                  onClick={() => {
+                    setMenu((m) => (m === "subs" ? "none" : "subs"));
+                    bumpControls();
+                  }}
+                >
+                  Subs
+                </FocusButton>
+              ) : null}
+            </div>
+
+            {menu === "audio" ? (
+              <div className="player-menu" role="menu">
+                <p className="eyebrow">Audio tracks</p>
+                {audioTracks.map((track, index) => (
+                  <FocusButton
+                    key={`a-${index}`}
+                    variant={playback?.audio_track_index === index ? "primary" : "ghost"}
+                    className="player-menu__item"
+                    onClick={() => void chooseAudio(index)}
+                    disabled={busyAudio}
+                  >
+                    {formatAudioLabel(track, index)}
+                    {playback?.audio_track_index === index ? " ✓" : ""}
+                    {busyAudio ? " …" : ""}
+                  </FocusButton>
+                ))}
+              </div>
             ) : null}
+
+            {menu === "subs" ? (
+              <div className="player-menu" role="menu">
+                <p className="eyebrow">Subtitles</p>
+                <FocusButton
+                  variant={activeSubtitleIndex < 0 ? "primary" : "ghost"}
+                  className="player-menu__item"
+                  onClick={() => chooseSubtitle(-1)}
+                >
+                  Off{activeSubtitleIndex < 0 ? " ✓" : ""}
+                </FocusButton>
+                {subtitleTracks.map((track, index) => (
+                  <FocusButton
+                    key={`s-${index}`}
+                    variant={activeSubtitleIndex === index ? "primary" : "ghost"}
+                    className="player-menu__item"
+                    onClick={() => chooseSubtitle(index)}
+                  >
+                    {formatSubtitleLabel(track)}
+                    {activeSubtitleIndex === index ? " ✓" : ""}
+                  </FocusButton>
+                ))}
+              </div>
+            ) : null}
+
+            <p className="hint muted">OK toggles play · −15s / +15s seek · Back exits</p>
           </div>
-
-          {menu === "audio" ? (
-            <div className="player-menu" role="menu">
-              <p className="eyebrow">Audio tracks</p>
-              {audioTracks.map((track, index) => (
-                <FocusButton
-                  key={`a-${index}`}
-                  variant={playback?.audio_track_index === index ? "primary" : "ghost"}
-                  className="player-menu__item"
-                  onClick={() => void chooseAudio(index)}
-                  disabled={busyAudio}
-                >
-                  {formatAudioLabel(track, index)}
-                  {playback?.audio_track_index === index ? " ✓" : ""}
-                  {busyAudio ? " …" : ""}
-                </FocusButton>
-              ))}
-            </div>
-          ) : null}
-
-          {menu === "subs" ? (
-            <div className="player-menu" role="menu">
-              <p className="eyebrow">Subtitles</p>
-              <FocusButton
-                variant={activeSubtitleIndex < 0 ? "primary" : "ghost"}
-                className="player-menu__item"
-                onClick={() => chooseSubtitle(-1)}
-              >
-                Off{activeSubtitleIndex < 0 ? " ✓" : ""}
-              </FocusButton>
-              {subtitleTracks.map((track, index) => (
-                <FocusButton
-                  key={`s-${index}`}
-                  variant={activeSubtitleIndex === index ? "primary" : "ghost"}
-                  className="player-menu__item"
-                  onClick={() => chooseSubtitle(index)}
-                >
-                  {formatSubtitleLabel(track)}
-                  {activeSubtitleIndex === index ? " ✓" : ""}
-                </FocusButton>
-              ))}
-            </div>
-          ) : null}
-
-          <p className="hint muted">OK toggles play · −15s / +15s seek · Back exits</p>
         </div>
       ) : (
         <button

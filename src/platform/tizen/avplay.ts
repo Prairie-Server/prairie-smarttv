@@ -6,6 +6,7 @@ import {
   setSubtitleOverlayText,
 } from "./subtitleOverlay";
 import { pickExternalTextTrackIndex, type AvPlayTrackInfo } from "./avplayTracks";
+import { isHlsUrl, waitForHlsManifest } from "./waitForHlsManifest";
 
 export type { AvPlayTrackInfo };
 export { pickExternalTextTrackIndex };
@@ -34,6 +35,8 @@ export interface AvPlayApi {
   prepare(): void;
   prepareAsync(success?: () => void, error?: (err: unknown) => void): void;
   setDisplayRect(x: number, y: number, width: number, height: number): void;
+  setDisplayMethod?(displayMode: string): void;
+  setStreamingProperty?(propertyType: string, propertyParam: string): void;
   setListener(listener: AvPlayListener): void;
   play(): void;
   pause(): void;
@@ -76,6 +79,7 @@ export interface AvPlayPlayerOptions {
   onError?: (message: string) => void;
   onEnded?: () => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
+  onBuffering?: (active: boolean) => void;
 }
 
 function getAvPlay(): AvPlayApi | null {
@@ -131,6 +135,8 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   let prepareTimer: number | null = null;
   /** True when an external path was set in IDLE and track select must wait for READY+. */
   let pendingTrackSelect = false;
+  let seekInFlight = false;
+  let pendingSeekMs: number | null = null;
   const allowedServerUrl = options.allowedServerUrl ?? null;
 
   const forgetLocalSubtitle = () => {
@@ -142,8 +148,8 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
 
   claimInAppCaptions();
 
-  // Samsung requires an <object type="application/avplayer"> display surface.
-  // Without it, prepare/play can succeed while nothing is painted (blank chrome).
+  // Samsung docs create an <object type="application/avplayer">; keep it transparent
+  // so the hardware plane is not covered by an opaque widget.
   const avObject = document.createElement("object");
   avObject.type = "application/avplayer";
   avObject.setAttribute("aria-hidden", "true");
@@ -153,62 +159,105 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     top: "0",
     width: "100%",
     height: "100%",
+    background: "transparent",
     pointerEvents: "none",
   });
   options.container.appendChild(avObject);
 
   const overlay = createSubtitleOverlay(options.container);
+  const hls = isHlsUrl(options.url);
 
-  /**
-   * setDisplayRect always uses a 1920×1080 coordinate space, regardless of
-   * the app's CSS viewport (Samsung AVPlay guide).
-   */
-  const displayRectForContainer = () => {
-    const rect = options.container.getBoundingClientRect();
-    const clientWidth = Math.max(
-      1,
-      window.document.documentElement.clientWidth || window.innerWidth,
-    );
-    const ratio = 1920 / clientWidth;
-    return {
-      x: Math.max(0, Math.floor(rect.left * ratio)),
-      y: Math.max(0, Math.floor(rect.top * ratio)),
-      width: Math.max(1, Math.floor((rect.width || clientWidth) * ratio)),
-      height: Math.max(1, Math.floor((rect.height || window.innerHeight) * ratio)),
-    };
+  /** setDisplayRect uses the fixed 1920×1080 AVPlay coordinate space. */
+  const fullscreenDisplayRect = () => ({ x: 0, y: 0, width: 1920, height: 1080 });
+
+  const applyDisplay = () => {
+    const display = fullscreenDisplayRect();
+    avplay.setDisplayRect(display.x, display.y, display.width, display.height);
+    try {
+      avplay.setDisplayMethod?.("PLAYER_DISPLAY_MODE_LETTER_BOX");
+    } catch {
+      /* ignore */
+    }
   };
 
-  avplay.open(options.url);
-  // Samsung sample order: open → setListener → setDisplayRect → prepareAsync.
-  avplay.setListener({
-    onerror: (eventType) => options.onError?.(String(eventType)),
-    onstreamcompleted: () => options.onEnded?.(),
-    oncurrentplaytime: (currentTimeMs) => {
-      let durationMs = 0;
+  const applyIdleStreamingProps = () => {
+    try {
+      avplay.setStreamingProperty?.("USER_AGENT", "PrairieTizenClient");
+    } catch {
       try {
-        durationMs = avplay.getDuration();
+        avplay.setStreamingProperty?.("USERAGENT", "PrairieTizenClient");
       } catch {
-        // keep durationMs at 0 when getDuration is unavailable
+        /* older firmwares */
       }
-      options.onTimeUpdate?.(currentTimeMs / 1000, durationMs / 1000);
-    },
-    onsubtitlechange: (_duration, text) => {
-      if (destroyed || !overlayEnabled) {
-        clearSubtitleOverlay(overlay);
-        return;
+    }
+    if (hls) {
+      try {
+        avplay.setStreamingProperty?.(
+          "ADAPTIVE_INFO",
+          [
+            "FIXED_MAX_RESOLUTION=3840x2160",
+            "STARTBITRATE=HIGHEST",
+            "USER_AGENT=PrairieTizenClient",
+            "INITIAL_BUFFER_DURATION=6000",
+            "RESUME_BUFFER_DURATION=4000",
+          ].join("|"),
+        );
+      } catch {
+        /* ignore */
       }
-      setSubtitleOverlayText(overlay, text);
-    },
-  });
-  const display = displayRectForContainer();
-  avplay.setDisplayRect(display.x, display.y, display.width, display.height);
+    }
+    try {
+      (
+        avplay as AvPlayApi & {
+          setBufferingParam?: (a: string, b: string, c: number) => void;
+        }
+      ).setBufferingParam?.("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", 6);
+      (
+        avplay as AvPlayApi & {
+          setBufferingParam?: (a: string, b: string, c: number) => void;
+        }
+      ).setBufferingParam?.("PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", 4);
+    } catch {
+      /* ignore */
+    }
+  };
 
-  // Always silence AVPlay's built-in caption renderer; we draw via the overlay.
-  try {
-    avplay.setSilentSubtitle?.(true);
-  } catch {
-    /* ignore */
-  }
+  let opened = false;
+  const openSession = () => {
+    if (destroyed || opened) return;
+    opened = true;
+    avplay.open(options.url);
+    applyIdleStreamingProps();
+    // Samsung sample order: open → setListener → setDisplayRect → prepareAsync.
+    avplay.setListener({
+      onbufferingstart: () => options.onBuffering?.(true),
+      onbufferingcomplete: () => options.onBuffering?.(false),
+      onerror: (eventType) => options.onError?.(String(eventType)),
+      onstreamcompleted: () => options.onEnded?.(),
+      oncurrentplaytime: (currentTimeMs) => {
+        let durationMs = 0;
+        try {
+          durationMs = avplay.getDuration();
+        } catch {
+          // keep durationMs at 0 when getDuration is unavailable
+        }
+        options.onTimeUpdate?.(currentTimeMs / 1000, durationMs / 1000);
+      },
+      onsubtitlechange: (_duration, text) => {
+        if (destroyed || !overlayEnabled) {
+          clearSubtitleOverlay(overlay);
+          return;
+        }
+        setSubtitleOverlayText(overlay, text);
+      },
+    });
+    applyDisplay();
+    try {
+      avplay.setSilentSubtitle?.(true);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const safePlay = () => {
     if (destroyed) return;
@@ -295,6 +344,12 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   const onPrepared = () => {
     if (destroyed) return;
     ready = true;
+    // Re-apply display after prepare — some firmwares reset it.
+    try {
+      applyDisplay();
+    } catch {
+      /* ignore */
+    }
     if (pendingTrackSelect && overlayEnabled) {
       selectExternalTextTrack();
     }
@@ -320,13 +375,22 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
   };
 
   /**
-   * Delay prepare one tick so PlayerHost.onReady → setTextTrack can queue a
-   * pending subtitle, then attach it in IDLE before prepare (Samsung-recommended).
-   * Drain pendingSubtitle in a loop so a newer selection during download is not lost.
+   * Startup: wait for HLS playlist (remux/transcode), open AVPlay, attach
+   * IDLE subtitles, then prepare. Direct play skips the manifest poll.
    */
   const beginStartup = () => {
     if (destroyed || prepareStarted) return;
     void (async () => {
+      if (hls) {
+        await waitForHlsManifest(options.url);
+        if (destroyed) return;
+      }
+      try {
+        openSession();
+      } catch (err) {
+        options.onError?.(err instanceof Error ? err.message : String(err));
+        return;
+      }
       while (pendingSubtitle && !destroyed) {
         const next = pendingSubtitle;
         pendingSubtitle = null;
@@ -359,11 +423,29 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     },
     seekTo: (seconds: number) => {
       if (destroyed || !ready) return;
-      try {
-        avplay.seekTo(Math.max(0, Math.floor(seconds * 1000)));
-      } catch (err) {
-        options.onError?.(err instanceof Error ? err.message : String(err));
+      const ms = Math.max(0, Math.floor(seconds * 1000));
+      if (seekInFlight) {
+        pendingSeekMs = ms;
+        return;
       }
+      const runSeek = (targetMs: number) => {
+        seekInFlight = true;
+        const onDone = () => {
+          seekInFlight = false;
+          if (destroyed) return;
+          if (pendingSeekMs == null) return;
+          const next = pendingSeekMs;
+          pendingSeekMs = null;
+          runSeek(next);
+        };
+        try {
+          avplay.seekTo(targetMs, onDone, onDone);
+        } catch (err) {
+          seekInFlight = false;
+          options.onError?.(err instanceof Error ? err.message : String(err));
+        }
+      };
+      runSeek(ms);
     },
     getCurrentTime: () => {
       try {
@@ -426,15 +508,17 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
         prepareTimer = null;
       }
       destroySubtitleOverlay(overlay);
-      try {
-        avplay.stop();
-      } catch {
-        /* ignore */
-      }
-      try {
-        avplay.close();
-      } catch {
-        /* ignore */
+      if (opened) {
+        try {
+          avplay.stop();
+        } catch {
+          /* ignore */
+        }
+        try {
+          avplay.close();
+        } catch {
+          /* ignore */
+        }
       }
       avObject.remove();
     },

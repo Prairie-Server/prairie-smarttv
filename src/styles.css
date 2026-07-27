@@ -14,11 +14,6 @@
   --font-display: "Fraunces", "Georgia", serif;
   --radius: 14px;
   --focus-outline: 3px solid var(--prairie-ring);
-  --focus-scale: 1.05;
-  --focus-scale-sm: 1.03;
-  --focus-shadow: 0 14px 32px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(240, 197, 116, 0.4);
-  --focus-shadow-sm: 0 12px 28px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(240, 197, 116, 0.35);
-  --motion-duration: 160ms;
 }
 
 *,
@@ -44,6 +39,18 @@ body {
   color: var(--prairie-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
+}
+
+/*
+ * Tizen AVPlay draws on a hardware plane BEHIND the WebView.
+ * Clear every ancestor background while playing so the video plane is visible.
+ */
+html.player-active,
+html.player-active body,
+html.player-active #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 button,
@@ -757,7 +764,7 @@ button:focus,
   box-shadow: 0 0 0 2px rgba(240, 197, 116, 0.28);
 }
 
-/* Compact Litefin-style settings menu (anchored, no full-width CLS). */
+/* Compact anchored settings menu (no full-width CLS). */
 .settings-row-wrap {
   position: relative;
 }
@@ -894,11 +901,19 @@ button:focus,
   flex-shrink: 0;
 }
 
-/* Player */
+/* Player — video plane is behind HTML on Tizen; keep surfaces transparent. */
 .player-screen {
-  position: relative;
+  position: fixed;
+  inset: 0;
   padding: 0;
   min-height: 100%;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.player-screen--html5 {
   background: #000;
 }
 
@@ -907,6 +922,10 @@ button:focus,
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  background: transparent;
+}
+
+.player-screen--html5 .player-host {
   background: #000;
 }
 
@@ -915,22 +934,24 @@ button:focus,
   inset: 0;
   width: 100%;
   height: 100%;
+  background: transparent;
 }
 
 .player-chrome {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 2;
-  min-height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: 0.85rem;
+  justify-content: space-between;
+  gap: 0;
   padding: clamp(1.25rem, 3vw, 2.5rem);
   background: linear-gradient(
     180deg,
-    rgba(8, 10, 14, 0.55) 0%,
-    transparent 28%,
-    rgba(8, 10, 14, 0.92) 78%
+    rgba(8, 10, 14, 0.72) 0%,
+    transparent 22%,
+    transparent 62%,
+    rgba(8, 10, 14, 0.88) 100%
   );
   pointer-events: none;
 }
@@ -939,18 +960,34 @@ button:focus,
   pointer-events: auto;
 }
 
-.player-error {
-  position: relative;
-  z-index: 3;
-  min-height: 100%;
+.player-chrome__bottom {
   display: grid;
-  align-content: center;
-  justify-items: start;
   gap: 0.85rem;
+}
+
+.player-error {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
   padding: clamp(1.5rem, 4vw, 3rem);
+  /* Fully opaque so a failed AVPlay plane / transparent body never shows through. */
+  background: #0a0c10;
+}
+
+.player-error__dialog {
+  width: min(36rem, 100%);
+  display: grid;
+  gap: 0.85rem;
+  justify-items: start;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border-radius: var(--radius);
+  border: 1px solid rgba(240, 197, 116, 0.22);
   background:
-    radial-gradient(900px 500px at 20% 10%, rgba(224, 112, 112, 0.16), transparent 55%),
-    linear-gradient(165deg, #10151c 0%, #0a0c10 100%);
+    radial-gradient(600px 280px at 10% 0%, rgba(224, 112, 112, 0.18), transparent 55%),
+    linear-gradient(165deg, #161b24 0%, #0c0f14 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
 
 .player-error .eyebrow {
@@ -972,7 +1009,7 @@ button:focus,
 .player-error h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
   max-width: 36rem;
 }
 
@@ -981,6 +1018,27 @@ button:focus,
   flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 0.5rem;
+}
+
+.player-buffering {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(8, 10, 14, 0.45), transparent 65%);
+}
+
+.player-buffering__label {
+  margin: 0;
+  padding: 0.65rem 1.1rem;
+  border-radius: var(--radius);
+  background: rgba(8, 10, 14, 0.78);
+  border: 1px solid rgba(240, 197, 116, 0.2);
+  color: rgba(245, 240, 230, 0.92);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
 }
 
 .detail-back {
@@ -1013,7 +1071,6 @@ button:focus,
   display: flex;
   align-items: flex-start;
   gap: 1rem;
-  margin-bottom: auto;
 }
 
 .player-meta h1 {
@@ -1471,7 +1528,7 @@ button:focus,
 
 .landscape-card {
   flex: 0 0 auto;
-  width: 100%;
+  width: min(22rem, 72vw);
   display: grid;
   gap: 0.7rem;
   text-align: left;
@@ -1484,16 +1541,18 @@ button:focus,
   overflow: hidden;
   scroll-snap-align: start;
   transition:
-    border-color var(--motion-duration) ease,
-    transform var(--motion-duration) ease,
-    box-shadow var(--motion-duration) ease;
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .landscape-card:focus {
   outline: none;
-  transform: scale(var(--focus-scale-sm));
+  transform: scale(1.03);
   border-color: rgba(224, 168, 74, 0.6);
-  box-shadow: var(--focus-shadow-sm);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.3),
+    0 0 0 2px rgba(240, 197, 116, 0.35);
 }
 
 .landscape-card__art {
@@ -1681,11 +1740,6 @@ button:focus,
   contain-intrinsic-size: auto 18.25rem;
 }
 
-.media-row--landscape {
-  min-height: 14.5rem;
-  contain-intrinsic-size: auto 14.5rem;
-}
-
 .media-row__title {
   margin: 0;
   font-size: 1.2rem;
@@ -1702,35 +1756,13 @@ button:focus,
 }
 
 .media-row__scroller {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(140px, 170px);
   gap: 0.9rem;
   overflow-x: auto;
   padding-bottom: 0.35rem;
   scroll-snap-type: x mandatory;
-}
-
-.media-row__item {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
-  min-width: 0;
-}
-
-.media-row--poster .media-row__item {
-  width: clamp(140px, 12vw, 170px);
-}
-
-.media-row--landscape .media-row__item {
-  width: min(22rem, 72vw);
-}
-
-.media-row__spacer {
-  flex: 0 0 auto;
-  pointer-events: none;
-}
-
-.media-row__item > .poster-card,
-.media-row__item > .landscape-card {
-  width: 100%;
 }
 
 .poster-grid,
@@ -1742,15 +1774,6 @@ button:focus,
 
 .poster-grid {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-}
-
-.poster-grid__cell {
-  min-width: 0;
-}
-
-.poster-grid__cell > .poster-card {
-  width: 100%;
-  height: 100%;
 }
 
 .library-grid {
@@ -1777,19 +1800,21 @@ button:focus,
   overflow: hidden;
   scroll-snap-align: start;
   transition:
-    border-color var(--motion-duration) ease,
-    transform var(--motion-duration) ease,
-    box-shadow var(--motion-duration) ease,
-    background var(--motion-duration) ease;
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .poster-card:focus,
 .library-card:focus,
 .profile-card:focus {
   outline: none;
-  transform: scale(var(--focus-scale));
+  transform: scale(1.05);
   border-color: rgba(224, 168, 74, 0.65);
-  box-shadow: var(--focus-shadow);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.35),
+    0 0 0 2px rgba(240, 197, 116, 0.4);
   z-index: 1;
 }
 
