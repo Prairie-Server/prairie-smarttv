@@ -42,7 +42,7 @@ function PosterCardInner({
     }
   }
 
-  const normalizedPosterUrl = posterUrl?.trim() ?? "";
+  const normalizedPosterUrl = typeof posterUrl === "string" ? posterUrl.trim() : "";
   const hasPosterUrl = normalizedPosterUrl.length > 0;
   const subtitleText = subtitle?.trim() ?? "";
 

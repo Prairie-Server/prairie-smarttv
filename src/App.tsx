@@ -7,6 +7,7 @@ import {
   setSessionTokensRefreshedHandler,
   setSessionUnauthorizedHandler,
 } from "./api/sessionClient";
+import { ScreenErrorBoundary } from "./components/ScreenErrorBoundary";
 import { ShellNav, type ShellTab } from "./components/ShellNav";
 import type { DiscoveryHit } from "./discovery/discover";
 import { handleSpatialArrowKey } from "./focus/spatialFocus";
@@ -110,6 +111,15 @@ export function App() {
   const [route, setRoute] = useState<Route>(() => initialRoute());
   const [liveTvProbe, setLiveTvProbe] = useState(false);
   const liveTvAvailable = session != null && liveTvProbe;
+
+  // Keying the boundary on the route clears a stale error when the user
+  // navigates away, so a crashed screen never sticks to the next one.
+  const routeKey = route.name === "detail" ? `detail:${route.contentId}` : route.name;
+  const guard = (screen: string, node: ReactNode, onBack?: () => void) => (
+    <ScreenErrorBoundary key={routeKey} screen={screen} onBack={onBack}>
+      {node}
+    </ScreenErrorBoundary>
+  );
 
   const goServers = useCallback((autoScan = true) => {
     setRoute({ name: "servers", autoScan });
@@ -341,15 +351,20 @@ export function App() {
   }
 
   if (route.name === "detail") {
+    const detailRoute = route;
     return (
       <ServerUrlContext.Provider value={session.serverUrl}>
-        <ItemDetailScreen
-          session={session}
-          contentId={route.contentId}
-          onBack={() => setRoute(route.back)}
-          onPlay={(launch) => setRoute({ name: "player", launch, back: route })}
-          onOpenItem={(contentId) => setRoute({ name: "detail", contentId, back: route })}
-        />
+        {guard(
+          "This title",
+          <ItemDetailScreen
+            session={session}
+            contentId={detailRoute.contentId}
+            onBack={() => setRoute(detailRoute.back)}
+            onPlay={(launch) => setRoute({ name: "player", launch, back: detailRoute })}
+            onOpenItem={(contentId) => setRoute({ name: "detail", contentId, back: detailRoute })}
+          />,
+          () => setRoute(detailRoute.back),
+        )}
       </ServerUrlContext.Provider>
     );
   }
@@ -455,7 +470,9 @@ export function App() {
           onSettings={() => setRoute({ name: "settings", back: route })}
           onDisconnect={disconnect}
         />
-        <main className="shell__main">{body}</main>
+        <main className="shell__main">
+          {guard("This screen", body, () => setRoute({ name: "home" }))}
+        </main>
       </div>
     </ServerUrlContext.Provider>
   );

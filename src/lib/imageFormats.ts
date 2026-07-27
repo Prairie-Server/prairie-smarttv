@@ -65,16 +65,35 @@ async function probeFormats(): Promise<RasterFormat[]> {
 
 import { preferredRasterFormatsForTier, resolvePerformanceTier } from "../perf/performanceTier";
 
+let tieredCache: { source: readonly RasterFormat[]; result: RasterFormat[] } | null = null;
+
+/**
+ * Tier resolution reads localStorage and sniffs the UA. Card-heavy screens call
+ * this once per image per render, and synchronous storage reads are expensive on
+ * TV browsers — so the tiered result is memoized until the mode changes.
+ */
+function tieredFormats(source: readonly RasterFormat[]): RasterFormat[] {
+  if (tieredCache && tieredCache.source === source) return tieredCache.result;
+  const result = preferredRasterFormatsForTier(resolvePerformanceTier(), source);
+  tieredCache = { source, result };
+  return result;
+}
+
+/** Drop the memoized tier so a performance-mode change takes effect. */
+export function resetImageFormatTierCache(): void {
+  tieredCache = null;
+}
+
 export function getImageFormats(): RasterFormat[] {
-  if (cached) return preferredRasterFormatsForTier(resolvePerformanceTier(), cached);
+  if (cached) return tieredFormats(cached);
   if (typeof localStorage !== "undefined") {
     const stored = parseStored(localStorage.getItem(STORAGE_KEY));
     if (stored) {
       cached = stored;
-      return preferredRasterFormatsForTier(resolvePerformanceTier(), stored);
+      return tieredFormats(stored);
     }
   }
-  return preferredRasterFormatsForTier(resolvePerformanceTier(), DEFAULT_FORMATS);
+  return tieredFormats(DEFAULT_FORMATS);
 }
 
 export async function detectImageFormats(): Promise<RasterFormat[]> {
@@ -120,6 +139,7 @@ export function orderRasterCandidates(
 export function resetImageFormatsCacheForTests(): void {
   cached = null;
   detectPromise = null;
+  tieredCache = null;
   if (typeof localStorage !== "undefined") {
     localStorage.removeItem(STORAGE_KEY);
   }

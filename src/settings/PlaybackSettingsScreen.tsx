@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FocusButton } from "../components/FocusButton";
 import { SettingsChoiceRow, SettingsToggleRow } from "../components/SettingsRows";
 import { isBackKey } from "../focus/spatialFocus";
+import { resetImageFormatTierCache } from "../lib/imageFormats";
 import { detectPlatform } from "../platform/detect";
 import type { PlayerBackendPreference } from "../platform/types";
 import {
@@ -228,6 +229,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
             const next = savePerformanceMode(mode);
             setPerformanceMode(next);
             applyPerformanceTier(resolvePerformanceTier(next));
+            resetImageFormatTierCache();
             scheduleDurablePersist();
           }}
         />

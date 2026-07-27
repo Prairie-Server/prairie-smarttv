@@ -29,7 +29,8 @@ export function formatRuntimeSeconds(seconds: number | null | undefined): string
   return formatRuntimeMinutes(Math.round(seconds / 60));
 }
 
-export function typeLabel(type: string): string {
+export function typeLabel(type: string | null | undefined): string {
+  if (!type) return "Title";
   switch (type.toLowerCase()) {
     case "movie":
       return "Movie";
@@ -143,16 +144,20 @@ export function sourceTokens(detail: ItemDetail): string[] {
 
 export function starringText(detail: ItemDetail): string | null {
   const names = (detail.cast ?? [])
+    .filter(Boolean)
     .slice(0, 3)
-    .map((c) => c.name)
-    .filter(Boolean);
+    .map((c) => c?.name)
+    .filter((name): name is string => Boolean(name));
   if (!names.length) return null;
   return `Starring ${names.join(", ")}`;
 }
 
 export function crewLine(detail: ItemDetail): string | null {
-  const crew = detail.crew ?? [];
-  const directors = crew.filter((c) => /director|creator/i.test(c.job)).map((c) => c.name);
+  const crew = (detail.crew ?? []).filter(Boolean);
+  const directors = crew
+    .filter((c) => /director|creator/i.test(c?.job ?? ""))
+    .map((c) => c?.name)
+    .filter((name): name is string => Boolean(name));
   const unique = [...new Set(directors)].slice(0, 3);
   if (!unique.length) return null;
   const label = isSeriesType(detail.type) ? "Created by" : "Directed by";
@@ -163,13 +168,15 @@ const FEATURED_CREW_JOB = /^(director|writers?|producer|executive producer|creat
 
 /** Primary crew for portrait rails (same visual weight as cast cards). */
 export function featuredCrew(detail: ItemDetail, limit = 12): CrewMember[] {
-  const crew = detail.crew ?? [];
-  const matched = crew.filter((member) => FEATURED_CREW_JOB.test(member.job.trim()));
+  // Server payloads occasionally omit `job` / `name`; a throw here would take
+  // the whole detail screen down, so treat missing strings as empty.
+  const crew = (detail.crew ?? []).filter(Boolean);
+  const matched = crew.filter((member) => FEATURED_CREW_JOB.test((member?.job ?? "").trim()));
   const source = matched.length > 0 ? matched : crew;
   const seen = new Set<string>();
   const out: CrewMember[] = [];
   for (const member of source) {
-    const key = `${member.person_id ?? member.name}|${member.job}`;
+    const key = `${member.person_id ?? member.name ?? ""}|${member.job ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(member);
