@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { clearSession, loadSession, normalizeServerUrl, saveSession } from "./session";
+import {
+  clearSession,
+  loadSession,
+  normalizeServerUrl,
+  saveSession,
+  updateSessionTokens,
+} from "./session";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -302,5 +308,57 @@ describe("session persistence", () => {
     clearSession();
     expect(localStorage.getItem("prairie.session")).toBeNull();
     expect(localStorage.getItem("prairie.session.accessToken")).toBeNull();
+  });
+
+  it("updates access/refresh tokens without rewriting identity", () => {
+    const storage = memoryStorage();
+    const tokensStorage = memoryStorage();
+    saveSession(
+      {
+        serverUrl: "https://prairie.example",
+        accessToken: "old",
+        refreshToken: "ref-old",
+        username: "ada",
+        profileId: "p1",
+        profileName: "Ada",
+      },
+      storage,
+      tokensStorage,
+    );
+
+    expect(
+      updateSessionTokens({ accessToken: "new", refreshToken: "ref-new" }, storage, tokensStorage),
+    ).toMatchObject({
+      accessToken: "new",
+      refreshToken: "ref-new",
+      profileId: "p1",
+      username: "ada",
+    });
+
+    expect(updateSessionTokens({ accessToken: "newer" }, storage, tokensStorage)).toMatchObject({
+      accessToken: "newer",
+      refreshToken: "ref-new",
+    });
+
+    expect(updateSessionTokens({ accessToken: "x" }, memoryStorage(), memoryStorage())).toBeNull();
+  });
+
+  it("clears refresh tokens from sessionStorage on logout", () => {
+    const storage = memoryStorage();
+    saveSession(
+      {
+        serverUrl: "https://prairie.example",
+        accessToken: "tok",
+        refreshToken: "ref",
+        username: "ada",
+        profileId: "p1",
+      },
+      storage,
+      storage,
+    );
+    sessionStorage.setItem("prairie.session.refreshToken", "leftover-ref");
+    clearSession(storage, storage);
+    expect(sessionStorage.getItem("prairie.session.refreshToken")).toBeNull();
+    expect(storage.getItem("prairie.session.refreshToken")).toBeNull();
   });
 });

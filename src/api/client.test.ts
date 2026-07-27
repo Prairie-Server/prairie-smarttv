@@ -169,6 +169,157 @@ describe("apiRequest", () => {
     expect(localStorage.getItem("prairie.session.refreshToken")).toBe("refresh-2");
   });
 
+  it("calls onUnauthorized when refresh is missing or fails", async () => {
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: "expired" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+    );
+
+    await expect(
+      apiRequest(
+        {
+          serverUrl: "https://prairie.example",
+          accessToken: "old",
+          fetchImpl,
+          onUnauthorized,
+        },
+        "/api/v1/home/sections",
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+
+    onUnauthorized.mockClear();
+    localStorage.setItem("prairie.session.refreshToken", "stale");
+    localStorage.setItem(
+      "prairie.session",
+      JSON.stringify({
+        serverUrl: "https://prairie.example",
+        username: "ada",
+        profileId: "p1",
+      }),
+    );
+    localStorage.setItem("prairie.session.accessToken", "old");
+    const refreshFail = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) {
+        return new Response("nope", { status: 401 });
+      }
+      return new Response(JSON.stringify({ message: "expired" }), { status: 401 });
+    });
+    await expect(
+      apiRequest(
+        {
+          serverUrl: "https://prairie.example",
+          accessToken: "old",
+          refreshToken: "stale",
+          fetchImpl: refreshFail,
+          onUnauthorized,
+        },
+        "/api/v1/libraries",
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it("logs out when a refreshed request still returns 401", async () => {
+    const onUnauthorized = vi.fn(() => {
+      throw new Error("logout boom");
+    });
+    const onTokensRefreshed = vi.fn(() => {
+      throw new Error("listener boom");
+    });
+    localStorage.setItem(
+      "prairie.session",
+      JSON.stringify({
+        serverUrl: "https://prairie.example",
+        username: "ada",
+        profileId: "p1",
+      }),
+    );
+    localStorage.setItem("prairie.session.accessToken", "old");
+    localStorage.setItem("prairie.session.refreshToken", "ref");
+
+    let homeCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "new",
+            refresh_token: "ref2",
+            expires_in: 60,
+          }),
+          { status: 200 },
+        );
+      }
+      homeCalls += 1;
+      return new Response(JSON.stringify({ message: "still bad" }), { status: 401 });
+    });
+
+    await expect(
+      apiRequest(
+        {
+          serverUrl: "https://prairie.example",
+          accessToken: "old",
+          refreshToken: "ref",
+          fetchImpl,
+          onUnauthorized,
+          onTokensRefreshed,
+        },
+        "/api/v1/home/sections",
+      ),
+    ).rejects.toMatchObject({ status: 401, message: "still bad" });
+    expect(homeCalls).toBe(2);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(onTokensRefreshed).toHaveBeenCalledOnce();
+  });
+
+  it("reads a refresh token from localStorage when options omit it", async () => {
+    localStorage.setItem(
+      "prairie.session",
+      JSON.stringify({
+        serverUrl: "https://prairie.example",
+        username: "ada",
+        profileId: "p1",
+      }),
+    );
+    localStorage.setItem("prairie.session.accessToken", "old");
+    localStorage.setItem("prairie.session.refreshToken", "from-storage");
+
+    let homeCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "new",
+            refresh_token: "next",
+            expires_in: 60,
+          }),
+          { status: 200 },
+        );
+      }
+      homeCalls += 1;
+      if (homeCalls === 1) {
+        return new Response(JSON.stringify({ message: "expired" }), { status: 401 });
+      }
+      return new Response(null, { status: 204 });
+    });
+
+    await expect(
+      apiRequest(
+        {
+          serverUrl: "https://prairie.example",
+          accessToken: "old",
+          fetchImpl,
+        },
+        "/api/v1/home/sections",
+      ),
+    ).resolves.toBeUndefined();
+    expect(localStorage.getItem("prairie.session.accessToken")).toBe("new");
+  });
+
   it("does not call onUnauthorized for auth/login 401", async () => {
     const onUnauthorized = vi.fn();
     const fetchImpl = vi.fn(

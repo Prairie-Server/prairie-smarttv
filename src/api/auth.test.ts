@@ -5,6 +5,7 @@ import {
   login,
   pickDefaultProfile,
   pollDeviceLogin,
+  refreshAccessToken,
   startDeviceLogin,
   verifyProfilePin,
 } from "./auth";
@@ -140,5 +141,28 @@ describe("auth API helpers", () => {
       fetchImpl,
     );
     expect(result).toEqual({ valid: true, profile_token: "ptok" });
+  });
+
+  it("refreshes tokens and returns null on failure", async () => {
+    const ok = vi.fn(async (url: RequestInfo | URL) => {
+      expect(String(url)).toBe("https://prairie.example/api/v1/auth/refresh");
+      return new Response(
+        JSON.stringify({ access_token: "a", refresh_token: "r", expires_in: 60 }),
+        { status: 200 },
+      );
+    });
+    await expect(refreshAccessToken("https://prairie.example///", "old", ok)).resolves.toEqual({
+      access_token: "a",
+      refresh_token: "r",
+      expires_in: 60,
+    });
+
+    const denied = vi.fn(async () => new Response("nope", { status: 401 }));
+    await expect(refreshAccessToken("https://prairie.example", "old", denied)).resolves.toBeNull();
+
+    const boom = vi.fn(async () => {
+      throw new Error("network");
+    });
+    await expect(refreshAccessToken("https://prairie.example", "old", boom)).resolves.toBeNull();
   });
 });

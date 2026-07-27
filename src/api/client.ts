@@ -251,16 +251,6 @@ export async function apiRequest<T>(
           /* logout handlers must not mask the ApiError */
         }
       }
-    } else if (
-      options.onUnauthorized &&
-      shouldNotifyUnauthorized(response.status, peek.code) &&
-      !isAuthLoginPath(path)
-    ) {
-      try {
-        options.onUnauthorized();
-      } catch {
-        /* logout handlers must not mask the ApiError */
-      }
     }
 
     throw new ApiError(peek.message, response.status, peek.code, peek.body);

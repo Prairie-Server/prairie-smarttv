@@ -9,6 +9,7 @@ import {
   isWatchableHls,
   nextProgramForChannel,
   playableLiveUrl,
+  programProgressFraction,
   releaseLiveTvSession,
   resolveLivePlaybackUrl,
   scheduleLiveTvRecording,
@@ -239,6 +240,34 @@ describe("guide helpers", () => {
     expect(
       currentProgramForChannel([{ ...programs[0]!, start: "bad", stop: "bad" }], "ch-1", now),
     ).toBeNull();
+  });
+
+  it("computes programme progress fraction", () => {
+    expect(
+      programProgressFraction(
+        "2026-07-25T19:00:00.000Z",
+        "2026-07-25T20:00:00.000Z",
+        Date.parse("2026-07-25T19:30:00.000Z"),
+      ),
+    ).toBeCloseTo(0.5);
+    expect(programProgressFraction("bad", "also-bad", now)).toBe(0);
+    expect(
+      programProgressFraction("2026-07-25T20:00:00.000Z", "2026-07-25T19:00:00.000Z", now),
+    ).toBe(0);
+    expect(
+      programProgressFraction(
+        "2026-07-25T19:00:00.000Z",
+        "2026-07-25T20:00:00.000Z",
+        Date.parse("2026-07-25T18:00:00.000Z"),
+      ),
+    ).toBe(0);
+    expect(
+      programProgressFraction(
+        "2026-07-25T19:00:00.000Z",
+        "2026-07-25T20:00:00.000Z",
+        Date.parse("2026-07-25T21:00:00.000Z"),
+      ),
+    ).toBe(1);
   });
 });
 
