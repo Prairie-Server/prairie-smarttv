@@ -142,14 +142,44 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
 
   claimInAppCaptions();
 
-  const rect = options.container.getBoundingClientRect();
-  const width = Math.max(1, Math.floor(rect.width || window.innerWidth));
-  const height = Math.max(1, Math.floor(rect.height || window.innerHeight));
+  // Samsung requires an <object type="application/avplayer"> display surface.
+  // Without it, prepare/play can succeed while nothing is painted (blank chrome).
+  const avObject = document.createElement("object");
+  avObject.type = "application/avplayer";
+  avObject.setAttribute("aria-hidden", "true");
+  Object.assign(avObject.style, {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+  });
+  options.container.appendChild(avObject);
 
   const overlay = createSubtitleOverlay(options.container);
 
+  /**
+   * setDisplayRect always uses a 1920×1080 coordinate space, regardless of
+   * the app's CSS viewport (Samsung AVPlay guide).
+   */
+  const displayRectForContainer = () => {
+    const rect = options.container.getBoundingClientRect();
+    const clientWidth = Math.max(
+      1,
+      window.document.documentElement.clientWidth || window.innerWidth,
+    );
+    const ratio = 1920 / clientWidth;
+    return {
+      x: Math.max(0, Math.floor(rect.left * ratio)),
+      y: Math.max(0, Math.floor(rect.top * ratio)),
+      width: Math.max(1, Math.floor((rect.width || clientWidth) * ratio)),
+      height: Math.max(1, Math.floor((rect.height || window.innerHeight) * ratio)),
+    };
+  };
+
   avplay.open(options.url);
-  avplay.setDisplayRect(0, 0, width, height);
+  // Samsung sample order: open → setListener → setDisplayRect → prepareAsync.
   avplay.setListener({
     onerror: (eventType) => options.onError?.(String(eventType)),
     onstreamcompleted: () => options.onEnded?.(),
@@ -170,6 +200,8 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       setSubtitleOverlayText(overlay, text);
     },
   });
+  const display = displayRectForContainer();
+  avplay.setDisplayRect(display.x, display.y, display.width, display.height);
 
   // Always silence AVPlay's built-in caption renderer; we draw via the overlay.
   try {
@@ -404,6 +436,7 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       } catch {
         /* ignore */
       }
+      avObject.remove();
     },
   };
 }

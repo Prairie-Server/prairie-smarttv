@@ -1,6 +1,9 @@
 /**
- * webOS "Starfish-style" playback: HTML5 <video> with LG mediaOption /
- * mediaPreferred hints when the platform understands them.
+ * webOS native playback via HTML5 <video> + LG mediaOption / mediaPreferred.
+ * This is the supported web-app path into the Starfish media pipeline — not the
+ * private C++ StarfishMediaAPIs surface.
+ *
+ * @see https://webostv.developer.lge.com/develop/guides/mediaoption-parameter
  */
 
 export interface StarfishPlayerHandle {
@@ -25,13 +28,83 @@ export interface StarfishPlayerOptions {
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
 }
 
-function buildMediaOption(preferNative: boolean): string | undefined {
-  if (!preferNative) return undefined;
+export type StarfishStreamKind = "hls" | "mp4" | "other";
+
+const HLS_MIME = "application/vnd.apple.mpegurl";
+const MP4_MIME = "video/mp4";
+
+/** Infer transport kind from an explicit MIME hint and/or URL. */
+export function detectStarfishStreamKind(
+  url: string,
+  mimeType?: string | null,
+): StarfishStreamKind {
+  const mime = (mimeType ?? "").trim().toLowerCase();
+  if (
+    mime.includes("mpegurl") ||
+    mime.includes("m3u8") ||
+    mime === "application/vnd.apple.mpegurl" ||
+    mime === "application/x-mpegurl"
+  ) {
+    return "hls";
+  }
+  if (mime.includes("mp4") || mime.includes("mpeg")) {
+    return "mp4";
+  }
+
+  const path = url.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".m3u8") || path.includes("/hls") || path.includes("master.m3u8")) {
+    return "hls";
+  }
+  if (path.endsWith(".mp4") || path.endsWith(".m4v")) {
+    return "mp4";
+  }
+  return "other";
+}
+
+/**
+ * MIME type for the <source type="...;mediaOption=..."> attribute.
+ * HLS must use an MPEG-URL type so webOS selects the HLS pipeline.
+ */
+export function resolveStarfishMimeType(url: string, mimeType?: string | null): string {
+  const kind = detectStarfishStreamKind(url, mimeType);
+  if (kind === "hls") return HLS_MIME;
+  if (mimeType?.trim()) return mimeType.trim();
+  if (kind === "mp4") return MP4_MIME;
+  return MP4_MIME;
+}
+
+/**
+ * LG mediaOption JSON. For HLS we set mediaTransportType=HLS and enable
+ * adaptiveStreaming; progressive/direct uses URI.
+ */
+export function buildStarfishMediaOption(input: {
+  preferNative: boolean;
+  kind: StarfishStreamKind;
+}): string | undefined {
+  if (!input.preferNative) return undefined;
+
+  if (input.kind === "hls") {
+    return JSON.stringify({
+      mediaTransportType: "HLS",
+      option: {
+        adaptiveStreaming: {
+          adaptiveResolution: true,
+          seamlessPlay: true,
+          maxWidth: 3840,
+          maxHeight: 2160,
+        },
+      },
+      htmlMediaOption: {
+        useUMSMediaInfo: true,
+      },
+    });
+  }
+
   return JSON.stringify({
+    mediaTransportType: "URI",
     htmlMediaOption: {
       useUMSMediaInfo: true,
     },
-    mediaTransportType: "URI",
   });
 }
 
@@ -56,16 +129,18 @@ export function createStarfishPlayer(options: StarfishPlayerOptions): StarfishPl
   video.style.background = "#000";
 
   const preferNative = options.preferNative !== false;
-  const mediaOption = buildMediaOption(preferNative);
+  const kind = detectStarfishStreamKind(options.url, options.mimeType);
+  const baseType = resolveStarfishMimeType(options.url, options.mimeType);
+  const mediaOption = buildStarfishMediaOption({ preferNative, kind });
+
   const source = document.createElement("source");
   source.src = options.url;
   if (mediaOption) {
-    const baseType = options.mimeType ?? "video/mp4";
     source.setAttribute("type", `${baseType};mediaOption=${encodeURIComponent(mediaOption)}`);
     source.setAttribute("mediaOption", mediaOption);
     video.setAttribute("mediaPreferred", "true");
-  } else if (options.mimeType) {
-    source.type = options.mimeType;
+  } else {
+    source.type = baseType;
   }
 
   video.appendChild(source);

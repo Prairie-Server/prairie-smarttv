@@ -86,6 +86,33 @@ export interface AudioSwitchResponse {
   can_seek_anywhere?: boolean;
 }
 
+/** Request body for POST /api/v1/playback/transcode/start. */
+export interface TranscodeStartRequest {
+  session_id: string;
+  seek_seconds: number;
+  target_resolution: string;
+  target_codec_video: string;
+  target_codec_audio: string;
+  target_bitrate_kbps: number;
+  segment_duration: number;
+  subtitle_track_index: number;
+  subtitle_media_file_id?: number;
+  subtitle_burn_in: boolean;
+}
+
+/** Response from POST /api/v1/playback/transcode/start. */
+export interface TranscodeStartResponse {
+  session_id: string;
+  status: string;
+  switched_file_id?: number;
+  manifest_url: string;
+  duration_seconds?: number | null;
+  player_start_seconds?: number;
+  stream_origin_seconds?: number;
+  timeline_offset_seconds?: number;
+  can_seek_anywhere?: boolean;
+}
+
 /** Conservative TV capability advertisement for foundation playback. */
 export const DEFAULT_TV_CAPABILITIES = {
   codecs_video: ["h264", "hevc"],

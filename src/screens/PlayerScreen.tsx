@@ -6,7 +6,8 @@ import {
   stopPlaybackSession,
   switchPlaybackAudio,
 } from "../api/playbackSession";
-import { startPlayback, resolvePlaybackStreamUrl } from "../api/startPlayback";
+import { startPlayback } from "../api/startPlayback";
+import { preparePlayableSession } from "../api/transcode";
 import {
   fetchWatchDetail,
   formatAudioLabel,
@@ -141,10 +142,24 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           void stopPlaybackSession(session, started.session_id).catch(() => undefined);
           return;
         }
-        setPlayback(started);
-        setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken));
+        // Remux/transcode need /playback/transcode/start → manifest_url (web/mobile parity).
+        const seekAt = launch.startPositionSeconds ?? started.position ?? 0;
+        let prepared;
+        try {
+          prepared = await preparePlayableSession(session, started, seekAt);
+        } catch (prepErr) {
+          void stopPlaybackSession(session, started.session_id).catch(() => undefined);
+          throw prepErr;
+        }
+        if (cancelled) {
+          void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
+          return;
+        }
+        setPlayback(prepared.session);
+        setStreamUrl(prepared.streamUrl);
+        pendingResumeRef.current = prepared.playerStartSeconds;
         setPlaying(true);
-        if (started.duration_seconds) setDuration(started.duration_seconds);
+        if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError) setError(err.message);
@@ -237,16 +252,19 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     setControlsVisible(true);
     try {
       const forced = resolveForcedPlayMethod(settings);
+      const seekAt = currentTime > 0 ? currentTime : (launch.startPositionSeconds ?? 0);
       const started = await startPlayback(session, {
         fileId: launch.fileId,
         profileId: session.profileId,
         forcedPlayMethod: forced,
-        startPosition: currentTime > 0 ? currentTime : launch.startPositionSeconds,
+        startPosition: seekAt,
       });
-      setPlayback(started);
-      setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken));
+      const prepared = await preparePlayableSession(session, started, seekAt);
+      setPlayback(prepared.session);
+      setStreamUrl(prepared.streamUrl);
+      pendingResumeRef.current = prepared.playerStartSeconds;
       setPlaying(true);
-      if (started.duration_seconds) setDuration(started.duration_seconds);
+      if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else if (err instanceof Error) setError(err.message);
@@ -312,9 +330,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         audio_track_index: updated.audio_track_index,
         position,
       };
-      setPlayback(nextSession);
-      pendingResumeRef.current = updated.player_start_seconds ?? position;
-      setStreamUrl(resolvePlaybackStreamUrl(session.serverUrl, nextSession, session.accessToken));
+      const seekAt = updated.player_start_seconds ?? position;
+      const prepared = await preparePlayableSession(session, nextSession, seekAt);
+      setPlayback(prepared.session);
+      pendingResumeRef.current = prepared.playerStartSeconds;
+      setStreamUrl(prepared.streamUrl);
       setMenu("none");
       bumpControls();
     } catch (err) {
@@ -381,6 +401,16 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const title = launch.title?.trim() || watch?.title || `File ${launch.fileId}`;
+  const streamMimeType = useMemo(() => {
+    const streamType = (playback?.playback_info?.stream_type ?? "").toLowerCase();
+    if (streamType === "hls" || streamUrl?.includes(".m3u8")) {
+      return "application/vnd.apple.mpegurl";
+    }
+    if (streamType === "mp4" || streamUrl?.includes(".mp4")) {
+      return "video/mp4";
+    }
+    return undefined;
+  }, [playback?.playback_info?.stream_type, streamUrl]);
 
   return (
     <section className="screen player-screen">
@@ -390,6 +420,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           url={streamUrl}
           backend={backend}
           playing={playing}
+          mimeType={streamMimeType}
           subtitleAppearance={settings.subtitleAppearance}
           initialSubtitleUrl={streamSubtitleSeed.url}
           initialSubtitleLabel={streamSubtitleSeed.label}
