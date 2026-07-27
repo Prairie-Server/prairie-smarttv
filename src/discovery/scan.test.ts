@@ -103,8 +103,10 @@ describe("runLanDiscovery", () => {
   });
 
   it("forwards configured baseHosts into candidate probing", async () => {
+    const seenUrls: string[] = [];
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      seenUrls.push(url);
       if (url.includes("prairie.lan")) {
         return new Response(JSON.stringify({ status: "ok", server_name: "Lan", server_id: "l1" }), {
           status: 200,
@@ -125,13 +127,15 @@ describe("runLanDiscovery", () => {
     });
 
     expect(hits.some((hit) => hit.url.includes("prairie.lan"))).toBe(true);
-    expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes("prairie.lan"))).toBe(true);
+    expect(seenUrls.some((url) => url.includes("prairie.lan"))).toBe(true);
   });
 
   it("falls back to platform local IPs when localIps is omitted", async () => {
-    const fetchImpl = vi.fn(
-      async () => new Response(JSON.stringify({ status: "down" }), { status: 200 }),
-    ) as unknown as typeof fetch;
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ status: "down" }), { status: 200 });
+    }) as unknown as typeof fetch;
 
     const hits = await runLanDiscovery({
       extraCidrs: [],
@@ -144,6 +148,6 @@ describe("runLanDiscovery", () => {
     });
 
     expect(hits).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalled();
+    expect(calls).toBeGreaterThan(0);
   });
 });
