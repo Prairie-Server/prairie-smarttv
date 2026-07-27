@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import legacy from "@vitejs/plugin-legacy";
+
+const rootDir = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8")) as {
+  version: string;
+};
 
 /**
  * Tizen 5.5 (Chromium ~M69) build: SystemJS + Babel downlevel.
@@ -18,6 +26,9 @@ export default defineConfig({
     }),
   ],
   base: "./",
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   build: {
     outDir: "dist-tizen-legacy-web",
     emptyOutDir: true,
