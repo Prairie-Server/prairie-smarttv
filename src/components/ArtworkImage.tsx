@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -8,6 +9,7 @@ import {
   type ImgHTMLAttributes,
 } from "react";
 import { artworkSizedCandidates } from "../lib/artworkUrl";
+import { acquireImageSlot } from "../lib/imageLoadQueue";
 import { resolveArtworkUrl } from "../lib/resolveArtworkUrl";
 import { useServerUrl } from "../serverUrlContext";
 
@@ -61,6 +63,7 @@ export function ArtworkImage({
   const [loaded, setLoaded] = useState(false);
   const prevNormalizedSrc = useRef<string | undefined>(undefined);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const releaseSlotRef = useRef<(() => void) | null>(null);
   const isSrcChange = prevNormalizedSrc.current !== normalizedSrc;
 
   if (isSrcChange) prevNormalizedSrc.current = normalizedSrc;
@@ -76,13 +79,37 @@ export function ArtworkImage({
       ? candidates[Math.min(effectiveFailedCount, candidates.length - 1)]!
       : "";
 
+  // Eager artwork is what the viewer is looking at, so it skips the queue.
+  const eager = rest.loading === "eager";
+  const [slotGranted, setSlotGranted] = useState(eager);
+  useEffect(() => {
+    if (eager) {
+      setSlotGranted(true);
+      return;
+    }
+    if (!current) return;
+    setSlotGranted(false);
+    const release = acquireImageSlot(() => setSlotGranted(true));
+    releaseSlotRef.current = release;
+    return () => {
+      release();
+      releaseSlotRef.current = null;
+    };
+  }, [current, eager]);
+
+  const releaseSlot = useCallback(() => {
+    releaseSlotRef.current?.();
+    releaseSlotRef.current = null;
+  }, []);
+
   useLayoutEffect(() => {
     if (!current) return;
     const img = imgRef.current;
     if (img?.complete && img.naturalWidth > 0) {
       setLoaded(true);
+      releaseSlot();
     }
-  }, [current]);
+  }, [current, releaseSlot]);
 
   if (!normalizedSrc || candidates.length === 0) return null;
 
@@ -103,16 +130,18 @@ export function ArtworkImage({
         {...rest}
         ref={imgRef}
         className="artwork-image__img"
-        src={current}
+        src={slotGranted ? current : undefined}
         alt={alt}
         width={width}
         height={height}
         style={imgStyle}
         onLoad={(event) => {
           setLoaded(true);
+          releaseSlot();
           onLoad?.(event);
         }}
         onError={(event) => {
+          releaseSlot();
           if (failedCount < candidates.length - 1) {
             setFailedCount((n) => n + 1);
             setLoaded(false);
