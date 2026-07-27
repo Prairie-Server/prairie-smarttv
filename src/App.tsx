@@ -143,7 +143,7 @@ export function App() {
       return;
     }
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const channels = await fetchLiveTvChannels(session);
         if (!cancelled) setLiveTvProbe(channels.length > 0);

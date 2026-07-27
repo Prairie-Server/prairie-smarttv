@@ -92,7 +92,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       try {

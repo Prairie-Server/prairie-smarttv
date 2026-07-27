@@ -38,10 +38,8 @@ export function normalizePlaybackSettings(
 ): PlaybackSettings {
   const next: PlaybackSettings = {
     ...DEFAULT_PLAYBACK_SETTINGS,
-    ...(input ?? {}),
-    subtitleAppearance: normalizeSubtitleAppearance(
-      (input as Partial<PlaybackSettings> | null | undefined)?.subtitleAppearance,
-    ),
+    ...input,
+    subtitleAppearance: normalizeSubtitleAppearance(input?.subtitleAppearance),
   };
 
   if (!isPlayerBackend(next.playerBackend)) {

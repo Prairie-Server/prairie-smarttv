@@ -18,6 +18,10 @@ describe("subtitleOverlay", () => {
     expect(formatAvPlaySubtitleText(["", null, "Keep"])).toBe("Keep");
     expect(formatAvPlaySubtitleText(null)).toBe("");
     expect(formatAvPlaySubtitleText(undefined)).toBe("");
+    expect(formatAvPlaySubtitleText(42)).toBe("42");
+    expect(formatAvPlaySubtitleText(true)).toBe("true");
+    expect(formatAvPlaySubtitleText({ cue: "nope" })).toBe("");
+    expect(formatAvPlaySubtitleText(["  hi ", 7, { x: 1 }])).toBe("hi\n7");
   });
 
   it("creates, updates, and destroys the overlay", () => {

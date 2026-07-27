@@ -49,7 +49,7 @@ describe("createMediaPlayer", () => {
       container,
     });
     expect(player.backend).toBe("avplay");
-    player.play();
+    void player.play();
     player.pause();
     void player.seekTo(12);
     expect(player.getCurrentTime()).toBe(0);
@@ -65,7 +65,7 @@ describe("createMediaPlayer", () => {
       container,
     });
     expect(player.backend).toBe("starfish");
-    player.play();
+    void player.play();
     player.pause();
     void player.seekTo(3);
     expect(player.getCurrentTime()).toBe(0);

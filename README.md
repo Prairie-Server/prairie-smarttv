@@ -49,7 +49,7 @@ VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
 | ------------------------------ | --------------------------------------------------------------- |
 | `npm run dev`                  | Vite dev server                                                 |
 | `npm run build`                | Typecheck + production web bundle → `dist/`                     |
-| `npm run lint`                 | ESLint (strict TypeScript + React Hooks)                        |
+| `npm run lint`                 | Oxlint (type-aware TypeScript + React Hooks via tsgolint/TS7)   |
 | `npm run format`               | Prettier write                                                  |
 | `npm run format:check`         | Prettier check (CI)                                             |
 | `npm run typecheck`            | `tsc --noEmit`                                                  |
