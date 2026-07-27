@@ -89,14 +89,10 @@ export async function pollDeviceLogin(
   deviceCode: string,
   fetchImpl?: typeof fetch,
 ): Promise<DeviceLoginPollResponse> {
-  return apiRequest<DeviceLoginPollResponse>(
-    { serverUrl, fetchImpl },
-    "/api/v1/auth/device/poll",
-    {
-      method: "POST",
-      body: JSON.stringify({ device_code: deviceCode }),
-    },
-  );
+  return apiRequest<DeviceLoginPollResponse>({ serverUrl, fetchImpl }, "/api/v1/auth/device/poll", {
+    method: "POST",
+    body: JSON.stringify({ device_code: deviceCode }),
+  });
 }
 
 export async function login(
