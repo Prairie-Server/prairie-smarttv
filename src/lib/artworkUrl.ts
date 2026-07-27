@@ -1,8 +1,10 @@
 /**
  * Artwork URL helpers mirroring prairie-server web/src/lib/artworkUrl.ts.
- * Canonical cache keys stay .webp; clients try AVIF → WebP → PNG so older
- * Tizen / webOS builds that cannot decode AVIF or WebP still get a sibling.
+ * Canonical cache keys stay .webp; clients pick the best sibling immediately
+ * using one-time decode capability detection (see imageFormats.ts).
  */
+
+import { getImageFormats, orderRasterCandidates } from "./imageFormats";
 
 function pathExtension(pathname: string): string {
   const base = pathname.split("/").pop() ?? "";
@@ -49,12 +51,8 @@ export function webPPNGSibling(objectPath: string | null | undefined): string {
 }
 
 /**
- * Ordered load candidates for a canonical artwork URL: WebP → AVIF → PNG when
- * the input is WebP; otherwise just the original URL.
- *
- * Smart TV browsers are often slower to recover from unsupported-image decode
- * failures than desktop/mobile browsers, so prefer the canonical WebP first
- * and only try AVIF as an optimization after that.
+ * Ordered load candidates for a canonical artwork URL using the client's
+ * detected raster preference (WebP/AVIF/PNG siblings when the input is WebP).
  */
 export function artworkCandidates(objectPath: string | null | undefined): string[] {
   const trimmed = objectPath?.trim() ?? "";
@@ -62,9 +60,10 @@ export function artworkCandidates(objectPath: string | null | undefined): string
 
   const avif = webPAVIFSibling(trimmed);
   const png = webPPNGSibling(trimmed);
-  const out: string[] = [];
-  out.push(trimmed);
-  if (avif) out.push(avif);
-  if (png) out.push(png);
-  return out;
+  return orderRasterCandidates({ avif, webp: trimmed, png }, getImageFormats());
+}
+
+/** Best immediate artwork URL without trial-and-error format probing. */
+export function artworkPreferred(objectPath: string | null | undefined): string {
+  return artworkCandidates(objectPath)[0] ?? "";
 }
