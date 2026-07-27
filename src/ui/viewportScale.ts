@@ -25,8 +25,7 @@ export interface ProductInfoApi {
 }
 
 function getProductInfo(): ProductInfoApi | null {
-  const webapis = window.webapis as
-    { productinfo?: ProductInfoApi } | undefined;
+  const webapis = window.webapis as { productinfo?: ProductInfoApi } | undefined;
   return webapis?.productinfo ?? null;
 }
 
@@ -40,8 +39,7 @@ export function detectPanelClass(
     productInfo?: ProductInfoApi | null;
   } = {},
 ): PanelClass {
-  const productInfo =
-    input.productInfo === undefined ? getProductInfo() : input.productInfo;
+  const productInfo = input.productInfo === undefined ? getProductInfo() : input.productInfo;
   if (productInfo) {
     try {
       if (productInfo.is8KPanelSupported?.()) return "uhd8k";
@@ -55,12 +53,9 @@ export function detectPanelClass(
     }
   }
 
-  const cssWidth =
-    input.cssWidth ??
-    (typeof window !== "undefined" ? window.innerWidth || 0 : 0);
+  const cssWidth = input.cssWidth ?? (typeof window !== "undefined" ? window.innerWidth || 0 : 0);
   const screenWidth =
-    input.screenWidth ??
-    (typeof window !== "undefined" ? window.screen?.width || 0 : 0);
+    input.screenWidth ?? (typeof window !== "undefined" ? window.screen?.width || 0 : 0);
   const hint = Math.max(cssWidth, screenWidth);
   if (hint >= 7680) return "uhd8k";
   if (hint >= 3840) return "uhd";
@@ -68,10 +63,7 @@ export function detectPanelClass(
 }
 
 /** Clamp so tiny windows don't collapse and 8K doesn't explode layout. */
-export function viewportScaleFactor(
-  width: number,
-  panelClass?: PanelClass,
-): number {
+export function viewportScaleFactor(width: number, panelClass?: PanelClass): number {
   if (!Number.isFinite(width) || width <= 0) return 1;
   const cssScale = width / DESIGN_WIDTH;
 
@@ -104,9 +96,7 @@ export function currentViewportWidth(): number {
 }
 
 /** Apply `--ui-scale` + root font-size on <html>. */
-export function applyViewportScale(
-  width: number = currentViewportWidth(),
-): number {
+export function applyViewportScale(width: number = currentViewportWidth()): number {
   const scale = viewportScaleFactor(width);
   const root = document.documentElement;
   root.style.setProperty("--ui-scale", String(scale));

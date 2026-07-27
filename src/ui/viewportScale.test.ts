@@ -175,9 +175,7 @@ describe("viewportScale", () => {
     const scale = applyViewportScale(3840);
     expect(scale).toBe(2);
     expect(document.documentElement.style.fontSize).toBe("32px");
-    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe(
-      "2",
-    );
+    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("2");
     applyViewportScale();
   });
 

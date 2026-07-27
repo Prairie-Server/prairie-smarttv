@@ -37,11 +37,7 @@ function movie(overrides: Partial<ItemDetail> = {}): ItemDetail {
         subtitle_tracks: [{ language: "en" }],
       },
     ],
-    cast: [
-      { name: "Timothee Chalamet" },
-      { name: "Zendaya" },
-      { name: "Rebecca Ferguson" },
-    ],
+    cast: [{ name: "Timothee Chalamet" }, { name: "Zendaya" }, { name: "Rebecca Ferguson" }],
     crew: [
       { name: "Denis Villeneuve", job: "Director" },
       { name: "Jon Spaihts", job: "Writer" },
@@ -115,9 +111,7 @@ describe("detailMetadata", () => {
     expect(
       movieFacts(
         movie({
-          versions: [
-            { file_id: 1, resolution: "480p", audio_tracks: [{ channels: 8 }] },
-          ],
+          versions: [{ file_id: 1, resolution: "480p", audio_tracks: [{ channels: 8 }] }],
         }),
       ),
     ).toEqual(
@@ -153,14 +147,10 @@ describe("detailMetadata", () => {
         { kind: "text", value: "40 Episodes" },
       ]),
     );
-    expect(
-      seriesYearLabel(
-        movie({ year: 2020, first_air_date: null, last_air_date: null }),
-      ),
-    ).toBe("2020");
-    expect(
-      seriesYearLabel(movie({ year: null, first_air_date: "2021-05-01" })),
-    ).toBe("2021");
+    expect(seriesYearLabel(movie({ year: 2020, first_air_date: null, last_air_date: null }))).toBe(
+      "2020",
+    );
+    expect(seriesYearLabel(movie({ year: null, first_air_date: "2021-05-01" }))).toBe("2021");
   });
 
   it("builds source, starring, and crew lines", () => {
@@ -169,23 +159,14 @@ describe("detailMetadata", () => {
       "TV Show",
       "Drama",
     ]);
-    expect(starringText(movie())).toBe(
-      "Starring Timothee Chalamet, Zendaya, Rebecca Ferguson",
-    );
+    expect(starringText(movie())).toBe("Starring Timothee Chalamet, Zendaya, Rebecca Ferguson");
     expect(starringText(movie({ cast: [] }))).toBeNull();
     expect(crewLine(movie())).toBe("Directed by Denis Villeneuve");
-    expect(
-      crewLine(
-        movie({ type: "series", crew: [{ name: "Creator", job: "Creator" }] }),
-      ),
-    ).toBe("Created by Creator");
-    expect(
-      crewLine(movie({ crew: [{ name: "Editor", job: "Editor" }] })),
-    ).toBeNull();
-    expect(featuredCrew(movie()).map((c) => c.name)).toEqual([
-      "Denis Villeneuve",
-      "Jon Spaihts",
-    ]);
+    expect(crewLine(movie({ type: "series", crew: [{ name: "Creator", job: "Creator" }] }))).toBe(
+      "Created by Creator",
+    );
+    expect(crewLine(movie({ crew: [{ name: "Editor", job: "Editor" }] }))).toBeNull();
+    expect(featuredCrew(movie()).map((c) => c.name)).toEqual(["Denis Villeneuve", "Jon Spaihts"]);
     expect(
       featuredCrew(
         movie({

@@ -1,12 +1,4 @@
-import {
-  ArrowLeft,
-  Bookmark,
-  CheckCircle2,
-  Heart,
-  Play,
-  RotateCcw,
-  Star,
-} from "lucide-react";
+import { ArrowLeft, Bookmark, CheckCircle2, Heart, Play, RotateCcw, Star } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import {
@@ -154,9 +146,7 @@ export function ItemDetailScreen({
         }
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof ApiError ? err.message : "Could not load title",
-        );
+        setError(err instanceof ApiError ? err.message : "Could not load title");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -177,9 +167,7 @@ export function ItemDetailScreen({
         if (!cancelled) setEpisodes(eps);
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err instanceof ApiError ? err.message : "Could not load episodes",
-          );
+          setError(err instanceof ApiError ? err.message : "Could not load episodes");
         }
       } finally {
         if (!cancelled) setEpisodesLoading(false);
@@ -190,11 +178,7 @@ export function ItemDetailScreen({
     };
   }, [session, contentId, seasonNumber, detail]);
 
-  async function playContent(
-    id: string,
-    title: string,
-    startFromBeginning = false,
-  ) {
+  async function playContent(id: string, title: string, startFromBeginning = false) {
     setBusyPlay(true);
     setError(null);
     try {
@@ -217,11 +201,7 @@ export function ItemDetailScreen({
         watch,
       });
     } catch (err) {
-      setError(
-        err instanceof ApiError || err instanceof Error
-          ? err.message
-          : "Play failed",
-      );
+      setError(err instanceof ApiError || err instanceof Error ? err.message : "Play failed");
     } finally {
       setBusyPlay(false);
     }
@@ -243,9 +223,7 @@ export function ItemDetailScreen({
       await setFavorite(session, contentId, next);
     } catch (err) {
       setDetail(detail);
-      setError(
-        err instanceof ApiError ? err.message : "Could not update favorite",
-      );
+      setError(err instanceof ApiError ? err.message : "Could not update favorite");
     } finally {
       setBusyAction(false);
     }
@@ -267,9 +245,7 @@ export function ItemDetailScreen({
       await setWatchlist(session, contentId, next);
     } catch (err) {
       setDetail(detail);
-      setError(
-        err instanceof ApiError ? err.message : "Could not update watchlist",
-      );
+      setError(err instanceof ApiError ? err.message : "Could not update watchlist");
     } finally {
       setBusyAction(false);
     }
@@ -291,9 +267,7 @@ export function ItemDetailScreen({
       await setWatched(session, contentId, next);
     } catch (err) {
       setDetail(detail);
-      setError(
-        err instanceof ApiError ? err.message : "Could not update watched",
-      );
+      setError(err instanceof ApiError ? err.message : "Could not update watched");
     } finally {
       setBusyAction(false);
     }
@@ -333,8 +307,7 @@ export function ItemDetailScreen({
   const playLabel = (() => {
     if (busyPlay) return "Starting…";
     if (!isSeries) {
-      if (movieResume && movieResumeSeconds != null)
-        return formatResumeLabel(movieResumeSeconds);
+      if (movieResume && movieResumeSeconds != null) return formatResumeLabel(movieResumeSeconds);
       return "Play";
     }
     if (!nextUp) return "Play";
@@ -362,12 +335,7 @@ export function ItemDetailScreen({
         )}
         <div className="detail-hero__shade" />
         <div className="detail-hero__content">
-          <button
-            type="button"
-            className="detail-back"
-            onClick={handleBack}
-            aria-label="Back"
-          >
+          <button type="button" className="detail-back" onClick={handleBack} aria-label="Back">
             <ArrowLeft size={22} aria-hidden="true" />
             <span>Back</span>
           </button>
@@ -376,17 +344,11 @@ export function ItemDetailScreen({
             <div className="detail-hero__body">
               {heroPosterUrl && heroBackdropUrl ? (
                 <div className="detail-hero__poster" aria-hidden="true">
-                  <ArtworkImage
-                    src={heroPosterUrl}
-                    alt=""
-                    placeholderLabel={detail.title}
-                  />
+                  <ArtworkImage src={heroPosterUrl} alt="" placeholderLabel={detail.title} />
                 </div>
               ) : null}
               <div className="detail-hero__copy">
-                <p className="eyebrow">
-                  {sources.join(" · ") || typeLabel(detail.type)}
-                </p>
+                <p className="eyebrow">{sources.join(" · ") || typeLabel(detail.type)}</p>
                 {heroLogoUrl ? (
                   <div className="detail-hero__logo">
                     <ArtworkImage src={heroLogoUrl} alt={detail.title} />
@@ -394,19 +356,14 @@ export function ItemDetailScreen({
                 ) : (
                   <h1 className="browse-title">{detail.title}</h1>
                 )}
-                {detail.tagline ? (
-                  <p className="detail-tagline">{detail.tagline}</p>
-                ) : null}
+                {detail.tagline ? <p className="detail-tagline">{detail.tagline}</p> : null}
                 <div className="detail-meta-row">
                   {detail.content_rating ? (
-                    <span className="detail-rating-chip">
-                      {detail.content_rating}
-                    </span>
+                    <span className="detail-rating-chip">{detail.content_rating}</span>
                   ) : null}
                   <FactRow tokens={facts} />
                 </div>
-                {detail.rating_rt_critic != null ||
-                detail.rating_rt_audience != null ? (
+                {detail.rating_rt_critic != null || detail.rating_rt_audience != null ? (
                   <div className="detail-scores">
                     {detail.rating_rt_critic != null ? (
                       <span>Critics {detail.rating_rt_critic}%</span>
@@ -416,15 +373,9 @@ export function ItemDetailScreen({
                     ) : null}
                   </div>
                 ) : null}
-                {detail.overview ? (
-                  <p className="detail-overview">{detail.overview}</p>
-                ) : null}
-                {directed ? (
-                  <p className="detail-crew muted">{directed}</p>
-                ) : null}
-                {starring ? (
-                  <p className="detail-starring muted">{starring}</p>
-                ) : null}
+                {detail.overview ? <p className="detail-overview">{detail.overview}</p> : null}
+                {directed ? <p className="detail-crew muted">{directed}</p> : null}
+                {starring ? <p className="detail-starring muted">{starring}</p> : null}
 
                 <div className="row-actions detail-actions">
                   {!isSeries ? (
@@ -441,15 +392,12 @@ export function ItemDetailScreen({
                       autoFocus
                       icon={<Play />}
                       disabled={busyPlay}
-                      onClick={() =>
-                        void playContent(nextUp.content_id, nextUp.title)
-                      }
+                      onClick={() => void playContent(nextUp.content_id, nextUp.title)}
                     >
                       {playLabel}
                     </FocusButton>
                   ) : null}
-                  {(!isSeries && movieResume) ||
-                  (isSeries && episodeResume && nextUp) ? (
+                  {(!isSeries && movieResume) || (isSeries && episodeResume && nextUp) ? (
                     <FocusButton
                       variant="secondary"
                       icon={<RotateCcw />}
@@ -470,19 +418,9 @@ export function ItemDetailScreen({
                     active={Boolean(detail.user_state?.is_favorite)}
                     disabled={busyAction}
                     aria-label={
-                      detail.user_state?.is_favorite
-                        ? "Remove from favorites"
-                        : "Add to favorites"
+                      detail.user_state?.is_favorite ? "Remove from favorites" : "Add to favorites"
                     }
-                    icon={
-                      <Heart
-                        fill={
-                          detail.user_state?.is_favorite
-                            ? "currentColor"
-                            : "none"
-                        }
-                      />
-                    }
+                    icon={<Heart fill={detail.user_state?.is_favorite ? "currentColor" : "none"} />}
                     onClick={() => void toggleFavorite()}
                   />
                   <FocusButton
@@ -490,18 +428,10 @@ export function ItemDetailScreen({
                     active={Boolean(detail.user_state?.in_watchlist)}
                     disabled={busyAction}
                     aria-label={
-                      detail.user_state?.in_watchlist
-                        ? "Remove from watchlist"
-                        : "Add to watchlist"
+                      detail.user_state?.in_watchlist ? "Remove from watchlist" : "Add to watchlist"
                     }
                     icon={
-                      <Bookmark
-                        fill={
-                          detail.user_state?.in_watchlist
-                            ? "currentColor"
-                            : "none"
-                        }
-                      />
+                      <Bookmark fill={detail.user_state?.in_watchlist ? "currentColor" : "none"} />
                     }
                     onClick={() => void toggleWatchlist()}
                   />
@@ -509,17 +439,9 @@ export function ItemDetailScreen({
                     variant="circle"
                     active={Boolean(detail.user_state?.played)}
                     disabled={busyAction}
-                    aria-label={
-                      detail.user_state?.played
-                        ? "Mark unwatched"
-                        : "Mark watched"
-                    }
+                    aria-label={detail.user_state?.played ? "Mark unwatched" : "Mark watched"}
                     icon={
-                      <CheckCircle2
-                        fill={
-                          detail.user_state?.played ? "currentColor" : "none"
-                        }
-                      />
+                      <CheckCircle2 fill={detail.user_state?.played ? "currentColor" : "none"} />
                     }
                     onClick={() => void toggleWatched()}
                   />
@@ -544,14 +466,9 @@ export function ItemDetailScreen({
               </p>
               <h2 className="detail-section-title">Episodes</h2>
             </div>
-            {seasons.find((s) => s.season_number === seasonNumber)
-              ?.episode_count != null ? (
+            {seasons.find((s) => s.season_number === seasonNumber)?.episode_count != null ? (
               <p className="muted">
-                {
-                  seasons.find((s) => s.season_number === seasonNumber)
-                    ?.episode_count
-                }{" "}
-                episodes
+                {seasons.find((s) => s.season_number === seasonNumber)?.episode_count} episodes
               </p>
             ) : null}
           </div>
@@ -570,9 +487,7 @@ export function ItemDetailScreen({
                     ? "Specials"
                     : season.title?.trim() || `Season ${season.season_number}`}
                   {season.episode_count != null ? (
-                    <span className="season-chip__count">
-                      {season.episode_count}
-                    </span>
+                    <span className="season-chip__count">{season.episode_count}</span>
                   ) : null}
                 </button>
               ))}
@@ -595,9 +510,7 @@ export function ItemDetailScreen({
                       className="episode-card"
                       autoFocus={index === 0 && !nextUp}
                       disabled={busyPlay}
-                      onClick={() =>
-                        void playContent(episode.content_id, episode.title)
-                      }
+                      onClick={() => void playContent(episode.content_id, episode.title)}
                     >
                       <div className="episode-card__still" aria-hidden="true">
                         {still ? (
@@ -613,9 +526,7 @@ export function ItemDetailScreen({
                           </div>
                         )}
                         <span className="episode-card__badge">
-                          {episode.episode_number != null
-                            ? `E${episode.episode_number}`
-                            : "Ep"}
+                          {episode.episode_number != null ? `E${episode.episode_number}` : "Ep"}
                         </span>
                         {episode.user_data?.played ? (
                           <span className="episode-card__watched">
@@ -646,9 +557,7 @@ export function ItemDetailScreen({
                             .join(" · ")}
                         </span>
                         {episode.overview ? (
-                          <span className="muted episode-card__overview">
-                            {episode.overview}
-                          </span>
+                          <span className="muted episode-card__overview">{episode.overview}</span>
                         ) : null}
                       </span>
                     </button>
@@ -661,9 +570,7 @@ export function ItemDetailScreen({
             <p className="muted">No seasons found for this series.</p>
           ) : null}
           {!episodesLoading && seasons.length > 0 && episodes.length === 0 ? (
-            <p className="muted">
-              No episodes are available for this season yet.
-            </p>
+            <p className="muted">No episodes are available for this season yet.</p>
           ) : null}
         </div>
       ) : null}
@@ -692,16 +599,12 @@ export function ItemDetailScreen({
                           placeholderLabel={member.name}
                         />
                       ) : (
-                        <div className="cast-card__photo-empty">
-                          {member.name.slice(0, 1)}
-                        </div>
+                        <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
                       )}
                     </div>
                     <p className="cast-card__name">{member.name}</p>
                     {member.character ? (
-                      <p className="muted cast-card__role">
-                        {member.character}
-                      </p>
+                      <p className="muted cast-card__role">{member.character}</p>
                     ) : null}
                   </div>
                 ))}
@@ -733,15 +636,11 @@ export function ItemDetailScreen({
                           placeholderLabel={member.name}
                         />
                       ) : (
-                        <div className="cast-card__photo-empty">
-                          {member.name.slice(0, 1)}
-                        </div>
+                        <div className="cast-card__photo-empty">{member.name.slice(0, 1)}</div>
                       )}
                     </div>
                     <p className="cast-card__name">{member.name}</p>
-                    {member.job ? (
-                      <p className="muted cast-card__role">{member.job}</p>
-                    ) : null}
+                    {member.job ? <p className="muted cast-card__role">{member.job}</p> : null}
                   </div>
                 ))}
               </div>
@@ -765,9 +664,7 @@ export function ItemDetailScreen({
                 variant="ghost"
                 icon={<Play />}
                 disabled={busyPlay}
-                onClick={() =>
-                  void playContent(extra.content_id, extra.title || "Extra")
-                }
+                onClick={() => void playContent(extra.content_id, extra.title || "Extra")}
               >
                 {extra.title || extra.kind}
               </FocusButton>
@@ -776,10 +673,7 @@ export function ItemDetailScreen({
         </div>
       ) : null}
 
-      {detail &&
-      (studios.length > 0 ||
-        networks.length > 0 ||
-        (detail.genres?.length ?? 0) > 0) ? (
+      {detail && (studios.length > 0 || networks.length > 0 || (detail.genres?.length ?? 0) > 0) ? (
         <div className="detail-body-section">
           <div className="detail-section-header">
             <div>
@@ -809,9 +703,7 @@ export function ItemDetailScreen({
             {detail.release_date || detail.first_air_date ? (
               <>
                 <dt>{isSeries ? "First Aired" : "Released"}</dt>
-                <dd>
-                  {formatAirDate(detail.release_date || detail.first_air_date)}
-                </dd>
+                <dd>{formatAirDate(detail.release_date || detail.first_air_date)}</dd>
               </>
             ) : null}
             {detail.show_status ? (

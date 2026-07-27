@@ -40,16 +40,8 @@ body,
 body {
   font-family: var(--font-ui);
   background:
-    radial-gradient(
-      1200px 700px at 12% -10%,
-      rgba(224, 168, 74, 0.16),
-      transparent 55%
-    ),
-    radial-gradient(
-      900px 600px at 88% 8%,
-      rgba(70, 110, 160, 0.22),
-      transparent 50%
-    ),
+    radial-gradient(1200px 700px at 12% -10%, rgba(224, 168, 74, 0.16), transparent 55%),
+    radial-gradient(900px 600px at 88% 8%, rgba(70, 110, 160, 0.22), transparent 50%),
     linear-gradient(165deg, #10151c 0%, var(--prairie-bg) 42%, #0f1319 100%);
   color: var(--prairie-ink);
   -webkit-font-smoothing: antialiased;
@@ -223,11 +215,7 @@ button:focus,
 }
 
 .focus-btn--primary {
-  background: linear-gradient(
-    135deg,
-    var(--prairie-amber),
-    var(--prairie-amber-deep)
-  );
+  background: linear-gradient(135deg, var(--prairie-amber), var(--prairie-amber-deep));
   color: #1a1408;
   font-weight: 600;
 }
@@ -305,17 +293,8 @@ button:focus,
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(
-      120deg,
-      transparent 30%,
-      rgba(224, 168, 74, 0.05) 48%,
-      transparent 70%
-    ),
-    radial-gradient(
-      circle at 70% 70%,
-      rgba(80, 120, 170, 0.18),
-      transparent 45%
-    );
+    linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
+    radial-gradient(circle at 70% 70%, rgba(80, 120, 170, 0.18), transparent 45%);
   pointer-events: none;
 }
 
@@ -324,11 +303,7 @@ button:focus,
   width: min(560px, 100%);
   padding: clamp(1.5rem, 4vw, 2.5rem);
   border-radius: calc(var(--radius) + 4px);
-  background: linear-gradient(
-    180deg,
-    rgba(34, 43, 56, 0.72),
-    rgba(20, 24, 32, 0.88)
-  );
+  background: linear-gradient(180deg, rgba(34, 43, 56, 0.72), rgba(20, 24, 32, 0.88));
   border: 1px solid rgba(224, 168, 74, 0.16);
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
 }
@@ -456,17 +431,8 @@ button:focus,
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(
-      120deg,
-      transparent 30%,
-      rgba(224, 168, 74, 0.05) 48%,
-      transparent 70%
-    ),
-    radial-gradient(
-      circle at 50% 35%,
-      rgba(80, 120, 170, 0.18),
-      transparent 48%
-    );
+    linear-gradient(120deg, transparent 30%, rgba(224, 168, 74, 0.05) 48%, transparent 70%),
+    radial-gradient(circle at 50% 35%, rgba(80, 120, 170, 0.18), transparent 48%);
   pointer-events: none;
 }
 
@@ -768,11 +734,7 @@ button:focus,
 
 .settings-row.is-on {
   border-color: rgba(224, 168, 74, 0.4);
-  background: linear-gradient(
-    135deg,
-    rgba(224, 168, 74, 0.14),
-    rgba(28, 36, 48, 0.9)
-  );
+  background: linear-gradient(135deg, rgba(224, 168, 74, 0.14), rgba(28, 36, 48, 0.9));
 }
 
 .settings-row__copy {
@@ -916,11 +878,7 @@ button:focus,
 
 .option-chip.is-active {
   border-color: rgba(224, 168, 74, 0.55);
-  background: linear-gradient(
-    135deg,
-    rgba(224, 168, 74, 0.16),
-    rgba(28, 36, 48, 0.9)
-  );
+  background: linear-gradient(135deg, rgba(224, 168, 74, 0.16), rgba(28, 36, 48, 0.9));
 }
 
 .option-chip__label {
@@ -1039,11 +997,7 @@ button:focus,
   border-radius: var(--radius);
   border: 1px solid rgba(240, 197, 116, 0.22);
   background:
-    radial-gradient(
-      600px 280px at 10% 0%,
-      rgba(224, 112, 112, 0.18),
-      transparent 55%
-    ),
+    radial-gradient(600px 280px at 10% 0%, rgba(224, 112, 112, 0.18), transparent 55%),
     linear-gradient(165deg, #161b24 0%, #0c0f14 100%);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
@@ -1085,11 +1039,7 @@ button:focus,
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(8, 10, 14, 0.45),
-    transparent 65%
-  );
+  background: radial-gradient(ellipse at center, rgba(8, 10, 14, 0.45), transparent 65%);
 }
 
 .player-buffering__label {
@@ -1158,11 +1108,7 @@ button:focus,
 .player-scrub-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    var(--prairie-amber-deep),
-    var(--prairie-amber)
-  );
+  background: linear-gradient(90deg, var(--prairie-amber-deep), var(--prairie-amber));
 }
 
 .player-time-row {
@@ -1554,18 +1500,8 @@ button:focus,
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(
-      90deg,
-      rgba(10, 12, 16, 0.92) 12%,
-      rgba(10, 12, 16, 0.45) 52%,
-      transparent 78%
-    ),
-    linear-gradient(
-      0deg,
-      rgba(10, 12, 16, 0.95) 8%,
-      rgba(10, 12, 16, 0.35) 48%,
-      transparent 72%
-    );
+    linear-gradient(90deg, rgba(10, 12, 16, 0.92) 12%, rgba(10, 12, 16, 0.45) 52%, transparent 78%),
+    linear-gradient(0deg, rgba(10, 12, 16, 0.95) 8%, rgba(10, 12, 16, 0.35) 48%, transparent 72%);
 }
 
 .home-hero__content {
@@ -1753,11 +1689,7 @@ button:focus,
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    0deg,
-    rgba(10, 12, 16, 0.88),
-    rgba(10, 12, 16, 0.25)
-  );
+  background: linear-gradient(0deg, rgba(10, 12, 16, 0.88), rgba(10, 12, 16, 0.25));
 }
 
 .library-card__icon {
@@ -2161,16 +2093,8 @@ button:focus,
   min-height: 100%;
   /* Opaque so leaving the player never shows only the body gradient. */
   background:
-    radial-gradient(
-      1200px 700px at 12% -10%,
-      rgba(224, 168, 74, 0.16),
-      transparent 55%
-    ),
-    radial-gradient(
-      900px 600px at 88% 8%,
-      rgba(70, 110, 160, 0.22),
-      transparent 50%
-    ),
+    radial-gradient(1200px 700px at 12% -10%, rgba(224, 168, 74, 0.16), transparent 55%),
+    radial-gradient(900px 600px at 88% 8%, rgba(70, 110, 160, 0.22), transparent 50%),
     linear-gradient(165deg, #10151c 0%, var(--prairie-bg) 42%, #0f1319 100%);
 }
 
