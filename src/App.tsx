@@ -323,6 +323,7 @@ export function App() {
         contentId={route.contentId}
         onBack={() => setRoute(route.back)}
         onPlay={(launch) => setRoute({ name: "player", launch, back: route })}
+        onOpenItem={(contentId) => setRoute({ name: "detail", contentId, back: route })}
       />
     );
   }
@@ -346,6 +347,7 @@ export function App() {
         session={session}
         libraryId={route.library.id}
         libraryName={route.library.name}
+        libraryType={route.library.type}
         onBack={() => setRoute({ name: "libraries" })}
         onOpenItem={openItem}
       />
