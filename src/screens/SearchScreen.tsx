@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
+import { PosterGrid } from "../components/PosterGrid";
 import { catalogItemSubtitle } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
 
@@ -121,7 +122,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
       {!loading && submitted && visibleItems.length === 0 ? (
         <p className="muted">No matches for “{submitted}”.</p>
       ) : null}
-      <div className="poster-grid">
+      <PosterGrid>
         {loading && submitted.trim()
           ? Array.from({ length: 12 }).map((_, index) => (
               <PosterCard
@@ -161,7 +162,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
               />
             ))
           : null}
-      </div>
+      </PosterGrid>
       {hasMore && !loading && submitted.trim() ? (
         <div className="row-actions">
           <FocusButton

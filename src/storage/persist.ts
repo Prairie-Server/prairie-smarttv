@@ -7,9 +7,8 @@
  * - webOS app id `org.prairieserver.prairie`
  *
  * Keep those package ids stable across releases. Changing them wipes WebView
- * localStorage (Moonfin avoids this by never rotating package ids). Prairie
- * also mirrors keys into Tizen `documents` via durableStorage.ts for sideload
- * reinstall recovery.
+ * localStorage. Prairie also mirrors keys into Tizen `documents` via
+ * durableStorage.ts for sideload reinstall recovery.
  *
  * Schema bumps must be additive. Never clear session or settings keys on upgrade.
  */
@@ -22,6 +21,7 @@ export const LAST_SERVER_URL_KEY = "prairie.lastServerUrl";
 export const SESSION_KEY = "prairie.session";
 export const PLAYBACK_SETTINGS_KEY = "prairie.playbackSettings";
 export const SERVER_REGISTRY_KEY = "prairie.serverRegistry";
+export { PERFORMANCE_MODE_KEY } from "../perf/performanceTier";
 
 /** Keys that must survive app updates. Cleared only by explicit user logout. */
 export const PRESERVED_STORAGE_KEYS = [
@@ -30,6 +30,7 @@ export const PRESERVED_STORAGE_KEYS = [
   LAST_SERVER_URL_KEY,
   SERVER_REGISTRY_KEY,
   STORAGE_SCHEMA_KEY,
+  "prairie.performanceMode",
 ] as const;
 
 export function normalizeServerUrl(url: string): string {

@@ -14,6 +14,11 @@
   --font-display: "Fraunces", "Georgia", serif;
   --radius: 14px;
   --focus-outline: 3px solid var(--prairie-ring);
+  --focus-scale: 1.05;
+  --focus-scale-sm: 1.03;
+  --focus-shadow: 0 14px 32px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(240, 197, 116, 0.4);
+  --focus-shadow-sm: 0 12px 28px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(240, 197, 116, 0.35);
+  --motion-duration: 160ms;
 }
 
 *,
@@ -1438,7 +1443,7 @@ button:focus,
 
 .landscape-card {
   flex: 0 0 auto;
-  width: min(22rem, 72vw);
+  width: 100%;
   display: grid;
   gap: 0.7rem;
   text-align: left;
@@ -1451,18 +1456,16 @@ button:focus,
   overflow: hidden;
   scroll-snap-align: start;
   transition:
-    border-color 140ms ease,
-    transform 140ms ease,
-    box-shadow 140ms ease;
+    border-color var(--motion-duration) ease,
+    transform var(--motion-duration) ease,
+    box-shadow var(--motion-duration) ease;
 }
 
 .landscape-card:focus {
   outline: none;
-  transform: scale(1.03);
+  transform: scale(var(--focus-scale-sm));
   border-color: rgba(224, 168, 74, 0.6);
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.3),
-    0 0 0 2px rgba(240, 197, 116, 0.35);
+  box-shadow: var(--focus-shadow-sm);
 }
 
 .landscape-card__art {
@@ -1635,6 +1638,11 @@ button:focus,
   contain-intrinsic-size: auto 18.25rem;
 }
 
+.media-row--landscape {
+  min-height: 14.5rem;
+  contain-intrinsic-size: auto 14.5rem;
+}
+
 .media-row__title {
   margin: 0;
   font-size: 1.2rem;
@@ -1651,13 +1659,35 @@ button:focus,
 }
 
 .media-row__scroller {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(140px, 170px);
+  display: flex;
   gap: 0.9rem;
   overflow-x: auto;
   padding-bottom: 0.35rem;
   scroll-snap-type: x mandatory;
+}
+
+.media-row__item {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  min-width: 0;
+}
+
+.media-row--poster .media-row__item {
+  width: clamp(140px, 12vw, 170px);
+}
+
+.media-row--landscape .media-row__item {
+  width: min(22rem, 72vw);
+}
+
+.media-row__spacer {
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.media-row__item > .poster-card,
+.media-row__item > .landscape-card {
+  width: 100%;
 }
 
 .poster-grid,
@@ -1669,6 +1699,15 @@ button:focus,
 
 .poster-grid {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.poster-grid__cell {
+  min-width: 0;
+}
+
+.poster-grid__cell > .poster-card {
+  width: 100%;
+  height: 100%;
 }
 
 .library-grid {
@@ -1695,21 +1734,19 @@ button:focus,
   overflow: hidden;
   scroll-snap-align: start;
   transition:
-    border-color 160ms ease,
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    background 160ms ease;
+    border-color var(--motion-duration) ease,
+    transform var(--motion-duration) ease,
+    box-shadow var(--motion-duration) ease,
+    background var(--motion-duration) ease;
 }
 
 .poster-card:focus,
 .library-card:focus,
 .profile-card:focus {
   outline: none;
-  transform: scale(1.05);
+  transform: scale(var(--focus-scale));
   border-color: rgba(224, 168, 74, 0.65);
-  box-shadow:
-    0 14px 32px rgba(0, 0, 0, 0.35),
-    0 0 0 2px rgba(240, 197, 116, 0.4);
+  box-shadow: var(--focus-shadow);
   z-index: 1;
 }
 

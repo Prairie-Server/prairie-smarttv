@@ -4,6 +4,7 @@ import {
   handleSpatialArrowKey,
   isArrowKey,
   listFocusables,
+  registerFocusReveal,
 } from "./spatialFocus";
 
 function place(el: HTMLElement, left: number, top: number, width = 40, height = 40) {
@@ -251,13 +252,263 @@ describe("spatialFocus", () => {
     expect(findSpatialNeighbor(signIn, "ArrowUp")).toBe(password);
   });
 
-  it("reaches a vertically offset Show QR control with ArrowRight", () => {
-    const signIn = document.createElement("button");
-    const showQr = document.createElement("button");
-    document.body.append(signIn, showQr);
-    place(signIn, 40, 320, 140, 48);
-    place(showQr, 420, 180, 160, 48);
+  it("navigates by index inside a horizontal focus container", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    const c = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    b.dataset.focusIndex = "1";
+    c.dataset.focusIndex = "2";
+    row.append(a, b, c);
+    document.body.append(row);
+    place(a, 0, 200);
+    place(b, 120, 200);
+    place(c, 240, 200);
 
-    expect(findSpatialNeighbor(signIn, "ArrowRight")).toBe(showQr);
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+    expect(findSpatialNeighbor(b, "ArrowRight")).toBe(c);
+    expect(findSpatialNeighbor(c, "ArrowRight")).toBeNull();
+    expect(findSpatialNeighbor(c, "ArrowLeft")).toBe(b);
+  });
+
+  it("moves between stacked focus containers on ArrowUp/ArrowDown", () => {
+    const top = document.createElement("div");
+    top.dataset.focusContainer = "horizontal";
+    const bottom = document.createElement("div");
+    bottom.dataset.focusContainer = "horizontal";
+    const t0 = document.createElement("button");
+    const t1 = document.createElement("button");
+    const b0 = document.createElement("button");
+    const b1 = document.createElement("button");
+    t0.dataset.focusIndex = "0";
+    t1.dataset.focusIndex = "1";
+    b0.dataset.focusIndex = "0";
+    b1.dataset.focusIndex = "1";
+    top.append(t0, t1);
+    bottom.append(b0, b1);
+    document.body.append(top, bottom);
+    place(t0, 0, 0);
+    place(t1, 120, 0);
+    place(b0, 0, 200);
+    place(b1, 120, 200);
+
+    // Down from column 1 lands on column 1. Up restores the last index in the
+    // destination container (Spotlight-style), not the source column.
+    expect(findSpatialNeighbor(t1, "ArrowDown")).toBe(b1);
+    expect(findSpatialNeighbor(b0, "ArrowUp")).toBe(t1);
+  });
+
+  it("navigates a grid container by columns", () => {
+    const grid = document.createElement("div");
+    grid.dataset.focusContainer = "grid";
+    grid.dataset.focusColumns = "2";
+    const buttons = [0, 1, 2, 3].map((index) => {
+      const button = document.createElement("button");
+      button.dataset.focusIndex = String(index);
+      grid.append(button);
+      return button;
+    });
+    document.body.append(grid);
+    place(buttons[0]!, 0, 0);
+    place(buttons[1]!, 120, 0);
+    place(buttons[2]!, 0, 160);
+    place(buttons[3]!, 120, 160);
+
+    expect(findSpatialNeighbor(buttons[0]!, "ArrowRight")).toBe(buttons[1]);
+    expect(findSpatialNeighbor(buttons[1]!, "ArrowLeft")).toBe(buttons[0]);
+    expect(findSpatialNeighbor(buttons[0]!, "ArrowDown")).toBe(buttons[2]);
+    expect(findSpatialNeighbor(buttons[2]!, "ArrowUp")).toBe(buttons[0]);
+    expect(findSpatialNeighbor(buttons[2]!, "ArrowRight")).toBe(buttons[3]);
+    expect(findSpatialNeighbor(buttons[3]!, "ArrowRight")).toBeNull();
+  });
+
+  it("estimates grid columns and exits the top/bottom of a grid", () => {
+    const above = document.createElement("div");
+    above.dataset.focusContainer = "horizontal";
+    const a0 = document.createElement("button");
+    a0.dataset.focusIndex = "0";
+    above.append(a0);
+
+    const grid = document.createElement("div");
+    grid.dataset.focusContainer = "grid";
+    const buttons = [0, 1, 2, 3].map((index) => {
+      const button = document.createElement("button");
+      button.dataset.focusIndex = String(index);
+      grid.append(button);
+      return button;
+    });
+    document.body.append(above, grid);
+    place(a0, 0, 0);
+    place(buttons[0]!, 0, 120);
+    place(buttons[1]!, 120, 120);
+    place(buttons[2]!, 0, 280);
+    place(buttons[3]!, 120, 280);
+
+    expect(findSpatialNeighbor(buttons[0]!, "ArrowUp")).toBe(a0);
+    expect(findSpatialNeighbor(buttons[2]!, "ArrowDown")).toBeNull();
+  });
+
+  it("reveals virtualized indices through registerFocusReveal", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "3";
+    const a = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+
+    const b = document.createElement("button");
+    b.dataset.focusIndex = "1";
+    place(b, 120, 0);
+    const unregister = registerFocusReveal(row, (index) => {
+      if (index !== 1) return null;
+      row.append(b);
+      return b;
+    });
+
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+    unregister();
+  });
+
+  it("navigates a vertical focus container with up/down", () => {
+    const col = document.createElement("div");
+    col.dataset.focusContainer = "vertical";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    b.dataset.focusIndex = "1";
+    col.append(a, b);
+    document.body.append(col);
+    place(a, 0, 0);
+    place(b, 0, 80);
+
+    expect(findSpatialNeighbor(a, "ArrowDown")).toBe(b);
+    expect(findSpatialNeighbor(b, "ArrowUp")).toBe(a);
+    expect(findSpatialNeighbor(b, "ArrowDown")).toBeNull();
+    expect(findSpatialNeighbor(a, "ArrowLeft")).toBeNull();
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBeNull();
+  });
+
+  it("clamps invalid focusCount and stays put at a horizontal edge", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "1";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    b.dataset.focusIndex = "1";
+    row.append(a, b);
+    document.body.append(row);
+    place(a, 0, 0);
+    place(b, 120, 0);
+
+    // focusCount=1 is below rendered count, so total falls back to rendered length.
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+    expect(findSpatialNeighbor(b, "ArrowRight")).toBeNull();
+  });
+
+  it("scrolls into view when the focused neighbor is off-screen", () => {
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    document.body.append(a, b);
+    place(a, 0, 0);
+    place(b, 0, window.innerHeight + 200);
+    a.focus();
+    let scrolled = false;
+    b.scrollIntoView = () => {
+      scrolled = true;
+    };
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true });
+    expect(handleSpatialArrowKey(event)).toBe(true);
+    expect(document.activeElement).toBe(b);
+    expect(scrolled).toBe(true);
+  });
+
+  it("ignores modified and already-handled arrow events", () => {
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    document.body.append(a, b);
+    place(a, 0, 0);
+    place(b, 100, 0);
+    a.focus();
+    expect(
+      handleSpatialArrowKey(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true })),
+    ).toBe(false);
+    const prevented = new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true });
+    prevented.preventDefault();
+    expect(handleSpatialArrowKey(prevented)).toBe(false);
+  });
+
+  it("uses focusCount when it is at least the rendered item count", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "4";
+    const a = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+    const revealed: number[] = [];
+    registerFocusReveal(row, (index) => {
+      revealed.push(index);
+      const el = document.createElement("button");
+      el.dataset.focusIndex = String(index);
+      place(el, index * 120, 0);
+      row.append(el);
+      return el;
+    });
+    expect(findSpatialNeighbor(a, "ArrowRight")?.dataset.focusIndex).toBe("1");
+    expect(revealed).toEqual([1]);
+  });
+
+  it("falls back when a reveal handler returns null but the node exists", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    row.dataset.focusCount = "2";
+    const a = document.createElement("button");
+    const b = document.createElement("button");
+    a.dataset.focusIndex = "0";
+    b.dataset.focusIndex = "1";
+    // Only mount `a` initially; `b` is in the tree for querySelector after reveal misses.
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+    place(b, 120, 0);
+    registerFocusReveal(row, () => {
+      row.append(b);
+      return null;
+    });
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBe(b);
+  });
+
+  it("skips zero-size and offscreen candidates outside containers", () => {
+    const a = document.createElement("button");
+    const ghost = document.createElement("button");
+    const b = document.createElement("button");
+    document.body.append(a, ghost, b);
+    place(a, 0, 0);
+    place(ghost, 0, 80, 0, 0);
+    place(b, 0, 160);
+    expect(listFocusables()).toEqual([a, b]);
+  });
+
+  it("parses bad focus indices as fallbacks and ignores empty containers", () => {
+    const row = document.createElement("div");
+    row.dataset.focusContainer = "horizontal";
+    const a = document.createElement("button");
+    a.dataset.focusIndex = "nope";
+    row.append(a);
+    document.body.append(row);
+    place(a, 0, 0);
+    expect(findSpatialNeighbor(a, "ArrowRight")).toBeNull();
+
+    const empty = document.createElement("div");
+    empty.dataset.focusContainer = "horizontal";
+    document.body.append(empty);
+    Object.defineProperty(empty, "offsetParent", { configurable: true, get: () => document.body });
+    expect(findSpatialNeighbor(a, "ArrowDown")).toBeNull();
   });
 });

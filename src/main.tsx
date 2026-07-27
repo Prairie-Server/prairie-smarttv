@@ -7,6 +7,7 @@ import "@fontsource/fraunces/700.css";
 import "./styles.css";
 import { App } from "./App";
 import { detectImageFormats } from "./lib/imageFormats";
+import { applyPerformanceTier } from "./perf/performanceTier";
 import { restoreDurableStorage, scheduleDurablePersist } from "./storage/durableStorage";
 import { ensureStorageSchema } from "./storage/persist";
 import { migrateFromLegacy } from "./storage/serverRegistry";
@@ -19,6 +20,7 @@ async function boot() {
   ensureStorageSchema();
   migrateFromLegacy();
   scheduleDurablePersist();
+  applyPerformanceTier();
   void detectImageFormats();
 
   const root = document.getElementById("root");

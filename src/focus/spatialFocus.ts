@@ -1,54 +1,35 @@
-export type ArrowKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
+import type { ArrowKey } from "./spatialFocusKeys";
 
-export function isArrowKey(key: string): key is ArrowKey {
-  return key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight";
-}
+export type { ArrowKey } from "./spatialFocusKeys";
+export {
+  isArrowKey,
+  isBackKey,
+  isEditableTarget,
+  shouldDeferToEditableCaret,
+} from "./spatialFocusKeys";
 
-/** Text-entry fields where arrows should move the caret, not spatial focus. */
-export function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target instanceof HTMLTextAreaElement) return true;
-  if (target instanceof HTMLSelectElement) return true;
-  if (target.isContentEditable) return true;
-  if (!(target instanceof HTMLInputElement)) return false;
-  const type = (target.type || "text").toLowerCase();
-  // Checkboxes/radios/buttons must stay in spatial nav (TV remote).
-  return (
-    type === "text" ||
-    type === "password" ||
-    type === "search" ||
-    type === "email" ||
-    type === "url" ||
-    type === "tel" ||
-    type === "number" ||
-    type === ""
-  );
-}
+import {
+  isArrowKey,
+  isEditableTarget,
+  shouldDeferToEditableCaret,
+} from "./spatialFocusKeys";
 
-/**
- * Whether an arrow key should stay on the caret inside an editable field.
- * Up/Down always leave the field on TV remotes so users can reach Back / QR.
- * Left/Right keep caret motion until the selection is at the field edge.
- */
-export function shouldDeferToEditableCaret(target: EventTarget | null, key: ArrowKey): boolean {
-  if (!isEditableTarget(target)) return false;
-  if (key === "ArrowUp" || key === "ArrowDown") return false;
-  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
-    return true;
-  }
-  const start = target.selectionStart;
-  const end = target.selectionEnd;
-  if (start == null || end == null) return true;
-  if (start !== end) return true;
-  if (key === "ArrowLeft") return start > 0;
-  if (key === "ArrowRight") return start < target.value.length;
-  return true;
+/** Sync reveal when virtualized containers need to mount an off-window index. */
+export type FocusRevealHandler = (index: number) => HTMLElement | null;
+
+const revealHandlers = new WeakMap<HTMLElement, FocusRevealHandler>();
+const lastIndexByContainer = new WeakMap<HTMLElement, number>();
+
+export function registerFocusReveal(container: HTMLElement, handler: FocusRevealHandler): () => void {
+  revealHandlers.set(container, handler);
+  return () => {
+    revealHandlers.delete(container);
+  };
 }
 
 function isRoughlyOnScreen(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
   if (rect.width <= 0 && rect.height <= 0) return false;
-  // Keep wide horizontal margins so in-row posters stay candidates.
   const marginX = Math.max(window.innerWidth, 800);
   const marginY = Math.max(window.innerHeight * 0.75, 320);
   return (
@@ -59,27 +40,183 @@ function isRoughlyOnScreen(el: HTMLElement): boolean {
   );
 }
 
+function isFocusableCandidate(el: HTMLElement): boolean {
+  if (el.closest("[data-focus-trap='off']")) return false;
+  if (el.getAttribute("aria-hidden") === "true") return false;
+  if (
+    el instanceof HTMLInputElement &&
+    (el.type === "checkbox" || el.type === "radio") &&
+    el.closest("button, [role='button'], .settings-row, .toggle-row")
+  ) {
+    return false;
+  }
+  const visible = el.offsetParent !== null || el === document.activeElement;
+  return visible;
+}
+
 export function listFocusables(root: ParentNode = document): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>(
       'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
     ),
   ).filter((el) => {
-    if (el.closest("[data-focus-trap='off']")) return false;
-    if (el.getAttribute("aria-hidden") === "true") return false;
-    // Native checkboxes/radios inside a focusable row should not be separate targets.
-    if (
-      el instanceof HTMLInputElement &&
-      (el.type === "checkbox" || el.type === "radio") &&
-      el.closest("button, [role='button'], .settings-row, .toggle-row")
-    ) {
-      return false;
-    }
-    const visible = el.offsetParent !== null || el === document.activeElement;
-    if (!visible) return false;
+    if (!isFocusableCandidate(el)) return false;
     if (el === document.activeElement) return true;
+    if (root !== document && root !== document.body) return true;
     return isRoughlyOnScreen(el);
   });
+}
+
+function closestFocusContainer(el: HTMLElement | null): HTMLElement | null {
+  return el?.closest<HTMLElement>("[data-focus-container]") ?? null;
+}
+
+/** Focusables that belong to this container (not a nested container). */
+export function listContainerFocusables(container: HTMLElement): HTMLElement[] {
+  return listFocusables(container).filter((el) => closestFocusContainer(el) === container);
+}
+
+function parseAbsoluteIndex(el: HTMLElement, fallback: number): number {
+  const raw = el.dataset.focusIndex;
+  if (raw == null || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function containerTotal(container: HTMLElement, renderedCount: number): number {
+  const parsed = Number(container.dataset.focusCount);
+  if (Number.isFinite(parsed) && parsed >= renderedCount) return parsed;
+  return renderedCount;
+}
+
+function revealIndex(container: HTMLElement, index: number): HTMLElement | null {
+  const handler = revealHandlers.get(container);
+  if (handler) {
+    const revealed = handler(index);
+    if (revealed) return revealed;
+  }
+  return (
+    container.querySelector<HTMLElement>(`[data-focus-index="${index}"]`) ??
+    listContainerFocusables(container).find((el, i) => parseAbsoluteIndex(el, i) === index) ??
+    null
+  );
+}
+
+function focusAtContainerIndex(container: HTMLElement, index: number): HTMLElement | null {
+  const items = listContainerFocusables(container);
+  const total = containerTotal(container, items.length);
+  if (total <= 0) return null;
+  const clamped = Math.max(0, Math.min(index, total - 1));
+  const existing = items.find((el, i) => parseAbsoluteIndex(el, i) === clamped);
+  if (existing) {
+    lastIndexByContainer.set(container, clamped);
+    return existing;
+  }
+  const revealed = revealIndex(container, clamped);
+  if (revealed) lastIndexByContainer.set(container, clamped);
+  return revealed;
+}
+
+function estimateGridColumns(container: HTMLElement, items: HTMLElement[]): number {
+  const parsed = Number(container.dataset.focusColumns);
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  if (items.length <= 1) return 1;
+  const firstTop = items[0]!.getBoundingClientRect().top;
+  let cols = 1;
+  for (let i = 1; i < items.length; i++) {
+    if (Math.abs(items[i]!.getBoundingClientRect().top - firstTop) > 8) break;
+    cols += 1;
+  }
+  return cols;
+}
+
+function listFocusContainers(root: ParentNode = document): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>("[data-focus-container]")).filter((el) => {
+    if (el.closest("[data-focus-trap='off']")) return false;
+    return el.offsetParent !== null || el.contains(document.activeElement);
+  });
+}
+
+function findAcrossContainers(
+  fromContainer: HTMLElement,
+  key: "ArrowUp" | "ArrowDown",
+  preferredIndex: number,
+): HTMLElement | null {
+  const containers = listFocusContainers();
+  const fromIndex = containers.indexOf(fromContainer);
+  if (fromIndex < 0) return null;
+  const step = key === "ArrowDown" ? 1 : -1;
+  for (let i = fromIndex + step; i >= 0 && i < containers.length; i += step) {
+    const target = containers[i]!;
+    const remembered = lastIndexByContainer.get(target);
+    const next = focusAtContainerIndex(target, remembered ?? preferredIndex);
+    if (next) return next;
+  }
+  return null;
+}
+
+function navigateContainer(
+  active: HTMLElement,
+  key: ArrowKey,
+  container: HTMLElement,
+): HTMLElement | null {
+  const orientation = (container.dataset.focusContainer || "horizontal").toLowerCase();
+  const items = listContainerFocusables(container);
+  if (!items.length) return null;
+
+  const localIndex = items.indexOf(active);
+  const absoluteIndex = parseAbsoluteIndex(active, localIndex >= 0 ? localIndex : 0);
+  const total = containerTotal(container, items.length);
+  lastIndexByContainer.set(container, absoluteIndex);
+
+  if (orientation === "grid") {
+    const cols = estimateGridColumns(container, items);
+    if (key === "ArrowLeft") {
+      return absoluteIndex > 0 ? focusAtContainerIndex(container, absoluteIndex - 1) : active;
+    }
+    if (key === "ArrowRight") {
+      return absoluteIndex < total - 1
+        ? focusAtContainerIndex(container, absoluteIndex + 1)
+        : active;
+    }
+    if (key === "ArrowUp") {
+      if (absoluteIndex >= cols) {
+        return focusAtContainerIndex(container, absoluteIndex - cols);
+      }
+      return findAcrossContainers(container, "ArrowUp", absoluteIndex % cols);
+    }
+    if (key === "ArrowDown") {
+      if (absoluteIndex + cols < total) {
+        return focusAtContainerIndex(container, absoluteIndex + cols);
+      }
+      return findAcrossContainers(container, "ArrowDown", absoluteIndex % cols);
+    }
+    /* v8 ignore next -- ArrowKey union is exhaustive above */
+    return null;
+  }
+
+  // horizontal (default for rails) or vertical
+  const forward = orientation === "vertical" ? "ArrowDown" : "ArrowRight";
+  const backward = orientation === "vertical" ? "ArrowUp" : "ArrowLeft";
+  const exitForward = orientation === "vertical" ? "ArrowRight" : "ArrowDown";
+  const exitBackward = orientation === "vertical" ? "ArrowLeft" : "ArrowUp";
+
+  if (key === forward && absoluteIndex < total - 1) {
+    return focusAtContainerIndex(container, absoluteIndex + 1);
+  }
+  if (key === backward && absoluteIndex > 0) {
+    return focusAtContainerIndex(container, absoluteIndex - 1);
+  }
+  if (key === exitForward) {
+    return findAcrossContainers(container, "ArrowDown", absoluteIndex);
+  }
+  if (key === exitBackward) {
+    return findAcrossContainers(container, "ArrowUp", absoluteIndex);
+  }
+  // Stay put at horizontal/vertical edges instead of geometry-jumping into another row mid-rail.
+  if (key === forward || key === backward) return active;
+  /* v8 ignore next -- exit keys already returned above */
+  return null;
 }
 
 interface Point {
@@ -104,9 +241,6 @@ function isInDirection(
   switch (key) {
     case "ArrowLeft":
     case "ArrowRight": {
-      // Strict: keep left/right on the same row so full-width inputs above a
-      // button row don't steal focus. Loose: allow cross-column targets
-      // (e.g. Connect Sign in → Show QR).
       const rowSlop = options?.looseHorizontal
         ? Math.max(fromRect.height, toRect.height, 40) * 4.5
         : Math.max(fromRect.height, toRect.height, 40) * 0.75;
@@ -155,8 +289,7 @@ function pickNeighbor(
 }
 
 /**
- * Pick the nearest focusable in the arrow direction using geometry, not DOM order.
- * Falls back to null when nothing lies in that direction.
+ * Prefer index navigation inside focus containers; fall back to geometry.
  */
 export function findSpatialNeighbor(
   active: HTMLElement | null,
@@ -166,6 +299,16 @@ export function findSpatialNeighbor(
   if (!candidates.length) return null;
   if (!active || !candidates.includes(active)) {
     return candidates[0] ?? null;
+  }
+
+  const container = closestFocusContainer(active);
+  if (container) {
+    const indexed = navigateContainer(active, key, container);
+    if (indexed) {
+      // "Stay put" sentinel when already at an edge.
+      if (indexed === active) return null;
+      return indexed;
+    }
   }
 
   const strict = pickNeighbor(active, key, candidates, false);
@@ -208,9 +351,4 @@ export function handleSpatialArrowKey(event: KeyboardEvent): boolean {
   focusWithoutPageJump(next);
   event.preventDefault();
   return true;
-}
-
-/** TV remote Back / Escape helpers. */
-export function isBackKey(key: string): boolean {
-  return key === "Escape" || key === "Backspace" || key === "XF86Back" || key === "GoBack";
 }

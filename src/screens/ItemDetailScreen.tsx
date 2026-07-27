@@ -669,18 +669,20 @@ export function ItemDetailScreen({
 
       {similar.length > 0 ? (
         <div className="detail-body-section">
-          <MediaRow title="More Like This">
-            {similar.map((item) => (
+          <MediaRow
+            title="More Like This"
+            items={similar}
+            getItemKey={(item) => item.content_id}
+            renderItem={(item) => (
               <PosterCard
-                key={item.content_id}
                 title={item.title}
                 subtitle={item.year ? String(item.year) : item.type}
                 posterUrl={item.poster_url}
                 watched={Boolean(item.user_state?.played)}
                 onSelect={() => onOpenItem(item.content_id)}
               />
-            ))}
-          </MediaRow>
+            )}
+          />
         </div>
       ) : null}
     </section>

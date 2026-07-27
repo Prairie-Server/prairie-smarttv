@@ -15,6 +15,8 @@ interface PosterCardProps {
   imageLoading?: "eager" | "lazy";
   /** When true, reserve subtitle line height even if subtitle is empty (reduces CLS). */
   reserveSubtitle?: boolean;
+  /** Absolute index inside a focus container (set by MediaRow / PosterGrid). */
+  "data-focus-index"?: number;
 }
 
 export function PosterCard({
@@ -29,6 +31,7 @@ export function PosterCard({
   disabled,
   imageLoading = "lazy",
   reserveSubtitle = true,
+  "data-focus-index": focusIndex,
 }: PosterCardProps) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (disabled) return;
@@ -50,6 +53,7 @@ export function PosterCard({
       onKeyDown={onKeyDown}
       autoFocus={autoFocus}
       disabled={disabled}
+      data-focus-index={focusIndex}
     >
       <div className="poster-card__art" aria-hidden="true">
         {hasPosterUrl ? (

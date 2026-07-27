@@ -12,6 +12,8 @@ interface LandscapeCardProps {
   onSelect: () => void;
   autoFocus?: boolean;
   imageLoading?: "eager" | "lazy";
+  /** Absolute index inside a focus container (set by MediaRow / PosterGrid). */
+  "data-focus-index"?: number;
 }
 
 export function LandscapeCard({
@@ -24,6 +26,7 @@ export function LandscapeCard({
   onSelect,
   autoFocus,
   imageLoading = "lazy",
+  "data-focus-index": focusIndex,
 }: LandscapeCardProps) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Enter" || event.key === " ") {
@@ -41,6 +44,7 @@ export function LandscapeCard({
       onClick={onSelect}
       onKeyDown={onKeyDown}
       autoFocus={autoFocus}
+      data-focus-index={focusIndex}
     >
       <div className="landscape-card__art" aria-hidden="true">
         {src ? (

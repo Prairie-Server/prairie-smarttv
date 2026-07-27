@@ -18,6 +18,15 @@ import {
   type PlaybackSettings,
 } from "./playbackSettings";
 import {
+  applyPerformanceTier,
+  describePerformanceMode,
+  loadPerformanceMode,
+  resolvePerformanceTier,
+  savePerformanceMode,
+  type PerformanceMode,
+} from "../perf/performanceTier";
+import { scheduleDurablePersist } from "../storage/durableStorage";
+import {
   SUBTITLE_BG_COLOR_CHOICES,
   SUBTITLE_COLOR_CHOICES,
   subtitleAppearanceCssVars,
@@ -33,12 +42,19 @@ interface PlaybackSettingsScreenProps {
 }
 
 type StreamMethodChoice = "auto" | "direct" | "transcode";
-type SettingsSectionId = "servers" | "playback" | "subtitles" | "about";
+type SettingsSectionId = "servers" | "playback" | "display" | "subtitles" | "about";
 
 const BACKEND_OPTIONS: { value: PlayerBackendPreference; label: string }[] = [
   { value: "auto", label: "Auto" },
   { value: "html5", label: "HTML5" },
   { value: "native", label: "Native" },
+];
+
+const PERF_OPTIONS: { value: PerformanceMode; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "high", label: "High quality" },
+  { value: "balanced", label: "Balanced" },
+  { value: "low", label: "Performance" },
 ];
 
 const SIZE_OPTIONS: Array<{ value: SubtitleFontSize; label: string }> = [
@@ -88,6 +104,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
     if (onSwitchServer) items.push({ id: "servers", label: "Servers" });
     items.push(
       { id: "playback", label: "Playback" },
+      { id: "display", label: "Display" },
       { id: "subtitles", label: "Subtitles" },
       { id: "about", label: "About" },
     );
@@ -96,6 +113,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
 
   const [section, setSection] = useState<SettingsSectionId>(() => sections[0]?.id ?? "playback");
   const [settings, setSettings] = useState<PlaybackSettings>(() => loadPlaybackSettings());
+  const [performanceMode, setPerformanceMode] = useState<PerformanceMode>(() => loadPerformanceMode());
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ kind: "checking" });
   const [changelogFallbackUrl, setChangelogFallbackUrl] = useState<string | null>(null);
   const platform = detectPlatform();
@@ -104,6 +122,7 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
   const latestLabel = latestVersionLabel(updateStatus);
   const changelogUrl = changelogUrlOrNull(updateStatus);
   const activeSection = sections.find((item) => item.id === section) ?? sections[0];
+  const resolvedTier = resolvePerformanceTier(performanceMode);
 
   useEffect(() => {
     if (!sections.some((item) => item.id === section)) {
@@ -192,6 +211,23 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
           value={streamMethodFromSettings(settings)}
           options={STREAM_OPTIONS}
           onChange={setStreamMethod}
+        />
+      </div>
+    );
+  } else if (section === "display") {
+    pane = (
+      <div className="settings-block__rows">
+        <SettingsChoiceRow
+          label="Performance"
+          hint={`Resolved: ${describePerformanceMode(performanceMode, resolvedTier)}. Lower tiers reduce focus scale, shadows, and animations.`}
+          value={performanceMode}
+          options={PERF_OPTIONS}
+          onChange={(mode) => {
+            const next = savePerformanceMode(mode);
+            setPerformanceMode(next);
+            applyPerformanceTier(resolvePerformanceTier(next));
+            scheduleDurablePersist();
+          }}
         />
       </div>
     );

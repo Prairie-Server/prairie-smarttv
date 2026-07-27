@@ -18,9 +18,10 @@ AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first
 - **Player chrome**: play/pause, ±15s seek, scrub readout, progress reporting, audio track switch, client-side subtitle selection, session teardown on exit
 - **Subtitle styling**: size, text/background color, opacity, box/shadow/outline, position (persisted; HTML5/webOS `::cue` + Tizen AVPlay overlay)
 - **Upgrade-safe persistence**: session + settings + last server URL survive app updates; logout keeps last server URL for reconnect
-- Spatial D-pad focus (geometry-based, not DOM-order)
+- Container/index D-pad focus with virtualized home rails and poster grids
+- Automatic performance tiers that dial down focus effects on weaker TVs
 - Playback backends: HTML5 / Tizen AVPlay / webOS Starfish-style
-- Troubleshooting settings: force direct / force transcode, backend preference
+- Troubleshooting settings: force direct / force transcode, backend preference, performance mode
 - Store packaging scripts for unsigned `.wgt` / `.ipk` staging + signing docs
 
 ## Requirements
@@ -87,6 +88,7 @@ GitHub Actions runs lint, Prettier check, typecheck, build, then `npm run test:c
 - `src/api/**`
 - `src/storage/**`
 - `src/focus/**`
+- `src/perf/**`
 - `src/settings/playbackSettings.ts`
 - `src/player/createPlayer.ts`
 - `src/player/createMediaPlayer.ts`
@@ -129,13 +131,14 @@ Session auth stores non-secret identity (`serverUrl`, username, profile id/name)
 src/
   api/           Prairie /api/v1 client, auth, health, catalog, home, watch, playback, livetv
   discovery/     LAN candidate builder + parallel /api/v1/health scan
-  focus/         Spatial D-pad focus engine
+  focus/         Container/index D-pad focus engine
+  perf/          Device-tier performance mode
   platform/      detect + tizen/avplay + webos/starfish adapters
   player/        backend selection, HTML5 host, PlayerHost, time helpers
   settings/      playback troubleshooting settings + screen
   storage/       session, server registry, upgrade-safe persistence
   screens/       Connect, server list, profiles, browse, Live TV, detail, player
-  components/    Shell nav, poster cards, media rows
+  components/    Shell nav, poster cards, virtualized media rows / grids
 platforms/       Tizen config.xml + webOS appinfo.json + packaging docs
 scripts/         build-web + package-store
 ```
@@ -143,5 +146,3 @@ scripts/         build-web + package-store
 ## License
 
 GNU Affero General Public License v3.0 (or later) — see [LICENSE](./LICENSE).
-
-This project does **not** copy Moonfin, Enact, or other proprietary TV client source. Player adapters are thin wrappers over documented platform APIs.
