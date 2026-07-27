@@ -19,6 +19,7 @@ interface PlayerHostProps {
   onEnded?: () => void;
   onReady?: (player: MediaPlayer) => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
+  onBuffering?: (active: boolean) => void;
 }
 
 function applySubtitleVars(el: HTMLElement, appearance: SubtitleAppearance | undefined): void {
@@ -42,6 +43,7 @@ export function PlayerHost({
   onEnded,
   onReady,
   onTimeUpdate,
+  onBuffering,
 }: PlayerHostProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<MediaPlayer | null>(null);
@@ -50,6 +52,7 @@ export function PlayerHost({
   const onErrorRef = useRef(onError);
   const onEndedRef = useRef(onEnded);
   const onReadyRef = useRef(onReady);
+  const onBufferingRef = useRef(onBuffering);
   const playingRef = useRef(playing);
 
   useEffect(() => {
@@ -57,6 +60,7 @@ export function PlayerHost({
     onErrorRef.current = onError;
     onEndedRef.current = onEnded;
     onReadyRef.current = onReady;
+    onBufferingRef.current = onBuffering;
     playingRef.current = playing;
   });
 
@@ -78,6 +82,7 @@ export function PlayerHost({
         onError: (message) => onErrorRef.current?.(message),
         onEnded: () => onEndedRef.current?.(),
         onTimeUpdate: (current, duration) => onTimeUpdateRef.current?.(current, duration),
+        onBuffering: (active) => onBufferingRef.current?.(active),
       });
     } catch (err) {
       onErrorRef.current?.(err instanceof Error ? err.message : String(err));

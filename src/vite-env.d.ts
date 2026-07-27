@@ -12,6 +12,8 @@ interface AvPlayApi {
   prepare(): void;
   prepareAsync(success?: () => void, error?: (err: unknown) => void): void;
   setDisplayRect(x: number, y: number, width: number, height: number): void;
+  setDisplayMethod?(displayMode: string): void;
+  setStreamingProperty?(propertyType: string, propertyParam: string): void;
   setListener(listener: Record<string, unknown>): void;
   play(): void;
   pause(): void;

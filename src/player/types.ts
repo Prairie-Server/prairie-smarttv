@@ -30,6 +30,8 @@ export interface CreateMediaPlayerOptions {
   onError?: (message: string) => void;
   onEnded?: () => void;
   onTimeUpdate?: (currentSeconds: number, durationSeconds: number) => void;
+  /** Native players: buffering started/finished. */
+  onBuffering?: (active: boolean) => void;
 }
 
 export interface SubtitleUrlEntry {
