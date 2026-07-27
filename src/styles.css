@@ -206,6 +206,72 @@ button:focus,
   animation: panel-rise 650ms ease-out both;
 }
 
+.connect-panel--split {
+  width: min(980px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(1.25rem, 3vw, 2rem);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .connect-panel--split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.quick-connect-panel {
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--radius);
+  background: rgba(16, 21, 28, 0.55);
+  border: 1px solid rgba(224, 168, 74, 0.2);
+}
+
+.quick-connect-title {
+  margin: 0.35rem 0 0.65rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.4vw, 1.75rem);
+  font-weight: 600;
+  color: var(--prairie-ink);
+}
+
+.quick-connect-copy,
+.quick-connect-status {
+  margin: 0;
+  color: var(--prairie-muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.quick-connect-codes {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.quick-connect-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--prairie-muted);
+}
+
+.quick-connect-code {
+  margin-top: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--prairie-amber);
+}
+
+.quick-connect-match {
+  margin-top: 0.25rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--prairie-ink);
+}
+
 .connect-mark {
   display: block;
   width: 72px;

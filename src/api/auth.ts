@@ -40,12 +40,60 @@ export interface SetupStatusResponse {
   needs_setup: boolean;
 }
 
+export interface DeviceLoginStartResponse {
+  device_code: string;
+  user_code: string;
+  match_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  expires_at: string;
+  expires_in: number;
+  interval: number;
+  device_name: string;
+  device_platform: string;
+}
+
+export interface DeviceLoginPollResponse {
+  status: string;
+  poll_after: number;
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  user?: LoginUser;
+}
+
 export async function fetchSetupStatus(
   serverUrl: string,
   fetchImpl?: typeof fetch,
   timeoutMs?: number,
 ): Promise<SetupStatusResponse> {
   return apiRequest<SetupStatusResponse>({ serverUrl, fetchImpl, timeoutMs }, "/api/v1/auth/setup");
+}
+
+export async function startDeviceLogin(
+  serverUrl: string,
+  payload: { device_name: string; device_platform: string },
+  fetchImpl?: typeof fetch,
+): Promise<DeviceLoginStartResponse> {
+  return apiRequest<DeviceLoginStartResponse>(
+    { serverUrl, fetchImpl },
+    "/api/v1/auth/device/start",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function pollDeviceLogin(
+  serverUrl: string,
+  deviceCode: string,
+  fetchImpl?: typeof fetch,
+): Promise<DeviceLoginPollResponse> {
+  return apiRequest<DeviceLoginPollResponse>({ serverUrl, fetchImpl }, "/api/v1/auth/device/poll", {
+    method: "POST",
+    body: JSON.stringify({ device_code: deviceCode }),
+  });
 }
 
 export async function login(
