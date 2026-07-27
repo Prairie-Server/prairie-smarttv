@@ -21,6 +21,7 @@ import { probeTvPlaybackCapabilities } from "../platform/tizen/deviceCapabilitie
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
 import { humanizePlaybackError } from "../player/humanizePlaybackError";
+import { watchFileRequiresForcedTranscode } from "../player/audioCompatibility";
 import { filterClientRenderableSubtitles } from "../player/subtitleFormats";
 import { formatPlaybackClock } from "../player/timeFormat";
 import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../player/types";
@@ -30,6 +31,7 @@ import {
   resolvePreferredSubtitleIndex,
   savePlaybackSettings,
 } from "../settings/playbackSettings";
+import type { ForcedPlayMethod } from "../platform/types";
 import type { PrairieSession } from "../storage/session";
 import { buildStreamUrl } from "../api/client";
 
@@ -82,7 +84,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const pendingResumeRef = useRef<number | null>(launch.startPositionSeconds ?? null);
   const activeSubtitleIndexRef = useRef(-1);
   const exitedRef = useRef(false);
-  const directFallbackTriedRef = useRef(false);
+  const hlsFallbackTriedRef = useRef(false);
   const fallingBackRef = useRef(false);
   const seekByRef = useRef<(delta: number) => void>(() => undefined);
   const bumpControlsRef = useRef<() => void>(() => undefined);
@@ -147,14 +149,22 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       setLoading(true);
       setError(null);
       setBuffering(false);
-      directFallbackTriedRef.current = false;
+      hlsFallbackTriedRef.current = false;
       pendingResumeRef.current = launch.startPositionSeconds ?? null;
       try {
-        if (!launch.watch && launch.contentId) {
-          const detail = await fetchWatchDetail(session, launch.contentId);
+        let detail = launch.watch ?? null;
+        if (!detail && launch.contentId) {
+          detail = await fetchWatchDetail(session, launch.contentId);
           if (!cancelled) setWatch(detail);
         }
-        const forced = resolveForcedPlayMethod(settings);
+        const settingsForced = resolveForcedPlayMethod(settings);
+        const needsAudioTranscode = watchFileRequiresForcedTranscode(detail, launch.fileId);
+        const forced: ForcedPlayMethod =
+          settingsForced ?? (needsAudioTranscode ? "transcode" : null);
+        if (needsAudioTranscode) {
+          // TrueHD/DTS/etc. cannot remux-copy on TV — skip a doomed Direct/Remux attempt.
+          hlsFallbackTriedRef.current = true;
+        }
         const started = await startPlayback(session, {
           fileId: launch.fileId,
           profileId: session.profileId,
@@ -268,10 +278,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   }
 
   async function forceHlsFallback(reason: string): Promise<boolean> {
-    if (directFallbackTriedRef.current || fallingBackRef.current) return false;
+    if (exitedRef.current || hlsFallbackTriedRef.current || fallingBackRef.current) return false;
     const current = playbackRef.current;
-    if (!current || current.play_method.trim().toLowerCase() !== "direct") return false;
-    directFallbackTriedRef.current = true;
+    const method = current?.play_method.trim().toLowerCase() ?? "";
+    // Already on a full encode ladder — surface the error instead of looping.
+    if (!current || method === "transcode") return false;
+    hlsFallbackTriedRef.current = true;
     fallingBackRef.current = true;
     setLoading(true);
     setError(null);
@@ -281,6 +293,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     const oldSid = current.session_id;
     try {
       await stopPlaybackSession(session, oldSid).catch(() => undefined);
+      if (exitedRef.current) return false;
       const started = await startPlayback(session, {
         fileId: launch.fileId,
         profileId: session.profileId,
@@ -293,6 +306,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         hdr: deviceCaps.hdr,
       });
       const prepared = await preparePlayableSession(session, started, seekAt);
+      if (exitedRef.current) {
+        void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
+        return false;
+      }
       setPlayback(prepared.session);
       setStreamUrl(prepared.streamUrl);
       pendingResumeRef.current = prepared.playerStartSeconds;
@@ -300,6 +317,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
       return true;
     } catch {
+      if (exitedRef.current) return false;
       setError(humanizePlaybackError(reason));
       setPlaying(false);
       setControlsVisible(false);
@@ -311,9 +329,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   }
 
   function handlePlaybackError(message: string) {
+    if (exitedRef.current) return;
     const current = playbackRef.current;
-    const isDirect = current?.play_method.trim().toLowerCase() === "direct";
-    if (isDirect && !directFallbackTriedRef.current) {
+    const method = current?.play_method.trim().toLowerCase() ?? "";
+    if ((method === "direct" || method === "remux") && !hlsFallbackTriedRef.current) {
       void forceHlsFallback(message);
       return;
     }
@@ -328,17 +347,21 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   }
 
   async function retryPlayback() {
+    if (exitedRef.current) return;
     setError(null);
     setLoading(true);
     setBuffering(false);
     setControlsVisible(true);
     try {
-      const forced = resolveForcedPlayMethod(settings);
+      const settingsForced = resolveForcedPlayMethod(settings);
+      const needsAudioTranscode = watchFileRequiresForcedTranscode(watch, launch.fileId);
+      const forced: ForcedPlayMethod = settingsForced ?? (needsAudioTranscode ? "transcode" : null);
       const seekAt = currentTime > 0 ? currentTime : (launch.startPositionSeconds ?? 0);
       const oldSid = playbackRef.current?.session_id;
       if (oldSid) {
         await stopPlaybackSession(session, oldSid).catch(() => undefined);
       }
+      if (exitedRef.current) return;
       const started = await startPlayback(session, {
         fileId: launch.fileId,
         profileId: session.profileId,
@@ -351,12 +374,17 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         hdr: deviceCaps.hdr,
       });
       const prepared = await preparePlayableSession(session, started, seekAt);
+      if (exitedRef.current) {
+        void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
+        return;
+      }
       setPlayback(prepared.session);
       setStreamUrl(prepared.streamUrl);
       pendingResumeRef.current = prepared.playerStartSeconds;
       setPlaying(true);
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
     } catch (err) {
+      if (exitedRef.current) return;
       if (err instanceof ApiError) setError(humanizePlaybackError(err.message));
       else if (err instanceof Error) setError(humanizePlaybackError(err.message));
       else setError("Playback failed to start");
@@ -386,12 +414,26 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       window.clearTimeout(backgroundStopTimer.current);
       backgroundStopTimer.current = null;
     }
-    await reportProgress(true, true);
-    const sid = playbackRef.current?.session_id;
-    if (sid) {
-      await stopPlaybackSession(session, sid).catch(() => undefined);
+    if (hideTimer.current != null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
     }
+    // Navigate first so we never sit on a transparent player plane / body gradient
+    // while awaiting network teardown.
+    const sid = playbackRef.current?.session_id;
+    const position = playerRef.current?.getCurrentTime() ?? currentTime;
+    playbackRef.current = null;
     onExit();
+    void (async () => {
+      if (sid) {
+        try {
+          await reportPlaybackProgress(session, sid, position, true);
+        } catch {
+          /* best-effort */
+        }
+        await stopPlaybackSession(session, sid).catch(() => undefined);
+      }
+    })();
   }
 
   // After BACKGROUND_STOP_GRACE_MS hidden, report progress and stop the session.

@@ -11,6 +11,7 @@ import { applyPerformanceTier } from "./perf/performanceTier";
 import { restoreDurableStorage, scheduleDurablePersist } from "./storage/durableStorage";
 import { ensureStorageSchema } from "./storage/persist";
 import { migrateFromLegacy } from "./storage/serverRegistry";
+import { watchViewportScale } from "./ui/viewportScale";
 
 async function boot() {
   // Restore mirrored servers/settings before schema/session reads when the
@@ -21,6 +22,7 @@ async function boot() {
   migrateFromLegacy();
   scheduleDurablePersist();
   applyPerformanceTier();
+  watchViewportScale();
   void detectImageFormats();
 
   const root = document.getElementById("root");

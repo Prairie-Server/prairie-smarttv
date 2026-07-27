@@ -14,12 +14,19 @@
   --font-display: "Fraunces", "Georgia", serif;
   --radius: 14px;
   --focus-outline: 3px solid var(--prairie-ring);
+  /* 1 = 1920×1080 design; applyViewportScale() updates on real TVs. */
+  --ui-scale: 1;
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html {
+  /* Fallback before JS runs — 1920→16px, 3840→32px, 7680→64px. */
+  font-size: clamp(12px, calc(100vw / 120), 64px);
 }
 
 html,
@@ -39,6 +46,11 @@ body {
   color: var(--prairie-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
+}
+
+#root {
+  /* Opaque shell so exiting the player never flashes an empty transparent plane. */
+  background: inherit;
 }
 
 /*
@@ -1528,7 +1540,7 @@ button:focus,
 
 .landscape-card {
   flex: 0 0 auto;
-  width: min(22rem, 72vw);
+  width: 100%;
   display: grid;
   gap: 0.7rem;
   text-align: left;
@@ -1740,6 +1752,11 @@ button:focus,
   contain-intrinsic-size: auto 18.25rem;
 }
 
+.media-row--landscape {
+  min-height: 14.5rem;
+  contain-intrinsic-size: auto 14.5rem;
+}
+
 .media-row__title {
   margin: 0;
   font-size: 1.2rem;
@@ -1756,13 +1773,35 @@ button:focus,
 }
 
 .media-row__scroller {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(140px, 170px);
+  display: flex;
   gap: 0.9rem;
   overflow-x: auto;
   padding-bottom: 0.35rem;
   scroll-snap-type: x mandatory;
+}
+
+.media-row__item {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  min-width: 0;
+}
+
+.media-row--poster .media-row__item {
+  width: clamp(8.75rem, 12vw, 10.625rem);
+}
+
+.media-row--landscape .media-row__item {
+  width: min(22rem, 72vw);
+}
+
+.media-row__spacer {
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.media-row__item > .poster-card,
+.media-row__item > .landscape-card {
+  width: 100%;
 }
 
 .poster-grid,
@@ -1773,17 +1812,26 @@ button:focus,
 }
 
 .poster-grid {
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr));
+}
+
+.poster-grid__cell {
+  min-width: 0;
+}
+
+.poster-grid__cell > .poster-card {
+  width: 100%;
+  height: 100%;
 }
 
 .library-grid {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(13.75rem, 1fr));
 }
 
 .profile-grid {
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
   justify-content: center;
-  max-width: 980px;
+  max-width: 61.25rem;
   margin-inline: auto;
 }
 
@@ -2037,6 +2085,12 @@ button:focus,
 
 .detail-screen {
   padding: 0;
+  min-height: 100%;
+  /* Opaque so leaving the player never shows only the body gradient. */
+  background:
+    radial-gradient(1200px 700px at 12% -10%, rgba(224, 168, 74, 0.16), transparent 55%),
+    radial-gradient(900px 600px at 88% 8%, rgba(70, 110, 160, 0.22), transparent 50%),
+    linear-gradient(165deg, #10151c 0%, var(--prairie-bg) 42%, #0f1319 100%);
 }
 
 .detail-hero {

@@ -14,10 +14,12 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { registerFocusReveal } from "../focus/spatialFocus";
+import { designPx, currentViewportWidth, viewportScaleFactor } from "../ui/viewportScale";
 
 export type MediaRowVariant = "poster" | "landscape";
 
-const VARIANT_METRICS: Record<
+/** Design-time widths at 1920×1080 (scaled at runtime for 4K/8K). */
+const VARIANT_METRICS_DESIGN: Record<
   MediaRowVariant,
   { itemWidth: number; gap: number; minHeight: string }
 > = {
@@ -71,16 +73,32 @@ function stampFocusIndex(node: ReactNode, index: number): ReactNode {
 
 export function MediaRow<T>(props: MediaRowProps<T>) {
   const { title, skeleton = false, variant = "poster", className = "" } = props;
-  const metrics = VARIANT_METRICS[variant];
+  const [scale, setScale] = useState(() => viewportScaleFactor(currentViewportWidth()));
+  const design = VARIANT_METRICS_DESIGN[variant];
+  const metrics = useMemo(
+    () => ({
+      itemWidth: designPx(design.itemWidth, scale),
+      gap: designPx(design.gap, scale),
+      minHeight: design.minHeight,
+    }),
+    [design.itemWidth, design.gap, design.minHeight, scale],
+  );
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
-  const [viewport, setViewport] = useState(1280);
+  const [viewport, setViewport] = useState(() => designPx(1280, scale));
 
   const isVirtual = "items" in props && Array.isArray(props.items) && props.renderItem != null;
   const items = isVirtual ? props.items : null;
   const count = items?.length ?? 0;
   const itemStride = metrics.itemWidth + metrics.gap;
   const overscan = variant === "landscape" ? 3 : 5;
+
+  useLayoutEffect(() => {
+    const updateScale = () => setScale(viewportScaleFactor(currentViewportWidth()));
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
 
   const windowRange = useMemo(
     () => computeWindow(scrollLeft, viewport, itemStride, count, overscan),
@@ -98,7 +116,7 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    const update = () => setViewport(el.clientWidth || 1280);
+    const update = () => setViewport(el.clientWidth || designPx(1280, scale));
     update();
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", update);
@@ -107,7 +125,7 @@ export function MediaRow<T>(props: MediaRowProps<T>) {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [scale]);
 
   const reveal = useCallback(
     (index: number) => {
