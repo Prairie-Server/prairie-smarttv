@@ -11,9 +11,5 @@
   "iconColor": "#e0a84a",
   "disableBackHistoryAPI": true,
   "resolution": "1920x1080",
-  "requiredPermissions": [
-    "audio.operation",
-    "media.operation",
-    "network.op"
-  ]
+  "requiredPermissions": ["audio.operation", "media.operation", "network.op"]
 }
