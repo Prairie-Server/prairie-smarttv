@@ -38,7 +38,8 @@ export interface AvPlayApi {
   setDisplayRect(x: number, y: number, width: number, height: number): void;
   setDisplayMethod?(displayMode: string): void;
   setStreamingProperty?(propertyType: string, propertyParam: string): void;
-  setListener(listener: AvPlayListener): void;
+  // null clears the listener, releasing the native decoder references it holds.
+  setListener(listener: AvPlayListener | null): void;
   play(): void;
   pause(): void;
   stop(): void;
@@ -532,6 +533,19 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       }
       destroySubtitleOverlay(overlay);
       if (opened) {
+        // Clear the listener BEFORE stop/close. The listener object holds
+        // internal references to the native decoder pipeline; without releasing
+        // it first, the decoder's texture surfaces (tens of MB for 4K) can stay
+        // pinned in VRAM after close() returns. The next screen then composites
+        // over a hardware plane the GPU never reclaimed, which reads as the
+        // "only the app background shows" frame after exiting playback — a
+        // display toggle can't fix that because it is a GPU-plane leak, not a
+        // WebView layer-invalidation. (Samsung guidance; matches jellyfin-tizen.)
+        try {
+          avplay.setListener(null);
+        } catch {
+          /* older firmware may reject null — non-fatal, continue tearing down */
+        }
         try {
           avplay.stop();
         } catch {
