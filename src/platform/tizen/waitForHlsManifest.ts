@@ -33,14 +33,41 @@ export interface WaitForHlsManifestOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Per-request controller that also aborts when the caller's signal does.
+ *
+ * `AbortSignal.any` is not available on the Tizen WebViews we target, so chain
+ * the parent by hand. Without this the caller's abort only takes effect between
+ * poll iterations — a navigate-away during a 12s segment probe keeps the loop
+ * (and its session-holding keepalives) running until that fetch settles.
+ */
+function linkedController(
+  parent: AbortSignal | undefined,
+  abortMs: number,
+): { controller: AbortController; dispose: () => void } {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), abortMs);
+  const onParentAbort = () => controller.abort();
+  // The poll loop re-checks `aborted` before every call, so an already-aborted
+  // parent never reaches here — listening is enough.
+  parent?.addEventListener("abort", onParentAbort);
+  return {
+    controller,
+    dispose: () => {
+      window.clearTimeout(timer);
+      parent?.removeEventListener("abort", onParentAbort);
+    },
+  };
+}
+
 async function fetchText(
   url: string,
   fetchImpl: typeof fetch,
   abortMs: number,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; body: string }> {
   try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), abortMs);
+    const { controller, dispose } = linkedController(signal, abortMs);
     try {
       const res = await fetchImpl(url, {
         cache: "no-store",
@@ -49,17 +76,20 @@ async function fetchText(
       const body = res.ok ? await res.text() : "";
       return { ok: res.ok, status: res.status, body };
     } finally {
-      window.clearTimeout(timer);
+      dispose();
     }
   } catch {
     return { ok: false, status: 0, body: "" };
   }
 }
 
-async function segmentReady(url: string, fetchImpl: typeof fetch): Promise<boolean> {
+async function segmentReady(
+  url: string,
+  fetchImpl: typeof fetch,
+  signal?: AbortSignal,
+): Promise<boolean> {
   try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 12_000);
+    const { controller, dispose } = linkedController(signal, 12_000);
     try {
       // Prefer a cheap probe; some stacks reject HEAD — fall back to GET.
       let res = await fetchImpl(url, {
@@ -77,7 +107,7 @@ async function segmentReady(url: string, fetchImpl: typeof fetch): Promise<boole
       }
       return res.ok || res.status === 206;
     } finally {
-      window.clearTimeout(timer);
+      dispose();
     }
   } catch {
     return false;
@@ -105,8 +135,17 @@ export function firstMediaSegmentUrl(playlistUrl: string, body: string): string 
   return null;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+/** Sleep that wakes early when the caller aborts, so exit is not delayed a backoff. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = window.setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 /**
@@ -129,19 +168,25 @@ export async function waitForHlsManifest(
   let delay = intervalMs;
   let nextKeepAliveAt = Date.now();
 
+  const signal = options.signal;
+
   while (Date.now() < deadline) {
     // Bail the moment the caller navigates away so we stop holding the session.
-    if (options.signal?.aborted) return false;
+    // Re-checked after every await below: the fetches and the backoff sleep are
+    // seconds long, and each one is time the server session stays pinned.
+    if (signal?.aborted) return false;
     if (options.onKeepAlive && Date.now() >= nextKeepAliveAt) {
       try {
         await options.onKeepAlive();
       } catch {
         // Keepalive is best-effort — never abort readiness polling on it.
       }
+      if (signal?.aborted) return false;
       nextKeepAliveAt = Date.now() + keepAliveEveryMs;
     }
 
-    const { ok, body } = await fetchText(url, fetchImpl, 8_000);
+    const { ok, body } = await fetchText(url, fetchImpl, 8_000, signal);
+    if (signal?.aborted) return false;
     if (ok && body.includes("#EXTM3U")) {
       if (!requireSegment) return true;
       // Encoded sessions serve a synthetic VOD playlist immediately; wait until
@@ -150,13 +195,16 @@ export async function waitForHlsManifest(
         // Empty / master-only playlist — keep polling.
       } else {
         const segmentUrl = firstMediaSegmentUrl(url, body);
-        if (segmentUrl && (await segmentReady(segmentUrl, fetchImpl))) {
-          return true;
+        if (segmentUrl) {
+          const ready = await segmentReady(segmentUrl, fetchImpl, signal);
+          if (signal?.aborted) return false;
+          if (ready) return true;
         }
       }
     }
 
-    await sleep(delay);
+    await sleep(delay, signal);
+    if (signal?.aborted) return false;
     delay = Math.min(Math.round(delay * 1.5), 4_000);
   }
 

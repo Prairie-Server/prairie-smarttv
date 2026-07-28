@@ -1,5 +1,5 @@
 import { ApiError, apiRequest, buildStreamUrl } from "./client";
-import { reportPlaybackProgress } from "./playbackSession";
+import { reportPlaybackProgress, stopPlaybackSession } from "./playbackSession";
 import { sessionClient } from "./sessionClient";
 import { resolveTargetResolution, targetBitrateKbpsForResolution } from "./targetResolution";
 import {
@@ -176,15 +176,25 @@ export async function preparePlayableSession(
 
   const streamUrl = buildStreamUrl(session.serverUrl, transcode.manifest_url, session.accessToken);
 
-  await waitForHlsManifest(streamUrl, {
-    fetchImpl,
-    timeoutMs: TRANSCODE_STARTUP_TIMEOUT_MS,
-    requireSegment: true,
-    throwOnTimeout: true,
-    keepAliveEveryMs: 10_000,
-    onKeepAlive: () => reportPlaybackProgress(session, sessionId, mediaPosition, true, fetchImpl),
-    signal: options.signal,
-  });
+  try {
+    await waitForHlsManifest(streamUrl, {
+      fetchImpl,
+      timeoutMs: TRANSCODE_STARTUP_TIMEOUT_MS,
+      requireSegment: true,
+      throwOnTimeout: true,
+      keepAliveEveryMs: 10_000,
+      onKeepAlive: () => reportPlaybackProgress(session, sessionId, mediaPosition, true, fetchImpl),
+      signal: options.signal,
+    });
+  } catch (err) {
+    // /transcode/start can hand back a *different* session id than /playback/start.
+    // Callers only know the one they passed in, so a startup timeout here would
+    // leak the encode job we actually created — stop it before unwinding.
+    if (sessionId !== started.session_id) {
+      void stopPlaybackSession(session, sessionId, fetchImpl).catch(() => undefined);
+    }
+    throw err;
+  }
 
   return {
     session: next,

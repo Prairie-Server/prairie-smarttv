@@ -368,6 +368,18 @@ export function App() {
   }
 
   if (route.name === "profiles") {
+    // Reached two ways: straight after sign-in (no session yet), and from the
+    // shell's profile switcher (session live). Backing out of the switcher must
+    // return to the app — only the post-login flow has nowhere to go but out.
+    const leaveProfiles = () => {
+      if (session) {
+        setRoute({ name: "home" });
+        return;
+      }
+      clearSession();
+      setSession(null);
+      goServers(false);
+    };
     return guard(
       "Profiles",
       <ProfileSelectScreen
@@ -376,17 +388,9 @@ export function App() {
           setSession(next);
           setRoute({ name: "home" });
         }}
-        onCancel={() => {
-          clearSession();
-          setSession(null);
-          goServers(false);
-        }}
+        onCancel={leaveProfiles}
       />,
-      () => {
-        clearSession();
-        setSession(null);
-        goServers(false);
-      },
+      leaveProfiles,
     );
   }
 

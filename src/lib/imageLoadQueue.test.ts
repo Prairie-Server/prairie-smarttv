@@ -87,9 +87,9 @@ describe("imageLoadQueue", () => {
     try {
       resetImageLoadQueueForTests("low");
       const started = Array.from({ length: 3 }, () => vi.fn());
-      acquireImageSlot(started[0]!); // starts, then stalls (never releases)
-      acquireImageSlot(started[1]!); // starts, then stalls
-      const late = acquireImageSlot(started[2]!); // queued behind the two stalled
+      // Both start, then stall — they never call their release.
+      const stalled = [acquireImageSlot(started[0]!), acquireImageSlot(started[1]!)];
+      const queued = acquireImageSlot(started[2]!); // waiting behind the two stalled
 
       expect(imageLoadQueueDepth()).toEqual({ active: 2, waiting: 1, priorityWaiting: 0 });
       expect(started[2]).not.toHaveBeenCalled();
@@ -97,10 +97,15 @@ describe("imageLoadQueue", () => {
       // Both stalled slots time out and free, admitting the queued load.
       vi.advanceTimersByTime(8000);
       expect(started[2]).toHaveBeenCalled();
+      expect(imageLoadQueueDepth()).toEqual({ active: 1, waiting: 0, priorityWaiting: 0 });
 
-      // The real load reporting back later is a harmless no-op.
-      late();
-      expect(imageLoadQueueDepth().active).toBeLessThanOrEqual(1);
+      // A timed-out load whose socket recovers still calls release; that must
+      // not double-free a slot the watchdog already returned.
+      for (const release of stalled) release();
+      expect(imageLoadQueueDepth()).toEqual({ active: 1, waiting: 0, priorityWaiting: 0 });
+
+      queued();
+      expect(imageLoadQueueDepth()).toEqual({ active: 0, waiting: 0, priorityWaiting: 0 });
     } finally {
       vi.useRealTimers();
     }

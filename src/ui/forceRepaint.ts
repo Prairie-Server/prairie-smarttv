@@ -34,12 +34,25 @@ export function forceCompositorRepaint(): void {
 const REPAINT_SCHEDULE_MS = [150, 400, 800, 1500] as const;
 
 let pendingRepaintTimers: number[] = [];
+let pendingRepaintFrame: number | null = null;
+/**
+ * Bumped on every cancel/schedule so a frame callback that is already queued
+ * cannot repaint for a schedule we abandoned. `cancelAnimationFrame` is not
+ * enough on its own — the rAF may be mid-flight, and a stale pass toggling
+ * `display` on the *next* screen is exactly the flicker we are avoiding.
+ */
+let repaintGeneration = 0;
 
 /** Cancel any repaint passes still queued from a previous schedule. */
 export function cancelScheduledCompositorRepaint(): void {
+  repaintGeneration += 1;
   if (typeof window === "undefined") return;
   for (const id of pendingRepaintTimers) window.clearTimeout(id);
   pendingRepaintTimers = [];
+  if (pendingRepaintFrame != null && typeof window.cancelAnimationFrame === "function") {
+    window.cancelAnimationFrame(pendingRepaintFrame);
+  }
+  pendingRepaintFrame = null;
 }
 
 /**
@@ -50,18 +63,21 @@ export function cancelScheduledCompositorRepaint(): void {
 export function scheduleCompositorRepaint(): void {
   if (typeof window === "undefined") return;
   cancelScheduledCompositorRepaint();
-  const run = () => forceCompositorRepaint();
+  const generation = repaintGeneration;
+  const run = () => {
+    // A cancel (or a newer schedule) between queueing and firing invalidates us.
+    if (generation !== repaintGeneration) return;
+    forceCompositorRepaint();
+  };
   if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(run);
+    pendingRepaintFrame = window.requestAnimationFrame(() => {
+      pendingRepaintFrame = null;
+      run();
+    });
   } else {
     pendingRepaintTimers.push(window.setTimeout(run, 0));
   }
   for (const delay of REPAINT_SCHEDULE_MS) {
-    pendingRepaintTimers.push(
-      window.setTimeout(() => {
-        // Drop our own id as it fires so the list only holds still-pending passes.
-        run();
-      }, delay),
-    );
+    pendingRepaintTimers.push(window.setTimeout(run, delay));
   }
 }
