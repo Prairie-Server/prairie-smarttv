@@ -1,6 +1,6 @@
 {
   "id": "org.prairieserver.prairie",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "vendor": "Prairie",
   "type": "web",
   "main": "index.html",
