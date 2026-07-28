@@ -81,4 +81,28 @@ describe("imageLoadQueue", () => {
     release();
     expect(imageLoadQueueDepth()).toEqual({ active: 0, waiting: 0, priorityWaiting: 0 });
   });
+
+  it("auto-releases a stalled slot so a wedged load cannot starve the queue", () => {
+    vi.useFakeTimers();
+    try {
+      resetImageLoadQueueForTests("low");
+      const started = Array.from({ length: 3 }, () => vi.fn());
+      acquireImageSlot(started[0]!); // starts, then stalls (never releases)
+      acquireImageSlot(started[1]!); // starts, then stalls
+      const late = acquireImageSlot(started[2]!); // queued behind the two stalled
+
+      expect(imageLoadQueueDepth()).toEqual({ active: 2, waiting: 1, priorityWaiting: 0 });
+      expect(started[2]).not.toHaveBeenCalled();
+
+      // Both stalled slots time out and free, admitting the queued load.
+      vi.advanceTimersByTime(8000);
+      expect(started[2]).toHaveBeenCalled();
+
+      // The real load reporting back later is a harmless no-op.
+      late();
+      expect(imageLoadQueueDepth().active).toBeLessThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

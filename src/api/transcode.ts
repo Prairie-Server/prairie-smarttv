@@ -89,6 +89,8 @@ export interface PreparePlayableOptions {
   fetchImpl?: typeof fetch;
   sourceResolution?: string | null;
   maxResolution?: string | null;
+  /** Aborts the manifest-readiness poll when the caller navigates away. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -181,6 +183,7 @@ export async function preparePlayableSession(
     throwOnTimeout: true,
     keepAliveEveryMs: 10_000,
     onKeepAlive: () => reportPlaybackProgress(session, sessionId, mediaPosition, true, fetchImpl),
+    signal: options.signal,
   });
 
   return {

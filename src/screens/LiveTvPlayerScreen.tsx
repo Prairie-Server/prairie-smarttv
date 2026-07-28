@@ -56,7 +56,11 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
       setError(null);
       try {
         const started = await startLiveTvSession(session, channel.id);
-        if (cancelled) {
+        // Release immediately if the user exited while the tune was in flight.
+        // handleExit sets exitedRef but sees a null liveSessionId (not set yet),
+        // and the effect cleanup is deferred, so without this check the resolved
+        // session — and its scarce tuner — leaks until the server reaper fires.
+        if (cancelled || exitedRef.current) {
           await releaseLiveTvSession(session, started.session_id).catch(() => undefined);
           return;
         }

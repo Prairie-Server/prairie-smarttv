@@ -191,4 +191,22 @@ describe("waitForHlsManifest", () => {
     ).resolves.toBe(true);
     expect(calls).toBeGreaterThanOrEqual(2);
   });
+
+  it("stops immediately (no fetch, no keepalive) when the signal is already aborted", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 404 }));
+    const onKeepAlive = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 500,
+        onKeepAlive,
+        signal: controller.signal,
+      }),
+    ).resolves.toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(onKeepAlive).not.toHaveBeenCalled();
+  });
 });

@@ -158,6 +158,11 @@ export const DURABLE_RESTORE_BUDGET_MS = 700;
 export async function restoreDurableStorage(
   storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
 ): Promise<number> {
+  // A populated store was not wiped, so the mirror can only hold values we
+  // already have (the restore loop skips present keys anyway). Short-circuit
+  // before the Tizen filesystem read, which otherwise ran on every healthy boot
+  // and held the first paint for the full budget for nothing.
+  if (storage.getItem(STORAGE_SCHEMA_KEY) || storage.getItem(SESSION_KEY)) return 0;
   const dir = tizenDocuments();
   if (!dir) return 0;
   const mirror = await readMirrorFile(dir);

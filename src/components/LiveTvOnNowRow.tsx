@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LiveTvChannel } from "../api/livetv";
 import {
   channelDisplayLabel,
@@ -7,6 +7,7 @@ import {
   fetchLiveTvGuide,
   programProgressFraction,
 } from "../api/livetv";
+import { useFocusRescue } from "../focus/useFocusRescue";
 import type { PrairieSession } from "../storage/session";
 import { ArtworkImage } from "./ArtworkImage";
 import { MediaRow } from "./MediaRow";
@@ -63,6 +64,10 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
   const [loading, setLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [cards, setCards] = useState<OnNowCard[]>([]);
+  // The 60s guide refresh can drop the focused channel when its program ends;
+  // rescue focus to a neighbouring card so the remote does not go dead.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useFocusRescue(rowRef);
 
   const status: OnNowStatus = cards.length > 0 ? "ready" : loading ? "loading" : "empty";
   useEffect(() => {
@@ -128,46 +133,48 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
   if (cards.length === 0) return null;
 
   return (
-    <MediaRow
-      title="On now"
-      variant="poster"
-      className="media-row--on-now"
-      items={cards}
-      getItemKey={(item) => item.channel.id}
-      renderItem={(item) => (
-        <button
-          type="button"
-          className="poster-card on-now-card"
-          onClick={() => onOpenChannel(item.channel)}
-        >
-          <div className="poster-card__art" aria-hidden="true">
-            {item.imageUrl ? (
-              <ArtworkImage
-                src={item.imageUrl}
-                alt=""
-                role="channel"
-                placeholderLabel={item.title}
-                loading="lazy"
-              />
-            ) : (
-              <div className="poster-card__placeholder">{item.title.slice(0, 1) || "\u00a0"}</div>
-            )}
-            <span className="on-now-card__live">Live</span>
-            {item.progress > 0.02 && item.progress < 0.98 ? (
-              <div className="poster-card__progress">
-                <span style={{ width: `${Math.round(item.progress * 100)}%` }} />
-              </div>
-            ) : null}
-          </div>
-          <div className="poster-card__meta">
-            <span className="poster-card__title">{item.title}</span>
-            <span className="poster-card__subtitle">
-              {channelDisplayLabel(item.channel)}
-              {item.stop ? ` · until ${formatUntil(item.stop)}` : ""}
-            </span>
-          </div>
-        </button>
-      )}
-    />
+    <div ref={rowRef} style={{ display: "contents" }}>
+      <MediaRow
+        title="On now"
+        variant="poster"
+        className="media-row--on-now"
+        items={cards}
+        getItemKey={(item) => item.channel.id}
+        renderItem={(item) => (
+          <button
+            type="button"
+            className="poster-card on-now-card"
+            onClick={() => onOpenChannel(item.channel)}
+          >
+            <div className="poster-card__art" aria-hidden="true">
+              {item.imageUrl ? (
+                <ArtworkImage
+                  src={item.imageUrl}
+                  alt=""
+                  role="channel"
+                  placeholderLabel={item.title}
+                  loading="lazy"
+                />
+              ) : (
+                <div className="poster-card__placeholder">{item.title.slice(0, 1) || "\u00a0"}</div>
+              )}
+              <span className="on-now-card__live">Live</span>
+              {item.progress > 0.02 && item.progress < 0.98 ? (
+                <div className="poster-card__progress">
+                  <span style={{ width: `${Math.round(item.progress * 100)}%` }} />
+                </div>
+              ) : null}
+            </div>
+            <div className="poster-card__meta">
+              <span className="poster-card__title">{item.title}</span>
+              <span className="poster-card__subtitle">
+                {channelDisplayLabel(item.channel)}
+                {item.stop ? ` · until ${formatUntil(item.stop)}` : ""}
+              </span>
+            </div>
+          </button>
+        )}
+      />
+    </div>
   );
 }

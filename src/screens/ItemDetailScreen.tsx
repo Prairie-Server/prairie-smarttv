@@ -21,6 +21,7 @@ import {
 import { ArtworkImage } from "../components/ArtworkImage";
 import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
+import { useFocusRescue } from "../focus/useFocusRescue";
 import { PosterCard } from "../components/PosterCard";
 import { columnCountForWidth } from "../components/PosterGrid";
 import { currentViewportWidth, designPx, viewportScaleFactor } from "../ui/viewportScale";
@@ -51,8 +52,12 @@ import type { PrairieSession } from "../storage/session";
 /** Cards per recommendations row, and how many item-detail calls run at once. */
 const SIMILAR_LIMIT = 6;
 const SIMILAR_FETCH_BATCH = 2;
-/** Only fetch once the row is genuinely being approached. */
-const SIMILAR_PREFETCH_MARGIN = "10% 0px";
+/**
+ * Only fetch once the row is genuinely being approached. Use px, not `%`:
+ * IntersectionObserver percentage rootMargin is relative to the root's *width*,
+ * so "10%" silently became a wider vertical trigger on 4K CSS-width panels.
+ */
+const SIMILAR_PREFETCH_MARGIN = "280px 0px";
 /** Episodes / cast sit below the fold; load their art as they are approached. */
 const SECTION_PREFETCH_MARGIN_PX = 240;
 /** And not before the hero backdrop has settled (episode/cast art must wait). */
@@ -229,6 +234,10 @@ export function ItemDetailScreen({
   const watchCacheRef = useRef<Map<string, WatchDetail>>(new Map());
 
   const episodeGridRef = useRef<HTMLDivElement | null>(null);
+  // Switching seasons replaces the episode grid under the focused card; without
+  // this, focus falls to <body> and the remote stops responding until the user
+  // guesses a direction.
+  useFocusRescue(episodeGridRef);
   const [episodeColumns, setEpisodeColumns] = useState(4);
 
   // Each below-the-fold section waits for its own slot to approach the viewport,

@@ -172,6 +172,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const abort = new AbortController();
     void (async () => {
       setLoading(true);
       setError(null);
@@ -199,9 +200,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           maxResolution: deviceCaps.max_resolution,
           hdr: deviceCaps.hdr,
         });
-        if (cancelled) {
-          // StrictMode remount / abandon — stop the orphaned session so AVPlay
-          // does not open a stream that the server already tore down.
+        if (cancelled || exitedRef.current) {
+          // StrictMode remount / abandon, or the user exited while startup was in
+          // flight — stop the orphaned session so AVPlay does not open a stream
+          // the server already tore down, and so an early Back does not leak a
+          // transcode pipeline that handleExit couldn't see yet (session id unset).
           void stopPlaybackSession(session, started.session_id).catch(() => undefined);
           return;
         }
@@ -212,12 +215,13 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           prepared = await preparePlayableSession(session, started, seekAt, {
             sourceResolution: sourceResolutionForFile(watchDetail, started.media_file_id),
             maxResolution: deviceCaps.max_resolution,
+            signal: abort.signal,
           });
         } catch (prepErr) {
           void stopPlaybackSession(session, started.session_id).catch(() => undefined);
           throw prepErr;
         }
-        if (cancelled) {
+        if (cancelled || exitedRef.current) {
           void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
           return;
         }
@@ -242,6 +246,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     })();
     return () => {
       cancelled = true;
+      // Stop the manifest-readiness poll (and its session-holding keepalives)
+      // when we navigate away mid-startup.
+      abort.abort();
     };
   }, [
     launch.fileId,

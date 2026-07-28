@@ -17,10 +17,20 @@ import { migrateFromLegacy } from "./storage/serverRegistry";
 import { watchViewportScale } from "./ui/viewportScale";
 
 async function boot() {
-  // Restore mirrored servers/settings before schema/session reads when the
-  // WebView localStorage was wiped by a sideload reinstall — but never let that
-  // filesystem read hold the first paint hostage. A late restore reloads the
-  // app, which only ever happens on a wiped install that had a saved session.
+  // Ask for Home rows first thing: it is the slow network leg and needs only the
+  // synchronous session read, so kick it off before the durable restore's
+  // filesystem read (and the rest of boot) instead of serializing behind them.
+  // On a wiped install the session is absent here, so nothing is fetched until
+  // the restore + reload seeds it — exactly the case where there is nothing to
+  // prefetch anyway.
+  const restored = loadSession();
+  if (restored) startHomePrefetch(restored);
+
+  // Restore mirrored servers/settings when the WebView localStorage was wiped by
+  // a sideload reinstall — but never let that filesystem read hold the first
+  // paint hostage (it now short-circuits entirely on a populated store). A late
+  // restore reloads the app, which only happens on a wiped install with a saved
+  // session.
   await restoreDurableStorageWithBudget(() => window.location.reload());
   // Additive migrations only — never wipe session/settings on upgrade.
   ensureStorageSchema();
@@ -32,12 +42,6 @@ async function boot() {
   registerRemoteMediaKeys();
   watchViewportScale();
   void detectImageFormats();
-
-  // Ask for Home rows now, while the bundle is still being parsed and React is
-  // still mounting, instead of after. On a cold launch that overlap is the
-  // difference between two serial waits and one.
-  const restored = loadSession();
-  if (restored) startHomePrefetch(restored);
 
   const root = document.getElementById("root");
   if (!root) {

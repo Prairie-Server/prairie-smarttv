@@ -326,7 +326,8 @@ export function App() {
   }
 
   if (route.name === "servers") {
-    return lazyGate(
+    return guard(
+      "Servers",
       <ServerListScreen
         autoScan={route.autoScan !== false}
         onSelectSaved={handleSelectSaved}
@@ -338,17 +339,20 @@ export function App() {
   }
 
   if (route.name === "manual") {
-    return lazyGate(
+    return guard(
+      "Add server",
       <ManualServerScreen
         initialUrl={route.initialUrl}
         onBack={() => goServers(false)}
         onContinue={(serverUrl, options) => openLogin(serverUrl, options)}
       />,
+      () => goServers(false),
     );
   }
 
   if (route.name === "connect") {
-    return lazyGate(
+    return guard(
+      "Sign in",
       <ConnectScreen
         serverUrl={route.serverUrl}
         serverName={route.serverName}
@@ -359,11 +363,13 @@ export function App() {
           setRoute({ name: "profiles", auth });
         }}
       />,
+      () => goServers(false),
     );
   }
 
   if (route.name === "profiles") {
-    return lazyGate(
+    return guard(
+      "Profiles",
       <ProfileSelectScreen
         auth={route.auth}
         onSelected={(next) => {
@@ -376,11 +382,17 @@ export function App() {
           goServers(false);
         }}
       />,
+      () => {
+        clearSession();
+        setSession(null);
+        goServers(false);
+      },
     );
   }
 
   if (!session) {
-    return lazyGate(
+    return guard(
+      "Servers",
       <ServerListScreen
         autoScan
         onSelectSaved={handleSelectSaved}
@@ -393,11 +405,13 @@ export function App() {
   if (route.name === "settings") {
     return (
       <ServerUrlContext.Provider value={session.serverUrl}>
-        {lazyGate(
+        {guard(
+          "Settings",
           <PlaybackSettingsScreen
             onBack={() => setRoute(route.back)}
             onSwitchServer={() => setRoute({ name: "servers", back: "home", autoScan: true })}
           />,
+          () => setRoute(route.back),
         )}
       </ServerUrlContext.Provider>
     );

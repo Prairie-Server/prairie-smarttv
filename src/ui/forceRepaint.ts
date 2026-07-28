@@ -21,16 +21,47 @@ export function forceCompositorRepaint(): void {
 }
 
 /**
- * Repaint after the current commit has painted, then once more a beat later —
- * the hole is sometimes still torn down when the first frame runs.
+ * Delays (ms) at which we re-invalidate the compositor after a player teardown.
+ *
+ * The screen we return to is lazy-loaded and fetches its data asynchronously, so
+ * on a slow TV it often does not paint its real content until well after the
+ * player unmounts. A single early repaint invalidates the hole while the
+ * destination is still blank and then never fires again once the content lands —
+ * leaving the wallpaper-only "dead" shell. Retrying on a decaying schedule that
+ * spans a realistic content-load window covers the late paint. Each pass is a
+ * one-frame invisible display toggle, so extra passes are cheap and unseen.
+ */
+const REPAINT_SCHEDULE_MS = [150, 400, 800, 1500] as const;
+
+let pendingRepaintTimers: number[] = [];
+
+/** Cancel any repaint passes still queued from a previous schedule. */
+export function cancelScheduledCompositorRepaint(): void {
+  if (typeof window === "undefined") return;
+  for (const id of pendingRepaintTimers) window.clearTimeout(id);
+  pendingRepaintTimers = [];
+}
+
+/**
+ * Repaint after the current commit has painted, then again across a decaying
+ * window so a slow destination screen that paints late is still un-holed.
+ * Cancels any schedule already in flight so repeated calls do not stack.
  */
 export function scheduleCompositorRepaint(): void {
   if (typeof window === "undefined") return;
+  cancelScheduledCompositorRepaint();
   const run = () => forceCompositorRepaint();
   if (typeof window.requestAnimationFrame === "function") {
     window.requestAnimationFrame(run);
   } else {
-    window.setTimeout(run, 0);
+    pendingRepaintTimers.push(window.setTimeout(run, 0));
   }
-  window.setTimeout(run, 250);
+  for (const delay of REPAINT_SCHEDULE_MS) {
+    pendingRepaintTimers.push(
+      window.setTimeout(() => {
+        // Drop our own id as it fires so the list only holds still-pending passes.
+        run();
+      }, delay),
+    );
+  }
 }

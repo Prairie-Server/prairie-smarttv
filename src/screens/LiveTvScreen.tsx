@@ -73,7 +73,9 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const [recordingsLoading, setRecordingsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<LiveTvTab>("guide");
-  const [recordingBusy, setRecordingBusy] = useState(false);
+  // Track which program is scheduling, not a global flag, so pressing Record on
+  // one program does not flip and disable every other row's Record buttons.
+  const [recordingBusyId, setRecordingBusyId] = useState<string | null>(null);
   const [cancelBusyId, setCancelBusyId] = useState<string | null>(null);
   const [recordingMessage, setRecordingMessage] = useState<{
     kind: "success" | "error";
@@ -139,7 +141,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
       return;
     }
     recordingInFlight.current = true;
-    setRecordingBusy(true);
+    setRecordingBusyId(programId);
     try {
       await scheduleLiveTvRecording(session, { program_id: programId });
       showRecordingMessage("success", "Recording scheduled");
@@ -150,7 +152,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
       showRecordingMessage("error", scheduleRecordingErrorMessage(err));
     } finally {
       recordingInFlight.current = false;
-      setRecordingBusy(false);
+      setRecordingBusyId(null);
     }
   }
 
@@ -350,20 +352,20 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                         <FocusButton
                           data-focus-index={1}
                           icon={<Circle />}
-                          disabled={recordingBusy}
+                          disabled={recordingBusyId === now.id}
                           onClick={() => void handleRecord(now)}
                         >
-                          {recordingBusy ? "Scheduling…" : "Record now"}
+                          {recordingBusyId === now.id ? "Scheduling…" : "Record now"}
                         </FocusButton>
                       ) : null}
                       {next?.id ? (
                         <FocusButton
                           data-focus-index={now?.id ? 2 : 1}
                           icon={<Circle />}
-                          disabled={recordingBusy}
+                          disabled={recordingBusyId === next.id}
                           onClick={() => void handleRecord(next)}
                         >
-                          {recordingBusy ? "Scheduling…" : "Record next"}
+                          {recordingBusyId === next.id ? "Scheduling…" : "Record next"}
                         </FocusButton>
                       ) : null}
                     </div>
