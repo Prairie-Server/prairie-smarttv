@@ -6,7 +6,10 @@
  * siblings and walk them on 404. That cascade is what made posters feel slow.
  *
  * Width variants live in the object key (`/original.`, `/w300.`, `/w500.`, …),
- * not query params. Path rewriting is skipped for SigV4-style signed URLs.
+ * not query params. Path rewriting is skipped for third-party signed URLs
+ * (SigV4 and friends) whose signature covers the exact key, but not for this
+ * server's own signature, which covers the revision — see
+ * {@link isPrairieSignedArtworkURL}.
  */
 
 import { getImageFormats, orderRasterCandidates } from "./imageFormats";
@@ -22,22 +25,18 @@ import { getImageFormats, orderRasterCandidates } from "./imageFormats";
  * keep a ~1920 CSS viewport even on 4K/8K and let the compositor upscale, so a
  * card grows by PANEL_CHROME_SCALE (1.28 on UHD, 1.55 on 8K), not by 2x or 4x.
  *
- * These widths are ADVISORY: against a production server they do nothing.
+ * These widths decide what a TV downloads, but only against a server that signs
+ * the artwork *revision* rather than the exact object key
+ * (Prairie-Server/prairie-server#121). Before that change the signature covered
+ * the key, `artworkWidthVariant` had to bail on every signed URL, and each
+ * constant below was skipped — which is how this file spent a while looking like
+ * the knob that mattered while a real TV rendered whatever rung the server chose.
  *
- * Artwork URLs are signed with an HMAC over the exact object key, so rewriting
- * the variant segment invalidates the signature — `artworkWidthVariant` bails on
- * any signed URL for exactly that reason. Signing is always on in production
- * (the store is built with the JWT secret), so every constant below is skipped
- * and the client renders whichever rung the server chose to sign.
- *
- * The server picks it per device class from the `X-Prairie-Device-Platform`
- * header this client already sends: see `catalog.cachedImageVariantKeyFor`
- * server-side, which is where a TV's poster/profile/backdrop rungs are decided.
- * Editing the constants below will not change what a TV downloads; edit that.
- *
- * They do still apply to unsigned artwork paths — local dev without a URL
- * secret, and the unit tests — so they are kept in step with the server's TV
- * choices rather than left to drift.
+ * The server still chooses the rung it signs, per device class, from the
+ * `X-Prairie-Device-Platform` header this client sends: see
+ * `catalog.cachedImageVariantKeyFor`. That remains the floor for any client that
+ * does not rewrite (older builds of this app included), so the two are kept in
+ * step deliberately rather than left to drift.
  */
 
 /**
@@ -77,10 +76,36 @@ function pathExtension(pathname: string): string {
   return base.slice(dot);
 }
 
-/** True when rewriting the path would invalidate a cloud object signature. */
+/**
+ * True when rewriting the path would invalidate a signature we cannot reproduce.
+ *
+ * Third-party signatures (S3 SigV4, GCS, Cloudflare) cover the exact object
+ * path, so any rewrite breaks them and the URL must be used verbatim.
+ *
+ * Prairie's own artwork signature is excluded: it covers the artwork *revision*,
+ * not the exact key, so selecting another width rung of the same image still
+ * validates. Until the server made that change this guard matched Prairie's
+ * `sig=` too, which meant the width constants in this file did nothing against a
+ * real server and every TV rendered whichever rung the server picked.
+ */
 export function isSignedArtworkURL(objectPath: string): boolean {
-  // AWS SigV4, GCS, generic Signature/sig, and Cloudflare WAF token (?verify=).
+  if (isPrairieSignedArtworkURL(objectPath)) return false;
+  // AWS SigV4, GCS, generic Signature, and Cloudflare WAF token (?verify=).
   return /[?&](X-Amz-Signature|X-Goog-Signature|Signature|sig|verify)=/i.test(objectPath);
+}
+
+/**
+ * True for a URL signed by the connected Prairie server's artwork store.
+ *
+ * Identified by the pair of query params it always emits together plus the
+ * `/artwork/` path prefix it serves from — deliberately narrow, so a
+ * third-party URL that happens to carry a `sig=` param is not mistaken for ours
+ * and rewritten into a 403.
+ */
+export function isPrairieSignedArtworkURL(objectPath: string): boolean {
+  if (!/[?&]sig=/.test(objectPath) || !/[?&]expires=/.test(objectPath)) return false;
+  const withoutQuery = objectPath.split("?")[0] ?? "";
+  return withoutQuery.includes("/artwork/");
 }
 
 function webPFormatSibling(objectPath: string | null | undefined, ext: ".avif" | ".png"): string {
