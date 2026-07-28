@@ -113,13 +113,13 @@ describe("buildTranscodeStartRequest", () => {
     expect(body.target_codec_audio).toBe("aac");
   });
 
-  it("uses h264/aac for transcode and clamps negative seek", () => {
+  it("omits target video codec for transcode so the server can pick", () => {
     const body = buildTranscodeStartRequest({
       sessionId: "s1",
       seekSeconds: -5,
       playMethod: "transcode",
     });
-    expect(body.target_codec_video).toBe("h264");
+    expect(body.target_codec_video).toBeUndefined();
     expect(body.target_codec_audio).toBe("aac");
     expect(body.target_resolution).toBe("1080p");
     expect(body.target_bitrate_kbps).toBe(6000);
@@ -217,7 +217,7 @@ describe("preparePlayableSession", () => {
   it("bootstraps windowed encode resume without a client seek", async () => {
     const fetchImpl = hlsReadyFetch(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
-      expect(body.target_codec_video).toBe("h264");
+      expect(body.target_codec_video).toBeUndefined();
       expect(body.target_resolution).toBe("2160p");
       return manifestResponse({
         can_seek_anywhere: false,
@@ -260,7 +260,7 @@ describe("preparePlayableSession", () => {
     expect(prepared.streamOriginSeconds).toBe(456);
   });
 
-  it("falls back to h264 encode when remux copy is rejected with 422", async () => {
+  it("falls back to server-chosen encode when remux copy is rejected with 422", async () => {
     const bodies: unknown[] = [];
     const fetchImpl = hlsReadyFetch(async (_url, init) => {
       bodies.push(JSON.parse(String(init?.body)));
@@ -282,9 +282,9 @@ describe("preparePlayableSession", () => {
     });
     expect(bodies[0]).toMatchObject({ target_codec_video: "copy" });
     expect(bodies[1]).toMatchObject({
-      target_codec_video: "h264",
       target_resolution: "2160p",
     });
+    expect((bodies[1] as { target_codec_video?: string }).target_codec_video).toBeUndefined();
     expect(prepared.session.play_method).toBe("transcode");
     expect(prepared.playerStartSeconds).toBe(8);
   });

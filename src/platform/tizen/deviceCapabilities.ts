@@ -1,4 +1,5 @@
 import { isAvPlayAvailable } from "./avplay";
+import { probePanelMaxResolution } from "./displayResolution";
 import { DEFAULT_TV_CAPABILITIES } from "../../player/types";
 
 export interface TvPlaybackCapabilities {
@@ -131,12 +132,9 @@ export function describeAv1Probe(
 }
 
 function probeMaxResolution(): string {
-  const width = Math.max(screen.width || 0, window.innerWidth || 0);
-  const height = Math.max(screen.height || 0, window.innerHeight || 0);
-  if (height >= 2160 || width >= 3840) return "2160p";
-  if (height >= 1440 || width >= 2560) return "1440p";
-  if (height >= 1080 || width >= 1920) return "1080p";
-  return "720p";
+  // Prefer ProductInfo / getRealResolution — Tizen webviews stay at 1920×1080
+  // logical even on 4K/8K panels, which previously forced 1080p transcodes.
+  return probePanelMaxResolution();
 }
 
 function probeHdr(tizenMajor: number): boolean {

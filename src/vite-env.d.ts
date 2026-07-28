@@ -65,6 +65,8 @@ declare global {
       productinfo?: {
         is8KPanelSupported?(): boolean;
         isUdPanelSupported?(): boolean;
+        /** Physical panel pixels when exposed ("3840x2160" / "7680x4320"). */
+        getRealResolution?(): string;
       };
       systeminfo?: {
         isSupportedAudioCodec?(codec: string): boolean;

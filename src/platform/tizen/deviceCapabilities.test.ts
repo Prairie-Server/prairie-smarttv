@@ -53,18 +53,36 @@ describe("probeTvPlaybackCapabilities", () => {
     expect(caps.codecs_audio).toEqual(["aac", "ac3", "eac3", "mp3"]);
   });
 
-  it("maps 1080p and 1440p panels from screen size", () => {
+  it("maps 1080p and 1440p panels from screen size when ProductInfo is absent", () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 5.0)" });
     vi.stubGlobal("screen", { width: 1920, height: 1080 });
     stubWindow({
       innerWidth: 1920,
       innerHeight: 1080,
       matchMedia: () => ({ matches: false }),
+      webapis: {},
     });
     expect(probeTvPlaybackCapabilities({ avplayAvailable: true }).max_resolution).toBe("1080p");
 
     vi.stubGlobal("screen", { width: 2560, height: 1440 });
     expect(probeTvPlaybackCapabilities({ avplayAvailable: true }).max_resolution).toBe("1440p");
+  });
+
+  it("advertises 2160p from ProductInfo even when the webview is 1080p logical", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
+    vi.stubGlobal("screen", { width: 1920, height: 1080 });
+    stubWindow({
+      innerWidth: 1920,
+      innerHeight: 1080,
+      matchMedia: () => ({ matches: true }),
+      webapis: {
+        productinfo: {
+          isUdPanelSupported: () => true,
+          is8KPanelSupported: () => false,
+        },
+      },
+    });
+    expect(probeTvPlaybackCapabilities({ avplayAvailable: true }).max_resolution).toBe("2160p");
   });
 
   it("uses window size when screen reports zero", () => {

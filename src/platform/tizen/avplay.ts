@@ -6,6 +6,7 @@ import {
   setSubtitleOverlayText,
 } from "./subtitleOverlay";
 import { pickExternalTextTrackIndex, type AvPlayTrackInfo } from "./avplayTracks";
+import { avPlayFixedMaxResolution, probePanelMaxResolution } from "./displayResolution";
 import { isHlsUrl, waitForHlsManifest } from "./waitForHlsManifest";
 
 export type { AvPlayTrackInfo };
@@ -192,10 +193,13 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     }
     if (hls) {
       try {
+        // Keep in sync with probePanelMaxResolution() so a 4K panel is not
+        // capped below what /playback/start advertised.
+        const fixed = avPlayFixedMaxResolution(probePanelMaxResolution());
         avplay.setStreamingProperty?.(
           "ADAPTIVE_INFO",
           [
-            "FIXED_MAX_RESOLUTION=3840x2160",
+            `FIXED_MAX_RESOLUTION=${fixed}`,
             "STARTBITRATE=HIGHEST",
             "USER_AGENT=PrairieTizenClient",
             "INITIAL_BUFFER_DURATION=6000",
