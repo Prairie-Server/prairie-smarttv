@@ -30,7 +30,11 @@ const otherProfile: ApiClientOptions = { ...options, profileId: "p2" };
 const otherServer: ApiClientOptions = { ...options, serverUrl: "https://other.example.com" };
 
 /** Never settles until `resolve` is called, so in-flight state is observable. */
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (err: unknown) => void } {
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (err: unknown) => void;
+} {
   let resolve!: (value: T) => void;
   let reject!: (err: unknown) => void;
   const promise = new Promise<T>((res, rej) => {
@@ -124,7 +128,10 @@ describe("cachedRequest", () => {
 
   it("bypasses the cache when the caller supplies its own fetch", async () => {
     apiRequest.mockResolvedValue({ n: 1 });
-    const withFetch: ApiClientOptions = { ...options, fetchImpl: (async () => new Response()) as typeof fetch };
+    const withFetch: ApiClientOptions = {
+      ...options,
+      fetchImpl: (async () => new Response()) as typeof fetch,
+    };
 
     await cachedRequest(withFetch, "/p", 60_000);
     await cachedRequest(withFetch, "/p", 60_000);
