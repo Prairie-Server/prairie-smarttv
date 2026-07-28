@@ -1,10 +1,18 @@
 import { apiRequest } from "./client";
+import { invalidateItem } from "./requestCache";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
 function itemPath(contentId: string): string {
   return encodeURIComponent(contentId);
 }
+
+/**
+ * Every one of these writes changes state that cached reads render: the badge on
+ * a grid card, the toggle on the detail hero, the membership of a Home rail.
+ * Dropping those entries after the write means the next screen re-reads once
+ * rather than showing a value the user just changed.
+ */
 
 export async function setFavorite(
   session: PrairieSession,
@@ -15,6 +23,7 @@ export async function setFavorite(
   await apiRequest(sessionClient(session, fetchImpl), `/api/v1/favorites/${itemPath(contentId)}`, {
     method: favorite ? "PUT" : "DELETE",
   });
+  invalidateItem(contentId);
 }
 
 export async function setWatchlist(
@@ -26,6 +35,7 @@ export async function setWatchlist(
   await apiRequest(sessionClient(session, fetchImpl), `/api/v1/watchlist/${itemPath(contentId)}`, {
     method: inWatchlist ? "PUT" : "DELETE",
   });
+  invalidateItem(contentId);
 }
 
 export async function setWatched(
@@ -37,4 +47,5 @@ export async function setWatched(
   await apiRequest(sessionClient(session, fetchImpl), `/api/v1/watched/${itemPath(contentId)}`, {
     method: played ? "POST" : "DELETE",
   });
+  invalidateItem(contentId);
 }

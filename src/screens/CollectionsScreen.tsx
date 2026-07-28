@@ -15,6 +15,34 @@ interface CollectionsScreenProps {
   onOpenCollection: (collection: CollectionCard) => void;
 }
 
+/**
+ * Concurrent per-library collection requests.
+ *
+ * Matches the artwork queue's reasoning: TV WebViews keep a small connection
+ * pool, so beyond a handful of sockets extra requests only queue while making
+ * every response slower to start.
+ */
+const COLLECTION_FETCH_CONCURRENCY = 4;
+
+/** `Promise.all` with a ceiling on how many run at once, preserving order. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = Array.from({ length: items.length });
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) return;
+      results[index] = await run(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export function CollectionsScreen({ session, onOpenCollection }: CollectionsScreenProps) {
   const [libraryCollections, setLibraryCollections] = useState<CollectionCard[]>([]);
   const [personal, setPersonal] = useState<CollectionCard[]>([]);
@@ -27,19 +55,26 @@ export function CollectionsScreen({ session, onOpenCollection }: CollectionsScre
       setLoading(true);
       setError(null);
       try {
+        // Personal collections do not depend on the library list, so they went
+        // out for no reason behind it *and* behind the whole per-library fan-out
+        // — three serial legs where two suffice. Start it in the first tick and
+        // join it at the end.
+        const personalPromise = fetchPersonalCollections(session).catch(() => {
+          // Optional depending on server features; an absent endpoint must not
+          // fail the screen.
+          return [] as CollectionCard[];
+        });
         const libraries = await fetchLibraries(session);
+        // Per-library collection requests are capped rather than fanned out at
+        // once: a server with a dozen libraries would otherwise open a dozen
+        // sockets on a device whose connection pool is a fraction of that, and
+        // the later ones queue behind the earlier ones anyway.
         const libraryCards = (
-          await Promise.all(
-            libraries.map((library) => fetchLibraryCollections(session, library.id)),
+          await mapWithConcurrency(libraries, COLLECTION_FETCH_CONCURRENCY, (library) =>
+            fetchLibraryCollections(session, library.id),
           )
         ).flat();
-        let personalCards: CollectionCard[] = [];
-        try {
-          personalCards = await fetchPersonalCollections(session);
-        } catch {
-          // Personal collections are optional depending on server features.
-          personalCards = [];
-        }
+        const personalCards = await personalPromise;
         if (cancelled) return;
         setLibraryCollections(libraryCards);
         setPersonal(personalCards);

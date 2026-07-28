@@ -12,12 +12,12 @@ import { PosterCard } from "../components/PosterCard";
 import { catalogItemProgress, catalogItemSubtitle, usesLandscapeCards } from "../lib/browseCards";
 import { loadCachedHomeSections, saveCachedHomeSections } from "../lib/homeSectionsCache";
 import { formatRuntimeSeconds } from "../lib/detailMetadata";
-import { useStableItemSelect } from "../hooks/useStableItemSelect";
+import { useStableItemOpen } from "../hooks/useStableItemOpen";
 import type { PrairieSession } from "../storage/session";
 
 interface HomeBrowseScreenProps {
   session: PrairieSession;
-  onOpenItem: (contentId: string) => void;
+  onOpenItem: (contentId: string, seed?: CatalogItem) => void;
   onOpenLiveChannel?: (channel: LiveTvChannel) => void;
   /** Mount the live On now row and fetch the guide. */
   showOnNow?: boolean;
@@ -110,7 +110,7 @@ interface HomeRowProps {
   section: HomeSection;
   variant: MediaRowVariant;
   eagerCount: number;
-  selectHandler: (contentId: string) => () => void;
+  selectHandler: (item: CatalogItem) => () => void;
 }
 
 /**
@@ -156,7 +156,7 @@ const HomeRow = memo(function HomeRow({
             progress={progress}
             watched={Boolean(item.user_state?.played)}
             imageLoading={imageLoading}
-            onSelect={selectHandler(item.content_id)}
+            onSelect={selectHandler(item)}
           />
         );
       }
@@ -170,7 +170,7 @@ const HomeRow = memo(function HomeRow({
           watched={Boolean(item.user_state?.played)}
           favorite={Boolean(item.user_state?.is_favorite)}
           imageLoading={imageLoading}
-          onSelect={selectHandler(item.content_id)}
+          onSelect={selectHandler(item)}
         />
       );
     },
@@ -264,7 +264,7 @@ export function HomeBrowseScreen({
   );
 
   const wantsOnNow = (showOnNow || reserveOnNow) && onOpenLiveChannel != null;
-  const selectHandler = useStableItemSelect(onOpenItem);
+  const selectHandler = useStableItemOpen(onOpenItem);
 
   // Reserve the height a real row actually occupies rather than the design
   // min-height, so deferred rows do not grow the page as they mount. Measured

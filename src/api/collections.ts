@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { CACHE_TTL_MS, cachedRequest } from "./requestCache";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
@@ -50,9 +50,10 @@ export async function fetchLibraryCollections(
   libraryId: number,
   fetchImpl?: typeof fetch,
 ): Promise<CollectionCard[]> {
-  const data = await apiRequest<LibraryCollectionsResponse>(
+  const data = await cachedRequest<LibraryCollectionsResponse>(
     sessionClient(session, fetchImpl),
     `/api/v1/library/${libraryId}/collections`,
+    CACHE_TTL_MS.collections,
   );
   return flattenLibraryCollections(libraryId, data);
 }
@@ -61,9 +62,10 @@ export async function fetchPersonalCollections(
   session: PrairieSession,
   fetchImpl?: typeof fetch,
 ): Promise<CollectionCard[]> {
-  const data = await apiRequest<PersonalCollectionsResponse>(
+  const data = await cachedRequest<PersonalCollectionsResponse>(
     sessionClient(session, fetchImpl),
     "/api/v1/collections",
+    CACHE_TTL_MS.collections,
   );
   const out: CollectionCard[] = [];
   for (const card of data.collections ?? []) {

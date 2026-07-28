@@ -5,17 +5,17 @@ import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
 import { PosterGrid } from "../components/PosterGrid";
-import { useStableItemSelect } from "../hooks/useStableItemSelect";
+import { useStableItemOpen } from "../hooks/useStableItemOpen";
 import { catalogItemSubtitle } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
 
 interface SearchScreenProps {
   session: PrairieSession;
-  onOpenItem: (contentId: string) => void;
+  onOpenItem: (contentId: string, seed?: CatalogItem) => void;
 }
 
 export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
-  const selectItem = useStableItemSelect(onOpenItem);
+  const selectItem = useStableItemOpen(onOpenItem);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [items, setItems] = useState<CatalogItem[]>([]);
@@ -148,7 +148,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
                 watched={Boolean(item.user_state?.played)}
                 favorite={Boolean(item.user_state?.is_favorite)}
                 imageLoading={index < 4 ? "eager" : "lazy"}
-                onSelect={selectItem(item.content_id)}
+                onSelect={selectItem(item)}
               />
             ))}
         {loadingMore

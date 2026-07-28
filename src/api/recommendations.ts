@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { CACHE_TTL_MS, cachedRequest } from "./requestCache";
 import { sessionClient } from "./sessionClient";
 import type { CatalogItem } from "./catalog";
 import type { PrairieSession } from "../storage/session";
@@ -24,9 +24,10 @@ export async function fetchSimilarItems(
   contentId: string,
   fetchImpl?: typeof fetch,
 ): Promise<SimilarItemsResult> {
-  const data = await apiRequest<{ items?: SimilarItemRef[]; cards?: CatalogItem[] }>(
+  const data = await cachedRequest<{ items?: SimilarItemRef[]; cards?: CatalogItem[] }>(
     sessionClient(session, fetchImpl),
     `/api/v1/recommendations/similar/${encodeURIComponent(contentId)}`,
+    CACHE_TTL_MS.similar,
   );
   return {
     refs: data.items ?? [],

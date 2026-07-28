@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { CACHE_TTL_MS, cachedRequest } from "./requestCache";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
@@ -14,9 +14,10 @@ export async function fetchLibraries(
   session: PrairieSession,
   fetchImpl?: typeof fetch,
 ): Promise<Library[]> {
-  const data = await apiRequest<Library[] | { libraries?: Library[] }>(
+  const data = await cachedRequest<Library[] | { libraries?: Library[] }>(
     sessionClient(session, fetchImpl),
     "/api/v1/user/libraries",
+    CACHE_TTL_MS.libraries,
   );
   if (Array.isArray(data)) return data;
   return data.libraries ?? [];

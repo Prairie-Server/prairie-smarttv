@@ -8,7 +8,7 @@ interface HomeHeroProps {
   items: CatalogItem[];
   index: number;
   onIndexChange: (index: number) => void;
-  onOpenItem: (contentId: string) => void;
+  onOpenItem: (contentId: string, seed?: CatalogItem) => void;
   autoFocusPlay?: boolean;
 }
 
@@ -55,7 +55,7 @@ export function HomeHero({
           <FocusButton
             autoFocus={autoFocusPlay}
             icon={<Play />}
-            onClick={() => onOpenItem(item.content_id)}
+            onClick={() => onOpenItem(item.content_id, item)}
           >
             More Info
           </FocusButton>

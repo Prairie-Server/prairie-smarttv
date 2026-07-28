@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
+import type { CatalogItem } from "./api/catalog";
 import type { CollectionCard } from "./api/collections";
 import { checkServer } from "./api/checkServer";
+import { invalidateAll, invalidateWatchState } from "./api/requestCache";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
 import type { Library } from "./api/libraries";
 import {
@@ -27,6 +29,7 @@ import {
   type ServerEntry,
 } from "./storage/serverRegistry";
 import { loadCachedLiveTvAvailable, saveCachedLiveTvAvailable } from "./lib/liveTvProbeCache";
+import { prefetchRoute } from "./lib/prefetchRoute";
 import {
   clearSession,
   loadSession,
@@ -51,8 +54,15 @@ const CollectionsScreen = lazy(() =>
 const ConnectScreen = lazy(() =>
   import("./screens/ConnectScreen").then((m) => ({ default: m.ConnectScreen })),
 );
+/**
+ * Shared with the idle prefetcher below so a warmed chunk is the same module
+ * instance `lazy()` resolves.
+ */
+const loadItemDetailScreen = () => import("./screens/ItemDetailScreen");
+const loadPlayerScreen = () => import("./screens/PlayerScreen");
+
 const ItemDetailScreen = lazy(() =>
-  import("./screens/ItemDetailScreen").then((m) => ({ default: m.ItemDetailScreen })),
+  loadItemDetailScreen().then((m) => ({ default: m.ItemDetailScreen })),
 );
 const LibrariesScreen = lazy(() =>
   import("./screens/LibrariesScreen").then((m) => ({ default: m.LibrariesScreen })),
@@ -81,9 +91,7 @@ const ServerListScreen = lazy(() =>
 const PlaybackSettingsScreen = lazy(() =>
   import("./settings/PlaybackSettingsScreen").then((m) => ({ default: m.PlaybackSettingsScreen })),
 );
-const PlayerScreen = lazy(() =>
-  import("./screens/PlayerScreen").then((m) => ({ default: m.PlayerScreen })),
-);
+const PlayerScreen = lazy(() => loadPlayerScreen().then((m) => ({ default: m.PlayerScreen })));
 
 type Route =
   | { name: "servers"; back?: "home"; autoScan?: boolean }
@@ -103,7 +111,7 @@ type Route =
   | { name: "search" }
   | { name: "livetv" }
   | { name: "livetv-player"; channel: LiveTvChannel; back: Route }
-  | { name: "detail"; contentId: string; back: Route }
+  | { name: "detail"; contentId: string; seed?: CatalogItem; back: Route }
   | { name: "settings"; back: Route }
   | { name: "player"; launch: PlayerLaunch; back: Route };
 
@@ -196,6 +204,9 @@ export function App() {
       saveRegistry(clearTokens(registry, registry.activeServerId));
     }
     clearSession();
+    // Cached reads are scoped per server+profile and so could never leak across
+    // a switch, but nothing would ever evict the old scope's entries either.
+    invalidateAll();
     setSession(null);
     setLiveTvProbe(false);
     goServers(true);
@@ -262,6 +273,30 @@ export function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, [route.name]);
+
+  /**
+   * Warm the chunk for wherever the viewer is most likely to go next.
+   *
+   * From any browse surface that is the detail page; from the detail page it is
+   * the player. Both are code-split, so without this the first navigation to
+   * each pays chunk load + parse before its first request even goes out.
+   */
+  const browsing =
+    session != null &&
+    (route.name === "home" ||
+      route.name === "libraries" ||
+      route.name === "library" ||
+      route.name === "collections" ||
+      route.name === "collection" ||
+      route.name === "search");
+  useEffect(() => {
+    if (!browsing) return;
+    return prefetchRoute("item-detail", loadItemDetailScreen);
+  }, [browsing]);
+  useEffect(() => {
+    if (route.name !== "detail") return;
+    return prefetchRoute("player", loadPlayerScreen);
   }, [route.name]);
 
   async function handleSelectSaved(entry: ServerEntry): Promise<void> {
@@ -430,7 +465,13 @@ export function App() {
           <PlayerScreen
             session={session}
             launch={playerRoute.launch}
-            onExit={() => setRoute(playerRoute.back)}
+            onExit={() => {
+              // Resume offsets, watched badges and Continue Watching are all
+              // stale the moment playback stops, and the screen behind this one
+              // is usually showing at least one of them.
+              invalidateWatchState();
+              setRoute(playerRoute.back);
+            }}
           />,
           () => setRoute(playerRoute.back),
         )}
@@ -464,9 +505,12 @@ export function App() {
           <ItemDetailScreen
             session={session}
             contentId={detailRoute.contentId}
+            seed={detailRoute.seed}
             onBack={() => setRoute(detailRoute.back)}
             onPlay={(launch) => setRoute({ name: "player", launch, back: detailRoute })}
-            onOpenItem={(contentId) => setRoute({ name: "detail", contentId, back: detailRoute })}
+            onOpenItem={(contentId, seed) =>
+              setRoute({ name: "detail", contentId, seed, back: detailRoute })
+            }
           />,
           () => setRoute(detailRoute.back),
         )}
@@ -475,7 +519,10 @@ export function App() {
   }
 
   const tab = shellTabFor(route) ?? "home";
-  const openItem = (contentId: string) => setRoute({ name: "detail", contentId, back: route });
+  // Browse screens already hold the row they drew; passing it through lets the
+  // detail page paint before its own request returns.
+  const openItem = (contentId: string, seed?: CatalogItem) =>
+    setRoute({ name: "detail", contentId, seed, back: route });
 
   let body: ReactNode = null;
   if (route.name === "home") {
