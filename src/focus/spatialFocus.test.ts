@@ -182,6 +182,7 @@ describe("spatialFocus", () => {
     const { isBackKey, isEditableTarget } = await import("./spatialFocus");
     expect(isBackKey("Escape")).toBe(true);
     expect(isBackKey("XF86Back")).toBe(true);
+    expect(isBackKey("BrowserBack")).toBe(true);
     expect(isBackKey("GoBack")).toBe(true);
     expect(isBackKey("ArrowLeft")).toBe(false);
 

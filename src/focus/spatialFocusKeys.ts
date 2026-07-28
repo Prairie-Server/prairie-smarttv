@@ -47,5 +47,11 @@ export function shouldDeferToEditableCaret(target: EventTarget | null, key: Arro
 
 /** TV remote Back / Escape helpers. */
 export function isBackKey(key: string): boolean {
-  return key === "Escape" || key === "Backspace" || key === "XF86Back" || key === "GoBack";
+  return (
+    key === "Escape" ||
+    key === "Backspace" ||
+    key === "XF86Back" ||
+    key === "BrowserBack" ||
+    key === "GoBack"
+  );
 }
