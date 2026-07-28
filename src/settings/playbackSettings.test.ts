@@ -35,6 +35,8 @@ describe("playbackSettings", () => {
         playerBackend: "native",
         forceDirectPlay: true,
         forceTranscode: false,
+        forceAv1: false,
+        disableAv1: false,
         preferredSubtitleLanguage: "eng",
         subtitleAppearance: {
           ...DEFAULT_PLAYBACK_SETTINGS.subtitleAppearance,
@@ -73,6 +75,21 @@ describe("playbackSettings", () => {
     expect(normalized.forceDirectPlay).toBe(true);
     expect(normalized.forceTranscode).toBe(false);
     expect(resolveForcedPlayMethod(normalized)).toBe("direct");
+  });
+
+  it("keeps Disable AV1 over Advertise AV1 when both are set", () => {
+    const normalized = normalizePlaybackSettings({
+      forceAv1: true,
+      disableAv1: true,
+    });
+    expect(normalized.forceAv1).toBe(false);
+    expect(normalized.disableAv1).toBe(true);
+  });
+
+  it("defaults AV1 overrides to off", () => {
+    expect(DEFAULT_PLAYBACK_SETTINGS.forceAv1).toBe(false);
+    expect(DEFAULT_PLAYBACK_SETTINGS.disableAv1).toBe(false);
+    expect(normalizePlaybackSettings({}).forceAv1).toBe(false);
   });
 
   it("returns transcode when only forceTranscode is enabled", () => {

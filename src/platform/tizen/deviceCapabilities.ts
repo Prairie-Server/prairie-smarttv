@@ -42,8 +42,12 @@ export function tizenPlatformVersion(ua: string = navigator.userAgent ?? ""): nu
 
 /** AV1 hardware decode starts with the 2020 panels (Tizen 5.5). */
 const AV1_MIN_TIZEN_VERSION = 5.5;
-/** Samsung spellings seen for the same codec across firmwares. */
-const AV1_PROBE_NAMES = ["AV1", "AV01"];
+/**
+ * Samsung `isSupportedVideoCodec` tokens. Official docs list `AV1` /
+ * `AV1_VR360` (SystemInfo since Tizen 6.0); `AV01` is kept for older OEM forks
+ * that mirror the ISO fourcc.
+ */
+const AV1_PROBE_NAMES = ["AV1", "AV01", "AV1_VR360"];
 const HEVC_PROBE_NAMES = ["HEVC", "H265", "H.265"];
 const AV1_MEDIA_TYPE = 'video/mp4; codecs="av01.0.08M.08"';
 
@@ -65,8 +69,8 @@ function probeVideoCodec(systemInfo: SystemInfoApi | null, names: string[]): boo
   return sawAnswer ? false : null;
 }
 
-/** Secondary AV1 signal for firmwares without the systeminfo probe. */
-function canPlayAv1(): boolean {
+/** Secondary AV1 signal via HTMLMediaElement.canPlayType. */
+export function canPlayAv1(): boolean {
   try {
     const video = document.createElement("video");
     return typeof video.canPlayType === "function" && video.canPlayType(AV1_MEDIA_TYPE) !== "";
@@ -76,9 +80,12 @@ function canPlayAv1(): boolean {
 }
 
 /**
- * Whether this TV can Direct Play AV1. Requires an affirmative signal: guessing
- * wrong means the panel cannot decode the stream at all, so an unknown answer
- * keeps AV1 out of the advertised list and the server transcodes as before.
+ * Whether this TV can Direct Play AV1.
+ *
+ * Combine signals with OR: a false `isSupportedVideoCodec` answer must not
+ * veto a positive `canPlayType` on Tizen ≥ 5.5. 2022 QLEDs (Tizen 6.5) have
+ * been seen to deny "AV1" in systeminfo while still decoding av01 in HTML5 /
+ * AVPlay. Unknown / non-Tizen stays conservative (no advertise).
  */
 export function probeAv1Support(
   input: {
@@ -89,15 +96,38 @@ export function probeAv1Support(
 ): boolean {
   const version = input.tizenVersion ?? tizenPlatformVersion();
   if (version > 0 && version < AV1_MIN_TIZEN_VERSION) return false;
+  // Browser / unit hosts without a Tizen UA never advertise AV1.
+  if (version === 0) return false;
 
   const systemInfo = input.systemInfo === undefined ? getSystemInfo() : input.systemInfo;
-  const probed = probeVideoCodec(systemInfo, AV1_PROBE_NAMES);
-  if (probed !== null) return probed;
+  const systeminfoOk = probeVideoCodec(systemInfo, AV1_PROBE_NAMES) === true;
+  const mediaOk = (input.canPlayAv1 ?? canPlayAv1()) === true;
+  return systeminfoOk || mediaOk;
+}
 
-  // No platform probe: only trust the media-capability answer on panels new
-  // enough to have AV1 silicon.
-  if (version === 0) return false;
-  return input.canPlayAv1 ?? canPlayAv1();
+/** Detail for on-device diagnostics — which AV1 signals fired. */
+export function describeAv1Probe(
+  input: {
+    systemInfo?: SystemInfoApi | null;
+    tizenVersion?: number;
+    canPlayAv1?: boolean;
+  } = {},
+): {
+  tizenVersion: number;
+  systeminfo: boolean | null;
+  canPlayType: boolean;
+  supported: boolean;
+} {
+  const tizenVersion = input.tizenVersion ?? tizenPlatformVersion();
+  const systemInfo = input.systemInfo === undefined ? getSystemInfo() : input.systemInfo;
+  const systeminfo = probeVideoCodec(systemInfo, AV1_PROBE_NAMES);
+  const canPlayType = input.canPlayAv1 ?? canPlayAv1();
+  return {
+    tizenVersion,
+    systeminfo,
+    canPlayType,
+    supported: probeAv1Support({ systemInfo, tizenVersion, canPlayAv1: canPlayType }),
+  };
 }
 
 function probeMaxResolution(): string {
@@ -227,4 +257,36 @@ export function probeTvPlaybackCapabilities(
     max_resolution: probeMaxResolution(),
     hdr: probeHdr(tizenMajor),
   };
+}
+
+export interface Av1AdvertiseOverrides {
+  /** Inject `av1` into codecs_video even when the probe said no. */
+  forceAv1?: boolean;
+  /** Strip `av1` even when the probe said yes. */
+  disableAv1?: boolean;
+}
+
+/** Apply user overrides on top of a fresh capability probe. */
+export function applyAv1AdvertiseOverrides(
+  caps: TvPlaybackCapabilities,
+  overrides: Av1AdvertiseOverrides = {},
+): TvPlaybackCapabilities {
+  let codecs = [...caps.codecs_video];
+  if (overrides.disableAv1) {
+    codecs = codecs.filter((codec) => codec !== "av1");
+  } else if (overrides.forceAv1 && !codecs.includes("av1")) {
+    codecs.push("av1");
+  }
+  return { ...caps, codecs_video: codecs };
+}
+
+/**
+ * Probe the panel, then apply Advertise/Disable AV1 settings before the list
+ * is sent to Prairie as `codecs_video`.
+ */
+export function resolveAdvertisedCapabilities(
+  overrides: Av1AdvertiseOverrides = {},
+  probeInput: Parameters<typeof probeTvPlaybackCapabilities>[0] = {},
+): TvPlaybackCapabilities {
+  return applyAv1AdvertiseOverrides(probeTvPlaybackCapabilities(probeInput), overrides);
 }

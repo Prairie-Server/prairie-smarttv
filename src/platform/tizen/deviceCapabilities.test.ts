@@ -6,9 +6,11 @@ vi.mock("./avplay", () => ({
 
 import { isAvPlayAvailable } from "./avplay";
 import {
+  applyAv1AdvertiseOverrides,
   probeAv1Support,
   probeSupportedAudioCodecs,
   probeTvPlaybackCapabilities,
+  resolveAdvertisedCapabilities,
   tizenPlatformVersion,
 } from "./deviceCapabilities";
 
@@ -190,21 +192,39 @@ describe("AV1 advertisement", () => {
     ).toBe(true);
   });
 
-  it("accepts the alternate AV01 spelling", () => {
+  it("accepts the alternate AV01 and AV1_VR360 spellings", () => {
     expect(
       probeAv1Support({
         systemInfo: { isSupportedVideoCodec: (codec) => codec === "AV01" },
         tizenVersion: 6.0,
       }),
     ).toBe(true);
+    expect(
+      probeAv1Support({
+        systemInfo: { isSupportedVideoCodec: (codec) => codec === "AV1_VR360" },
+        tizenVersion: 6.5,
+        canPlayAv1: false,
+      }),
+    ).toBe(true);
   });
 
-  it("trusts a negative platform probe", () => {
+  it("does not let a negative systeminfo veto canPlayType on Tizen ≥ 5.5", () => {
+    // 2022 QLEDs have denied "AV1" in systeminfo while still decoding av01.
     expect(
       probeAv1Support({
         systemInfo: { isSupportedVideoCodec: () => false },
         tizenVersion: 6.5,
         canPlayAv1: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("stays off when both systeminfo and canPlayType are negative", () => {
+    expect(
+      probeAv1Support({
+        systemInfo: { isSupportedVideoCodec: () => false },
+        tizenVersion: 6.5,
+        canPlayAv1: false,
       }),
     ).toBe(false);
   });
@@ -218,7 +238,7 @@ describe("AV1 advertisement", () => {
     ).toBe(false);
   });
 
-  it("falls back to media capabilities when the probe is missing", () => {
+  it("uses media capabilities when the probe is missing", () => {
     expect(probeAv1Support({ systemInfo: {}, tizenVersion: 6.5, canPlayAv1: true })).toBe(true);
     expect(probeAv1Support({ systemInfo: null, tizenVersion: 6.5, canPlayAv1: true })).toBe(true);
     expect(probeAv1Support({ systemInfo: null, tizenVersion: 6.5, canPlayAv1: false })).toBe(false);
@@ -275,8 +295,56 @@ describe("AV1 advertisement", () => {
       avplayAvailable: true,
       systemInfo: { isSupportedVideoCodec: () => false },
       tizenVersion: 6.5,
+      canPlayAv1: false,
     });
     expect(caps.codecs_video).toEqual(["h264"]);
+  });
+
+  it("still advertises av1 when systeminfo denies but canPlayType affirms", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
+    vi.stubGlobal("screen", { width: 3840, height: 2160 });
+    stubWindow({ innerWidth: 1920, innerHeight: 1080 });
+    const caps = probeTvPlaybackCapabilities({
+      avplayAvailable: true,
+      systemInfo: { isSupportedVideoCodec: (codec) => codec === "HEVC" },
+      tizenVersion: 6.5,
+      canPlayAv1: true,
+    });
+    expect(caps.codecs_video).toEqual(["h264", "hevc", "av1"]);
+  });
+});
+
+describe("AV1 advertise overrides", () => {
+  it("force-injects and strips av1 independently of the probe", () => {
+    const base = {
+      codecs_video: ["h264", "hevc"],
+      codecs_audio: ["aac"],
+      containers: ["mp4"],
+      max_resolution: "1080p",
+      hdr: false,
+    };
+    expect(applyAv1AdvertiseOverrides(base, { forceAv1: true }).codecs_video).toEqual([
+      "h264",
+      "hevc",
+      "av1",
+    ]);
+    expect(
+      applyAv1AdvertiseOverrides(
+        { ...base, codecs_video: ["h264", "hevc", "av1"] },
+        { disableAv1: true },
+      ).codecs_video,
+    ).toEqual(["h264", "hevc"]);
+    expect(
+      resolveAdvertisedCapabilities(
+        { forceAv1: true },
+        {
+          avplayAvailable: false,
+          systemInfo: { isSupportedVideoCodec: () => false },
+          tizenVersion: 6.5,
+          canPlayAv1: false,
+        },
+      ).codecs_video,
+    ).toContain("av1");
   });
 });
 
