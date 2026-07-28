@@ -2,8 +2,8 @@
  * Poll until an HLS playlist is playable: #EXTM3U present and (optionally)
  * the first media segment is fetchable. AVPlay open on a not-yet-written
  * remux/transcode pipeline fails the whole player; encoded sessions also
- * expose a synthetic VOD playlist before segment 0 exists, so checking only
- * #EXTM3U is not enough.
+ * expose a synthetic VOD playlist before the window-head segment exists, so
+ * checking only #EXTM3U is not enough.
  *
  * Throws TranscodeStartupTimeoutError when the deadline elapses without a
  * ready segment so callers can show "Transcode timed out" instead of hanging.
@@ -137,7 +137,7 @@ export async function waitForHlsManifest(
     if (ok && body.includes("#EXTM3U")) {
       if (!requireSegment) return true;
       // Encoded sessions serve a synthetic VOD playlist immediately; wait until
-      // segment 0 actually exists so AVPlay does not hang on the first fetch.
+      // the first listed segment exists so AVPlay does not hang on open.
       if (!body.includes("#EXTINF")) {
         // Empty / master-only playlist — keep polling.
       } else {

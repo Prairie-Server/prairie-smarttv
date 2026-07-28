@@ -214,14 +214,16 @@ describe("preparePlayableSession", () => {
     expect(prepared.session.playback_info?.transcode_audio).toBe(false);
   });
 
-  it("bootstraps full encode for transcode and marks can_seek_anywhere", async () => {
+  it("bootstraps windowed encode resume without a client seek", async () => {
     const fetchImpl = hlsReadyFetch(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       expect(body.target_codec_video).toBe("h264");
       expect(body.target_resolution).toBe("2160p");
       return manifestResponse({
-        can_seek_anywhere: true,
-        player_start_seconds: 90,
+        can_seek_anywhere: false,
+        player_start_seconds: 0,
+        stream_origin_seconds: 90,
+        timeline_offset_seconds: 90,
         duration_seconds: null,
         session_id: "",
       });
@@ -235,9 +237,27 @@ describe("preparePlayableSession", () => {
     expect(prepared.session.play_method).toBe("transcode");
     expect(prepared.session.session_id).toBe("s1");
     expect(prepared.session.duration_seconds).toBe(3600);
-    expect(prepared.playerStartSeconds).toBe(90);
+    expect(prepared.playerStartSeconds).toBe(0);
+    expect(prepared.streamOriginSeconds).toBe(90);
+    expect(prepared.session.position).toBe(90);
     expect(prepared.session.playback_info?.stream_type).toBe("hls");
-    expect(prepared.session.playback_info?.can_seek_anywhere).toBe(true);
+    expect(prepared.session.playback_info?.can_seek_anywhere).toBe(false);
+  });
+
+  it("keeps play_method=transcode when resume cannot seek-anywhere", async () => {
+    // Regression: do not infer remux from can_seek_anywhere=false (windowed encode).
+    const fetchImpl = hlsReadyFetch(async () =>
+      manifestResponse({
+        can_seek_anywhere: false,
+        player_start_seconds: 0,
+        stream_origin_seconds: 456,
+      }),
+    );
+    const prepared = await preparePlayableSession(session, started("transcode"), 456, {
+      fetchImpl,
+    });
+    expect(prepared.session.play_method).toBe("transcode");
+    expect(prepared.streamOriginSeconds).toBe(456);
   });
 
   it("falls back to h264 encode when remux copy is rejected with 422", async () => {
@@ -288,6 +308,7 @@ describe("preparePlayableSession", () => {
     const fetchImpl = hlsReadyFetch(async () =>
       manifestResponse({
         player_start_seconds: undefined,
+        stream_origin_seconds: 0,
         can_seek_anywhere: undefined,
         duration_seconds: undefined,
       }),
@@ -296,7 +317,8 @@ describe("preparePlayableSession", () => {
     delete (base as { duration_seconds?: number }).duration_seconds;
     const prepared = await preparePlayableSession(session, base, 44, { fetchImpl });
     expect(prepared.playerStartSeconds).toBe(44);
-    expect(prepared.session.position).toBe(12);
+    // Media position follows the resolved player start when origin is 0.
+    expect(prepared.session.position).toBe(44);
   });
 
   it("surfaces TranscodeStartupTimeoutError when the first segment never appears", async () => {

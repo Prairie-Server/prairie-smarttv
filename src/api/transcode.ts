@@ -72,8 +72,13 @@ export async function startTranscode(
 export interface PreparedPlayback {
   session: PlaybackSessionResponse;
   streamUrl: string;
-  /** Prefer this when seeking/resuming after HLS bootstrap. */
+  /**
+   * Player-local seek after HLS bootstrap. Windowed encoded resumes start at
+   * the first playlist entry (0) — no client seek needed.
+   */
   playerStartSeconds: number;
+  /** Media-time origin of the current HLS window (0 for from-start / direct). */
+  streamOriginSeconds: number;
 }
 
 /** How long to wait for the first HLS segment after /transcode/start. */
@@ -106,6 +111,7 @@ export async function preparePlayableSession(
       session: started,
       streamUrl: buildStreamUrl(session.serverUrl, started.stream_url, session.accessToken),
       playerStartSeconds: seekSeconds,
+      streamOriginSeconds: 0,
     };
   }
 
@@ -118,14 +124,16 @@ export async function preparePlayableSession(
     maxResolution: options.maxResolution,
   };
 
+  let playMethod = started.play_method.trim().toLowerCase() === "remux" ? "remux" : "transcode";
   let transcode: TranscodeStartResponse;
   try {
     transcode = await startTranscode(session, buildTranscodeStartRequest(startInput), fetchImpl);
   } catch (err) {
     // Older servers may reject remux copy (422). Fall back to a real encode at
     // the same resolution cap the TV advertised (not a hardcoded 1080p).
-    const isRemux = started.play_method.trim().toLowerCase() === "remux";
+    const isRemux = playMethod === "remux";
     if (!isRemux || !(err instanceof ApiError) || err.status !== 422) throw err;
+    playMethod = "transcode";
     transcode = await startTranscode(
       session,
       buildTranscodeStartRequest({
@@ -137,14 +145,22 @@ export async function preparePlayableSession(
     );
   }
 
-  const playMethod = transcode.can_seek_anywhere ? "transcode" : "remux";
+  const streamOriginSeconds = Math.max(0, transcode.stream_origin_seconds ?? 0);
+  // Windowed resumes advertise origin>0 and player_start=0. Legacy full-timeline
+  // responses omit origin and expect the client to seek to media time.
+  const playerStartSeconds = Math.max(
+    0,
+    transcode.player_start_seconds ?? (streamOriginSeconds > 0 ? 0 : seekSeconds),
+  );
+  // Progress / UI use media time (window origin + player-local offset).
+  const mediaPosition = streamOriginSeconds + playerStartSeconds;
   const sessionId = transcode.session_id || started.session_id;
   const next: PlaybackSessionResponse = {
     ...started,
     session_id: sessionId,
     play_method: playMethod,
     stream_url: transcode.manifest_url,
-    position: transcode.player_start_seconds ?? started.position,
+    position: mediaPosition || started.position,
     duration_seconds: transcode.duration_seconds ?? started.duration_seconds,
     playback_info: {
       ...started.playback_info,
@@ -156,7 +172,6 @@ export async function preparePlayableSession(
   };
 
   const streamUrl = buildStreamUrl(session.serverUrl, transcode.manifest_url, session.accessToken);
-  const playerStartSeconds = transcode.player_start_seconds ?? seekSeconds;
 
   await waitForHlsManifest(streamUrl, {
     fetchImpl,
@@ -165,12 +180,13 @@ export async function preparePlayableSession(
     throwOnTimeout: true,
     keepAliveEveryMs: 10_000,
     onKeepAlive: () =>
-      reportPlaybackProgress(session, sessionId, playerStartSeconds, true, fetchImpl),
+      reportPlaybackProgress(session, sessionId, mediaPosition, true, fetchImpl),
   });
 
   return {
     session: next,
     streamUrl,
     playerStartSeconds,
+    streamOriginSeconds,
   };
 }
