@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  resetHomePrefetchForTests,
-  startHomePrefetch,
-  takeHomePrefetch,
-} from "./homePrefetch";
+import { resetHomePrefetchForTests, startHomePrefetch, takeHomePrefetch } from "./homePrefetch";
 import type { PrairieSession } from "../storage/session";
 
 vi.mock("./home", () => ({
