@@ -109,9 +109,10 @@ async function flushFrames(count = 1) {
   }
 }
 
-async function renderHome(options: { showOnNow?: boolean } = {}) {
+async function renderHome(options: { showOnNow?: boolean; reserveOnNow?: boolean } = {}) {
   const { HomeBrowseScreen } = await import("./HomeBrowseScreen");
   const { ServerUrlContext } = await import("../serverUrlContext");
+  const wantsOnNow = Boolean(options.showOnNow || options.reserveOnNow);
   await act(async () => {
     root = createRoot(container);
     root.render(
@@ -119,8 +120,9 @@ async function renderHome(options: { showOnNow?: boolean } = {}) {
         <HomeBrowseScreen
           session={session}
           onOpenItem={() => {}}
-          onOpenLiveChannel={options.showOnNow ? () => {} : undefined}
+          onOpenLiveChannel={wantsOnNow ? () => {} : undefined}
           showOnNow={options.showOnNow ?? false}
+          reserveOnNow={options.reserveOnNow ?? false}
         />
       </ServerUrlContext.Provider>,
     );
@@ -341,5 +343,15 @@ describe("HomeBrowseScreen entry focus", () => {
     expect(container.querySelector(".media-row--on-now")).toBeNull();
     const first = container.querySelector<HTMLElement>(".media-row__scroller [data-focus-index]");
     expect(document.activeElement).toBe(first);
+  });
+
+  it("reserves an On now skeleton while the Live TV probe is pending", async () => {
+    await renderHome({ reserveOnNow: true });
+    await settle();
+    const slot = container.querySelector(".media-row--on-now");
+    expect(slot).not.toBeNull();
+    expect(slot?.classList.contains("media-row--skeleton")).toBe(true);
+    // Probe pending must not fetch the guide yet.
+    expect(container.querySelectorAll(".on-now-card").length).toBe(0);
   });
 });

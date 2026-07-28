@@ -5,7 +5,11 @@ import { fetchHomeSections, type HomeSection } from "../api/home";
 import type { LiveTvChannel } from "../api/livetv";
 import { HomeHero } from "../components/HomeHero";
 import { LandscapeCard } from "../components/LandscapeCard";
-import { LiveTvOnNowRow, type OnNowStatus } from "../components/LiveTvOnNowRow";
+import {
+  LiveTvOnNowRow,
+  LiveTvOnNowSkeleton,
+  type OnNowStatus,
+} from "../components/LiveTvOnNowRow";
 import { MediaRow, mediaRowMinHeight, type MediaRowVariant } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { catalogItemProgress, catalogItemSubtitle, usesLandscapeCards } from "../lib/browseCards";
@@ -18,7 +22,13 @@ interface HomeBrowseScreenProps {
   session: PrairieSession;
   onOpenItem: (contentId: string) => void;
   onOpenLiveChannel?: (channel: LiveTvChannel) => void;
+  /** Mount the live On now row and fetch the guide. */
   showOnNow?: boolean;
+  /**
+   * Reserve the On now slot (skeleton only) while the Live TV probe is still
+   * pending. Prevents the late insert that caused Home CLS.
+   */
+  reserveOnNow?: boolean;
 }
 
 /* Only ~2 rows are visible at launch (rows grow with ui-scale on 4K/8K panels),
@@ -186,6 +196,7 @@ export function HomeBrowseScreen({
   onOpenItem,
   onOpenLiveChannel,
   showOnNow = false,
+  reserveOnNow = false,
 }: HomeBrowseScreenProps) {
   // Seed from the previous launch so the first paint shows real rows instead of
   // shimmer while the request completes.
@@ -251,8 +262,13 @@ export function HomeBrowseScreen({
     [sections, featured],
   );
 
-  const expectOnNow = showOnNow && onOpenLiveChannel != null;
+  const expectOnNow = (showOnNow || reserveOnNow) && onOpenLiveChannel != null;
   const handleOnNowStatus = useCallback((status: OnNowStatus) => setOnNowStatus(status), []);
+  useEffect(() => {
+    // Reserve mode has no fetcher; keep status at loading so entry focus waits
+    // the same grace window as a real On now row.
+    if (reserveOnNow && !showOnNow) setOnNowStatus("loading");
+  }, [reserveOnNow, showOnNow]);
   const selectHandler = useStableItemSelect(onOpenItem);
 
   // Reserve the height a real row actually occupies rather than the design
@@ -429,7 +445,9 @@ export function HomeBrowseScreen({
         />
       ) : null}
 
-      {!loading && expectOnNow && onOpenLiveChannel ? (
+      {!loading && reserveOnNow && !showOnNow && onOpenLiveChannel ? <LiveTvOnNowSkeleton /> : null}
+
+      {!loading && showOnNow && onOpenLiveChannel ? (
         <LiveTvOnNowRow
           session={session}
           onOpenChannel={onOpenLiveChannel}
