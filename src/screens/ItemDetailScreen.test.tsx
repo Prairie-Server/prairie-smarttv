@@ -191,7 +191,7 @@ describe("ItemDetailScreen", () => {
     expect(container.textContent).toContain("Movie m1");
   });
 
-  it("admits poster and logo after the backdrop loads", async () => {
+  it("admits poster after the backdrop loads, then logo after the poster", async () => {
     detailOverrides = {
       logo_url: "/artwork/library/1/logo/original.rev.webp",
     };
@@ -199,12 +199,30 @@ describe("ItemDetailScreen", () => {
     await settle();
     const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
     expect(hero).not.toBeNull();
+    expect(container.textContent).toContain("Movie m1");
     await act(async () => {
       hero?.dispatchEvent(new Event("load"));
     });
     await settle();
-    expect(container.querySelector(".detail-hero__poster img")).not.toBeNull();
-    expect(container.querySelector(".detail-hero__logo img")).not.toBeNull();
+    const poster = container.querySelector<HTMLImageElement>(".detail-hero__poster img");
+    expect(poster).not.toBeNull();
+    // Title stays until the logo actually decodes — no empty logo shimmer swap.
+    expect(container.querySelector(".detail-hero__copy .browse-title")?.textContent).toContain(
+      "Movie m1",
+    );
+    expect(container.querySelector(".detail-hero__logo:not([hidden])")).toBeNull();
+    await act(async () => {
+      poster?.dispatchEvent(new Event("load"));
+    });
+    await settle();
+    const logo = container.querySelector<HTMLImageElement>(".detail-hero__logo img");
+    expect(logo).not.toBeNull();
+    await act(async () => {
+      logo?.dispatchEvent(new Event("load"));
+    });
+    await settle();
+    expect(container.querySelector(".detail-hero__logo:not([hidden])")).not.toBeNull();
+    expect(container.querySelector(".detail-hero__copy .browse-title")).toBeNull();
   });
 
   it("plays from item-detail versions without a watch round-trip", async () => {
@@ -230,17 +248,25 @@ describe("ItemDetailScreen", () => {
     await settle(20);
     expect(container.querySelectorAll(".episode-card").length).toBe(8);
     expect(container.textContent).toContain("More episodes");
-    // Episode stills wait for the hero grace so they cannot contend with backdrop.
+    // Episode stills wait for the backdrop to settle so they cannot contend.
     expect(container.querySelectorAll(".episode-card__still img").length).toBe(0);
-    await settle(950);
+    const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
+    await act(async () => {
+      hero?.dispatchEvent(new Event("load"));
+    });
+    await settle(450);
     expect(container.querySelectorAll(".episode-card__still img").length).toBeGreaterThan(0);
   });
 
-  it("defers cast photos until the hero grace period elapses", async () => {
+  it("defers cast photos until the hero backdrop settles", async () => {
     await renderScreen();
     await settle();
     expect(container.querySelector(".cast-rail")).toBeNull();
-    await settle(950);
+    const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
+    await act(async () => {
+      hero?.dispatchEvent(new Event("load"));
+    });
+    await settle(450);
     expect(container.querySelector(".cast-rail")).not.toBeNull();
   });
 });

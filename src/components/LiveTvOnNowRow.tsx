@@ -134,7 +134,7 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
       className="media-row--on-now"
       items={cards}
       getItemKey={(item) => item.channel.id}
-      renderItem={(item, index) => (
+      renderItem={(item) => (
         <button
           type="button"
           className="poster-card on-now-card"
@@ -146,7 +146,7 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
                 src={item.imageUrl}
                 alt=""
                 placeholderLabel={item.title}
-                loading={index < 4 ? "eager" : "lazy"}
+                loading="lazy"
               />
             ) : (
               <div className="poster-card__placeholder">{item.title.slice(0, 1) || "\u00a0"}</div>

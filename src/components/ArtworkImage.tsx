@@ -112,13 +112,13 @@ export function ArtworkImage({
   }, []);
 
   useLayoutEffect(() => {
-    if (!current) return;
+    if (!current || !slotGranted) return;
     const img = imgRef.current;
     if (img?.complete && img.naturalWidth > 0) {
       setLoaded(true);
       releaseSlot();
     }
-  }, [current, releaseSlot]);
+  }, [current, slotGranted, releaseSlot]);
 
   if (candidates.length === 0) return null;
 

@@ -2374,6 +2374,14 @@ button:focus,
   background: #10151c;
 }
 
+.detail-hero__poster > .artwork-image,
+.detail-hero__poster > .poster-card__placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .detail-hero__poster::before {
   content: "";
   display: block;

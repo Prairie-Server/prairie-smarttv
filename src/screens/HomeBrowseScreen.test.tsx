@@ -307,17 +307,30 @@ describe("HomeBrowseScreen entry focus", () => {
     expect(document.activeElement).toBe(first);
   });
 
-  it("focuses the On now row when it is the topmost row", async () => {
+  it("keeps entry focus on the first home row while On now stays below the fold", async () => {
     await renderHome({ showOnNow: true });
     await settle();
-    const onNowCard = container.querySelector<HTMLElement>(".media-row--on-now [data-focus-index]");
-    expect(onNowCard).not.toBeNull();
-    expect(document.activeElement).toBe(onNowCard);
+    const first = container.querySelector<HTMLElement>(".media-row__scroller [data-focus-index]");
+    expect(document.activeElement).toBe(first);
+    expect(container.querySelector(".media-row--on-now")).toBeNull();
+    expect(container.querySelector("[data-on-now]")).not.toBeNull();
+
+    const onNowSlot = container.querySelector<HTMLElement>("[data-on-now]");
+    await scrollSlotsIntoView([onNowSlot!]);
+    await settle();
+    // Loading On now must not steal focus from the row the user already has.
+    expect(document.activeElement).toBe(first);
+    expect(container.querySelector(".media-row--on-now")).not.toBeNull();
   });
 
   it("holds a same-height On now slot while the guide loads", async () => {
     releaseChannels = () => {};
     await renderHome({ showOnNow: true });
+    await settle();
+
+    const deferred = container.querySelector<HTMLElement>("[data-on-now]");
+    expect(deferred).not.toBeNull();
+    await scrollSlotsIntoView([deferred!]);
     await settle();
 
     const slot = container.querySelector(".media-row--on-now");
@@ -339,14 +352,25 @@ describe("HomeBrowseScreen entry focus", () => {
   it("collapses the On now slot when the server has no channels", async () => {
     channelCount = 0;
     await renderHome({ showOnNow: true });
+    await settle();
+    const deferred = container.querySelector<HTMLElement>("[data-on-now]");
+    expect(deferred).not.toBeNull();
+    await scrollSlotsIntoView([deferred!]);
     await settle(20);
     expect(container.querySelector(".media-row--on-now")).toBeNull();
     const first = container.querySelector<HTMLElement>(".media-row__scroller [data-focus-index]");
     expect(document.activeElement).toBe(first);
   });
 
-  it("reserves an On now skeleton while the Live TV probe is pending", async () => {
+  it("reserves an On now deferred slot while the Live TV probe is pending", async () => {
     await renderHome({ reserveOnNow: true });
+    await settle();
+    // Below the fold: only a height reservation until the slot nears the viewport.
+    expect(container.querySelector("[data-on-now]")).not.toBeNull();
+    expect(container.querySelector(".media-row--on-now")).toBeNull();
+
+    const deferred = container.querySelector<HTMLElement>("[data-on-now]");
+    await scrollSlotsIntoView([deferred!]);
     await settle();
     const slot = container.querySelector(".media-row--on-now");
     expect(slot).not.toBeNull();
