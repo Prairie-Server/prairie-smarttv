@@ -1,7 +1,6 @@
 import { Play } from "lucide-react";
 import type { CatalogItem } from "../api/catalog";
 import { ArtworkImage } from "./ArtworkImage";
-import { BACKDROP_HERO_WIDTH } from "../lib/artworkUrl";
 import { FocusButton } from "./FocusButton";
 import { catalogItemSubtitle } from "../lib/browseCards";
 
@@ -38,7 +37,7 @@ export function HomeHero({
           src={backdrop}
           avifSrc={backdropAvif}
           alt=""
-          widthHint={BACKDROP_HERO_WIDTH}
+          role="backdropHero"
           loading="eager"
         />
       ) : (

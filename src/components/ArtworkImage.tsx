@@ -9,6 +9,7 @@ import {
   type ImgHTMLAttributes,
 } from "react";
 import { artworkSizedCandidates } from "../lib/artworkUrl";
+import { artworkPreviewWidth, artworkRoleWidth, type ArtworkRole } from "../lib/artworkRole";
 import { acquireImageSlot } from "../lib/imageLoadQueue";
 import { resolveArtworkUrl } from "../lib/resolveArtworkUrl";
 import { useServerUrl } from "../serverUrlContext";
@@ -25,10 +26,11 @@ export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
   /** Override server origin used to absolutize relative `/artwork/...` paths. */
   serverUrl?: string | null;
   /**
-   * Prefer a server width variant (`/w300.`, `/w500.`, …).
-   * Matches prairie-server artworkkey ladders — not a query param.
+   * What this image is. Decides the server width rung and whether a cheap
+   * preview rung paints first — see `lib/artworkRole`. Required: omitting a
+   * width used to silently request the full-size `original` object.
    */
-  widthHint?: number | null;
+  role: ArtworkRole;
 };
 
 /**
@@ -52,11 +54,16 @@ export function ArtworkImage({
   className,
   style,
   serverUrl: serverUrlProp,
-  widthHint,
+  role,
   width,
   height,
+  // Synchronous decode on the paint path is what makes a row of posters lock
+  // the remote on TV hardware. Every artwork image opts out by default.
+  decoding = "async",
   ...rest
 }: ArtworkImageProps) {
+  const widthHint = artworkRoleWidth(role);
+  const previewWidthHint = artworkPreviewWidth(role);
   const contextServerUrl = useServerUrl();
   const serverUrl = serverUrlProp?.trim() || contextServerUrl;
   const normalizedSrc = resolveArtworkUrl(src, serverUrl) || undefined;
@@ -72,7 +79,19 @@ export function ArtworkImage({
       }),
     [normalizedSrc, normalizedAvif, normalizedPng, widthHint],
   );
+  // Preview rung: skipped when it would not actually be smaller than the target.
+  const previewSrc = useMemo(() => {
+    if (previewWidthHint == null || previewWidthHint <= 0) return "";
+    if (widthHint != null && previewWidthHint >= widthHint) return "";
+    const [best] = artworkSizedCandidates(normalizedSrc, previewWidthHint, {
+      avif: normalizedAvif,
+      png: normalizedPng,
+    });
+    return best ?? "";
+  }, [normalizedSrc, normalizedAvif, normalizedPng, previewWidthHint, widthHint]);
+
   const [failedCount, setFailedCount] = useState(0);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const prevKey = useRef<string>("");
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -84,6 +103,7 @@ export function ArtworkImage({
 
   useEffect(() => {
     setFailedCount(0);
+    setPreviewFailed(false);
     setLoaded(false);
   }, [sourceKey]);
 
@@ -122,7 +142,8 @@ export function ArtworkImage({
 
   if (candidates.length === 0) return null;
 
-  const showPlaceholder = !loaded;
+  const showPreview = Boolean(previewSrc) && !loaded && !previewFailed;
+  const showPlaceholder = !loaded && !showPreview;
   const imgStyle: CSSProperties = {
     ...(typeof style === "object" && style ? style : null),
     opacity: loaded ? 1 : 0,
@@ -143,6 +164,7 @@ export function ArtworkImage({
         alt={alt}
         width={width}
         height={height}
+        decoding={decoding}
         style={imgStyle}
         onLoad={(event) => {
           setLoaded(true);
@@ -160,6 +182,20 @@ export function ArtworkImage({
           onError?.(event);
         }}
       />
+      {showPreview ? (
+        // Rendered after the real image so `querySelector("img")` still finds the
+        // real one, and layered on top of it while that one is still at opacity 0.
+        // Deliberately outside the decode queue: this rung is small enough that
+        // waiting for a slot would defeat the point of showing it early.
+        <img
+          className="artwork-image__img artwork-image__img--preview"
+          src={previewSrc}
+          alt=""
+          aria-hidden="true"
+          decoding="async"
+          onError={() => setPreviewFailed(true)}
+        />
+      ) : null}
     </div>
   );
 }

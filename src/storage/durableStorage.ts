@@ -144,6 +144,16 @@ function writeMirrorFile(dir: TizenFileHandle, data: MirrorMap): void {
   }
 }
 
+/**
+ * How long boot may wait on the durable mirror before painting anyway.
+ *
+ * The mirror only matters after a sideload wipe, but the read is Tizen
+ * filesystem I/O and boot used to `await` it unconditionally — so on a slow
+ * flash read the app showed nothing at all until it finished. Past this budget
+ * we render and let the restore land in the background.
+ */
+export const DURABLE_RESTORE_BUDGET_MS = 700;
+
 /** Restore mirrored keys into localStorage when the WebView store was wiped. */
 export async function restoreDurableStorage(
   storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
@@ -160,6 +170,45 @@ export async function restoreDurableStorage(
     restored += 1;
   }
   return restored;
+}
+
+/**
+ * Restore, but never block boot for longer than the budget.
+ *
+ * Resolves `true` when the restore finished in time. When it times out the read
+ * keeps going and `onLate` fires with the number of keys it recovered, so a
+ * genuinely wiped install can still pick its session back up — one render late
+ * instead of one blank screen late.
+ */
+export function restoreDurableStorageWithBudget(
+  onLate?: (restored: number) => void,
+  budgetMs = DURABLE_RESTORE_BUDGET_MS,
+): Promise<boolean> {
+  let settled = false;
+  const restore = restoreDurableStorage();
+  return new Promise<boolean>((resolve) => {
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+      void restore.then((restored) => {
+        if (restored > 0) onLate?.(restored);
+      });
+    }, budgetMs);
+    void restore
+      .then(() => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(true);
+      })
+      .catch(() => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(false);
+      });
+  });
 }
 
 /** Snapshot preserved keys into the durable mirror (Tizen documents). */

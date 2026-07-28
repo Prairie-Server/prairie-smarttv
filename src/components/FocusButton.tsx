@@ -5,6 +5,8 @@ interface FocusButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: ReactNode;
   variant?: "primary" | "secondary" | "ghost" | "danger" | "circle";
   active?: boolean;
+  /** Absolute index inside the enclosing `[data-focus-container]`. */
+  "data-focus-index"?: number;
 }
 
 export const FocusButton = forwardRef<HTMLButtonElement, FocusButtonProps>(function FocusButton(

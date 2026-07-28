@@ -1,6 +1,5 @@
 import { memo, type KeyboardEvent } from "react";
 import { Play } from "lucide-react";
-import { BACKDROP_CARD_WIDTH } from "../lib/artworkUrl";
 import { ArtworkImage } from "./ArtworkImage";
 
 interface LandscapeCardProps {
@@ -56,7 +55,7 @@ function LandscapeCardInner({
             avifSrc={imageAvifUrl}
             alt=""
             placeholderLabel={title}
-            widthHint={BACKDROP_CARD_WIDTH}
+            role="backdropCard"
             width={352}
             height={198}
             loading={imageLoading}

@@ -8,10 +8,19 @@
  *
  * Set TIZEN_SECURITY_PROFILE (+ tizen on PATH) to also produce signed .wgt files.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { deflateRawSync, crc32 } from "node:zlib";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -44,35 +53,90 @@ function readVersion() {
   return pkg.version || "0.0.0";
 }
 
+function listFilesRecursive(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    const absolute = join(entry.parentPath ?? entry.path, entry.name);
+    // .wgt / .ipk entry names are always POSIX-separated, on every host OS.
+    found.push({ absolute, name: relative(dir, absolute).split(sep).join("/") });
+  }
+  return found.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
+ * Write a ZIP (a .wgt is just a zip) with nothing but Node builtins.
+ *
+ * This used to shell out to `zip` or `python3`, neither of which exists on a
+ * stock Windows box — packaging simply could not be verified locally there.
+ * Entries are stored sorted with a fixed timestamp so repeat builds of the same
+ * dist/ are byte-identical.
+ */
 function zipDirectory(sourceDir, outFile) {
   if (existsSync(outFile)) rmSync(outFile);
   mkdirSync(dirname(outFile), { recursive: true });
 
-  if (commandExists("zip")) {
-    run("zip", ["-r", "-q", outFile, "."], { cwd: sourceDir });
-    return;
+  const files = listFilesRecursive(sourceDir);
+  const locals = [];
+  const central = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = Buffer.from(file.name, "utf8");
+    const contents = readFileSync(file.absolute);
+    const deflated = deflateRawSync(contents, { level: 9 });
+    // Never let "compression" grow an entry — fall back to stored.
+    const useDeflate = deflated.length < contents.length;
+    const payload = useDeflate ? deflated : contents;
+    const method = useDeflate ? 8 : 0;
+    const crc = crc32(contents);
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4); // version needed
+    localHeader.writeUInt16LE(0x0800, 6); // UTF-8 names
+    localHeader.writeUInt16LE(method, 8);
+    localHeader.writeUInt16LE(0, 10); // mod time (fixed)
+    localHeader.writeUInt16LE(0x0021, 12); // mod date (fixed: 1980-01-01)
+    localHeader.writeUInt32LE(crc, 14);
+    localHeader.writeUInt32LE(payload.length, 18);
+    localHeader.writeUInt32LE(contents.length, 22);
+    localHeader.writeUInt16LE(nameBytes.length, 26);
+    localHeader.writeUInt16LE(0, 28); // extra field length
+    locals.push(localHeader, nameBytes, payload);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4); // version made by
+    centralHeader.writeUInt16LE(20, 6); // version needed
+    centralHeader.writeUInt16LE(0x0800, 8);
+    centralHeader.writeUInt16LE(method, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0x0021, 14);
+    centralHeader.writeUInt32LE(crc, 16);
+    centralHeader.writeUInt32LE(payload.length, 20);
+    centralHeader.writeUInt32LE(contents.length, 24);
+    centralHeader.writeUInt16LE(nameBytes.length, 28);
+    centralHeader.writeUInt16LE(0, 30); // extra
+    centralHeader.writeUInt16LE(0, 32); // comment
+    centralHeader.writeUInt16LE(0, 34); // disk number
+    centralHeader.writeUInt16LE(0, 36); // internal attrs
+    centralHeader.writeUInt32LE((0o100644 << 16) >>> 0, 38); // external attrs (regular file)
+    centralHeader.writeUInt32LE(offset, 42);
+    central.push(centralHeader, nameBytes);
+
+    offset += localHeader.length + nameBytes.length + payload.length;
   }
 
-  if (commandExists("python3")) {
-    const script = `
-import pathlib, sys, zipfile
-src = pathlib.Path(sys.argv[1])
-out = pathlib.Path(sys.argv[2])
-with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-    for path in src.rglob("*"):
-        if path.is_file():
-            zf.write(path, path.relative_to(src).as_posix())
-`;
-    const result = spawnSync("python3", ["-c", script, sourceDir, outFile], {
-      cwd: root,
-      stdio: "inherit",
-    });
-    if (result.status !== 0) process.exit(result.status ?? 1);
-    return;
-  }
+  const centralBuffer = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralBuffer.length, 12);
+  end.writeUInt32LE(offset, 16);
 
-  console.error("Need `zip` or `python3` on PATH to create store packages.");
-  process.exit(1);
+  writeFileSync(outFile, Buffer.concat([...locals, centralBuffer, end]));
 }
 
 function maybeSignTizen({ distDir, signedOut, buildHint }) {

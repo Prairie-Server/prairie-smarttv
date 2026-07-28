@@ -1,6 +1,5 @@
 import { memo, type KeyboardEvent } from "react";
 import { Check } from "lucide-react";
-import { POSTER_WIDTH } from "../lib/artworkUrl";
 import { ArtworkImage } from "./ArtworkImage";
 
 interface PosterCardProps {
@@ -65,7 +64,7 @@ function PosterCardInner({
             avifSrc={posterAvifUrl}
             alt=""
             placeholderLabel={title}
-            widthHint={POSTER_WIDTH}
+            role="poster"
             width={155}
             height={232}
             loading={imageLoading}

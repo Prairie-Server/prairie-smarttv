@@ -1,5 +1,14 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -37,6 +46,39 @@ function run(command, commandArgs) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+/**
+ * Drop the WOFF 1.0 fallbacks from a TV package.
+ *
+ * @fontsource ships every face as woff2 + woff. Every TV WebView we target is
+ * Chromium 69 or newer and woff2 has been supported since Chromium 36, so the
+ * woff copies are dead weight (~80 kB) that ride along in the .wgt forever.
+ * The `src:` fallback is stripped from the CSS too, so nothing points at a file
+ * the package no longer contains.
+ */
+function pruneLegacyFonts(outDir) {
+  const assets = join(outDir, "assets");
+  if (!existsSync(assets)) return;
+
+  let removedBytes = 0;
+  for (const name of readdirSync(assets)) {
+    if (!name.endsWith(".woff")) continue;
+    const file = join(assets, name);
+    removedBytes += statSync(file).size;
+    rmSync(file);
+  }
+  if (removedBytes === 0) return;
+
+  for (const name of readdirSync(assets)) {
+    if (!name.endsWith(".css")) continue;
+    const file = join(assets, name);
+    const css = readFileSync(file, "utf8");
+    // Only the trailing woff entry of a woff2-first `src:` list.
+    const pruned = css.replace(/,url\([^)]*\.woff\)\s*format\((["']?)woff\1\)/g, "");
+    if (pruned !== css) writeFileSync(file, pruned);
+  }
+  console.log(`Pruned WOFF 1.0 fallbacks (${(removedBytes / 1024).toFixed(1)} kB)`);
 }
 
 function copyPlatformAssets(platformName, outDir) {
@@ -80,6 +122,7 @@ if (platform === "tizen-legacy") {
   mkdirSync(outDir, { recursive: true });
   cpSync(webOut, outDir, { recursive: true });
   copyPlatformAssets("tizen-legacy", outDir);
+  pruneLegacyFonts(outDir);
   console.log(`Packaging stub ready in ${outDir}/`);
   process.exit(0);
 }
@@ -103,5 +146,6 @@ rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 cpSync(dist, outDir, { recursive: true });
 copyPlatformAssets(platform, outDir);
+pruneLegacyFonts(outDir);
 
 console.log(`Packaging stub ready in ${outDir}/`);

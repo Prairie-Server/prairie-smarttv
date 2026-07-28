@@ -19,9 +19,11 @@ import { FocusButton } from "../components/FocusButton";
 import { isActionableTarget } from "../focus/isActionableTarget";
 import { isArrowKey } from "../focus/spatialFocusKeys";
 import { subscribeBackKeys } from "../platform/backKey";
+import { isSelectKey, remoteKeyName } from "../platform/remoteKeys";
 import { detectPlatform } from "../platform/detect";
 import { resolveAdvertisedCapabilities } from "../platform/tizen/deviceCapabilities";
 import { PlayerHost } from "../player/PlayerHost";
+import { clearPlayerSurface, usePlayerSurface } from "../player/playerSurface";
 import { selectPlayerBackend } from "../player/createPlayer";
 import { humanizePlaybackError } from "../player/humanizePlaybackError";
 import { toMediaTime, toPlayerTime } from "../player/mediaTimeline";
@@ -105,6 +107,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const seekByRef = useRef<(delta: number) => void>(() => undefined);
   const bumpControlsRef = useRef<() => void>(() => undefined);
   const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
+  const playPauseRef = useRef<HTMLButtonElement | null>(null);
+  /** Read by the Back subscription, which is mounted once. */
+  const menuRef = useRef<MenuMode>("none");
 
   const deviceCaps = useMemo(
     () =>
@@ -151,27 +156,19 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   }, [activeSubtitleIndex]);
 
   useEffect(() => {
+    menuRef.current = menu;
+  }, [menu]);
+
+  useEffect(() => {
     return () => {
       if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
       if (backgroundStopTimer.current != null) window.clearTimeout(backgroundStopTimer.current);
     };
   }, []);
 
-  // Clear opaque app backgrounds so the AVPlay plane shows through.
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add("player-active");
-    document.body.classList.add("player-active");
-    return () => {
-      root.classList.remove("player-active");
-      document.body.classList.remove("player-active");
-    };
-  }, []);
-
-  function clearPlayerActive(): void {
-    document.documentElement.classList.remove("player-active");
-    document.body.classList.remove("player-active");
-  }
+  // Clear opaque app backgrounds so the AVPlay plane shows through; the cleanup
+  // also covers exits that bypass handleExit (error boundary, route change).
+  usePlayerSurface();
 
   useEffect(() => {
     let cancelled = false;
@@ -263,13 +260,23 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   useEffect(() => {
     return subscribeBackKeys((event) => {
       event.preventDefault?.();
+      // Back inside the Audio / Subs menu dismisses the menu — only a Back with
+      // no open menu leaves the stream.
+      if (menuRef.current !== "none") {
+        setMenu("none");
+        menuRef.current = "none";
+        bumpControlsRef.current();
+        playPauseRef.current?.focus({ preventScroll: true });
+        return;
+      }
       void handleExitRef.current();
     });
   }, []);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      const key = event.key;
+      // TVs deliver media/Back keys as bare vendor keyCodes.
+      const key = remoteKeyName(event);
       if (error) return;
 
       const chromeUp = controlsVisibleRef.current || menu !== "none";
@@ -280,8 +287,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       if (!chromeUp) {
         if (
           isArrowKey(key) ||
-          key === "Enter" ||
-          key === " " ||
+          isSelectKey(key) ||
           key === "MediaPlayPause" ||
           key === "MediaPlay" ||
           key === "MediaPause" ||
@@ -293,7 +299,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           event.preventDefault();
           event.stopPropagation();
           bumpControlsRef.current();
-          if (key === "Enter" || key === " " || key === "MediaPlayPause") {
+          // OK only brings the chrome back and parks focus on Play/Pause. It is
+          // the select button, not a transport key — the remote has dedicated
+          // play/pause keys for that.
+          if (isSelectKey(key)) {
+            focusPlayPauseSoon();
+          } else if (key === "MediaPlayPause") {
             setPlaying((p) => !p);
           } else if (key === "MediaPause") {
             setPlaying(false);
@@ -308,15 +319,20 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         return;
       }
 
-      if (key === "Enter" || key === " " || key === "MediaPlayPause") {
+      if (isSelectKey(key)) {
         if (menu !== "none") return;
         // OK/Enter on a chrome button must activate that button — not play/pause.
-        if (
-          (key === "Enter" || key === " ") &&
-          (isActionableTarget(event.target) || isActionableTarget(document.activeElement))
-        ) {
+        if (isActionableTarget(event.target) || isActionableTarget(document.activeElement)) {
           return;
         }
+        // Focus was lost (chrome just re-rendered): put it back on Play/Pause
+        // rather than toggling playback behind the user's back.
+        event.preventDefault();
+        bumpControlsRef.current();
+        focusPlayPauseSoon();
+        return;
+      }
+      if (key === "MediaPlayPause") {
         event.preventDefault();
         setPlaying((p) => !p);
         bumpControlsRef.current();
@@ -348,6 +364,14 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [menu, error]);
+
+  /** Park focus on Play/Pause once the chrome has painted. */
+  function focusPlayPauseSoon() {
+    const focusNow = () => playPauseRef.current?.focus({ preventScroll: true });
+    focusNow();
+    // The button may not exist yet when chrome is revealed by this same press.
+    window.setTimeout(focusNow, 0);
+  }
 
   function bumpControls() {
     if (error) {
@@ -556,7 +580,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     // Restore opaque backgrounds before navigating. If Back also backgrounds the
     // packaged app (unhandled tizenhwkey), a lingering player-active class left
     // only the TV wallpaper / empty shell visible.
-    clearPlayerActive();
+    clearPlayerSurface();
     // Navigate first so we never sit on a transparent player plane / body gradient
     // while awaiting network teardown.
     onExit();
@@ -909,6 +933,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
                 −15s
               </FocusButton>
               <FocusButton
+                ref={playPauseRef}
                 autoFocus
                 icon={playing ? <Pause /> : <Play />}
                 onClick={() => {
@@ -1000,7 +1025,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
               </div>
             ) : null}
 
-            <p className="hint muted">OK toggles play · −15s / +15s seek · Back exits</p>
+            <p className="hint muted">
+              OK selects · Play/Pause key toggles · −15s / +15s seek · Back exits
+            </p>
           </div>
         </div>
       ) : (

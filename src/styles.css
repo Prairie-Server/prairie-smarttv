@@ -2086,6 +2086,14 @@ button:focus,
   inset: 0;
 }
 
+/* Low-resolution rung shown while the full hero decodes. It sits underneath the
+ * real image, which fades in on top once it is ready. No blur filter: a blurred
+ * full-bleed layer is exactly the kind of repaint these panels cannot afford. */
+.artwork-image__img--preview {
+  position: absolute;
+  inset: 0;
+}
+
 .poster-card__placeholder {
   width: 100%;
   height: 100%;
@@ -2407,6 +2415,15 @@ button:focus,
   width: min(100%, 22rem);
   height: 7.5rem;
   min-height: 7.5rem;
+}
+
+/* Title shown in the logo's place until the logo image decodes. Absolute so the
+ * two never stack: the box keeps its reserved height either way, so swapping one
+ * for the other cannot shift the buttons below. */
+.detail-hero__logo-title {
+  position: absolute;
+  inset: auto 0 0 0;
+  margin: 0;
 }
 
 .detail-hero__logo .artwork-image,

@@ -210,7 +210,8 @@ describe("ItemDetailScreen", () => {
     expect(container.querySelector(".detail-hero__copy .browse-title")?.textContent).toContain(
       "Movie m1",
     );
-    expect(container.querySelector(".detail-hero__logo:not([hidden])")).toBeNull();
+    // The logo box holds the title and reserves its height; only the image waits.
+    expect(container.querySelector(".detail-hero__logo img")).toBeNull();
     await act(async () => {
       poster?.dispatchEvent(new Event("load"));
     });
@@ -221,8 +222,9 @@ describe("ItemDetailScreen", () => {
       logo?.dispatchEvent(new Event("load"));
     });
     await settle();
-    expect(container.querySelector(".detail-hero__logo:not([hidden])")).not.toBeNull();
-    expect(container.querySelector(".detail-hero__copy .browse-title")).toBeNull();
+    expect(container.querySelector(".detail-hero__logo img")).not.toBeNull();
+    // Title is dropped only once the logo has actually decoded.
+    expect(container.querySelector(".detail-hero__logo-title")).toBeNull();
   });
 
   it("plays from item-detail versions without a watch round-trip", async () => {
@@ -261,12 +263,14 @@ describe("ItemDetailScreen", () => {
   it("defers cast photos until the hero backdrop settles", async () => {
     await renderScreen();
     await settle();
-    expect(container.querySelector(".cast-rail")).toBeNull();
+    // The rail reserves its space immediately; only the portraits wait, so the
+    // section cannot shift layout when they arrive.
+    expect(container.querySelectorAll(".cast-rail img").length).toBe(0);
     const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
     await act(async () => {
       hero?.dispatchEvent(new Event("load"));
     });
     await settle(450);
-    expect(container.querySelector(".cast-rail")).not.toBeNull();
+    expect(container.querySelectorAll(".cast-rail img").length).toBeGreaterThan(0);
   });
 });

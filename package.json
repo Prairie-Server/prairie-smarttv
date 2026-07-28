@@ -12,6 +12,8 @@
     "lint": "oxlint .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
+    "optimize:png": "node scripts/optimize-png.mjs",
+    "optimize:png:check": "node scripts/optimize-png.mjs --check",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

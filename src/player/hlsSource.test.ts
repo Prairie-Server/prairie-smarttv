@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isHlsSource, resolveHtml5Source, TV_HLS_CONFIG } from "./hlsSource";
+import { isHlsSource, isMseHlsCapable, resolveHtml5Source, TV_HLS_CONFIG } from "./hlsSource";
 
 describe("isHlsSource", () => {
   it("detects manifests by extension, ignoring query and fragment", () => {
@@ -59,5 +59,34 @@ describe("TV_HLS_CONFIG", () => {
     expect(TV_HLS_CONFIG.maxBufferLength).toBeLessThanOrEqual(30);
     expect(TV_HLS_CONFIG.maxMaxBufferLength).toBeLessThanOrEqual(60);
     expect(TV_HLS_CONFIG.backBufferLength).toBeLessThanOrEqual(30);
+  });
+});
+
+describe("isMseHlsCapable", () => {
+  it("is false without MediaSource", () => {
+    expect(isMseHlsCapable(undefined)).toBe(false);
+  });
+
+  it("is false when isTypeSupported is missing", () => {
+    expect(isMseHlsCapable({} as unknown as typeof MediaSource)).toBe(false);
+  });
+
+  it("is true when the H.264/AAC MSE codec string is supported", () => {
+    const fake = { isTypeSupported: (type: string) => type.includes("avc1") };
+    expect(isMseHlsCapable(fake as unknown as typeof MediaSource)).toBe(true);
+  });
+
+  it("is false when nothing is supported", () => {
+    const fake = { isTypeSupported: () => false };
+    expect(isMseHlsCapable(fake as unknown as typeof MediaSource)).toBe(false);
+  });
+
+  it("treats a throwing isTypeSupported as unsupported", () => {
+    const fake = {
+      isTypeSupported: () => {
+        throw new Error("nope");
+      },
+    };
+    expect(isMseHlsCapable(fake as unknown as typeof MediaSource)).toBe(false);
   });
 });

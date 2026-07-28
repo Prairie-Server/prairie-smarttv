@@ -1,7 +1,9 @@
-// Runtime resolves to the light build via the Vite alias in vite.config.ts —
-// full typings, ~35% smaller than the default bundle.
-import Hls, { Events as HlsEvents, ErrorTypes as HlsErrorTypes } from "hls.js";
-import { resolveHtml5Source, TV_HLS_CONFIG } from "./hlsSource";
+// hls.js is loaded on demand, never at startup. It is ~40% of the app bundle and
+// only the HTML5 backend can use it — Tizen plays through AVPlay and webOS
+// through Starfish, so on a TV it is usually never parsed at all. Runtime
+// resolves to the light build via the Vite alias in vite.config.ts.
+import type HlsType from "hls.js";
+import { isMseHlsCapable, resolveHtml5Source, TV_HLS_CONFIG } from "./hlsSource";
 import type { CreateMediaPlayerOptions, MediaPlayer } from "./types";
 
 export function createHtml5Player(options: CreateMediaPlayerOptions): MediaPlayer {
@@ -32,9 +34,11 @@ export function createHtml5Player(options: CreateMediaPlayerOptions): MediaPlaye
   video.addEventListener("timeupdate", onTimeUpdate);
   options.container.replaceChildren(video);
 
-  const autoplay = options.autoplay !== false;
+  // Mutable: the manifest can land after the user has already hit pause, and a
+  // deferred hls.js load makes that window wide enough to matter.
+  let wantPlay = options.autoplay !== false;
   const startPlayback = () => {
-    if (!autoplay) return;
+    if (!wantPlay) return;
     void video.play().catch((err: unknown) => {
       options.onError?.(err instanceof Error ? err.message : String(err));
     });
@@ -44,38 +48,62 @@ export function createHtml5Player(options: CreateMediaPlayerOptions): MediaPlaye
     url: options.url,
     mimeType: options.mimeType,
     nativeHlsSupport: video.canPlayType("application/vnd.apple.mpegurl"),
-    hlsJsSupported: Hls.isSupported(),
+    // Probed directly instead of via `Hls.isSupported()` so the module stays
+    // unloaded for sources that will never need it.
+    hlsJsSupported: isMseHlsCapable(),
   });
 
-  let hls: Hls | null = null;
+  let hls: HlsType | null = null;
+  let destroyed = false;
 
   if (sourceKind === "hls-js") {
-    hls = new Hls(TV_HLS_CONFIG);
-    // Recovery is attempted once per failure class; a second failure of the same
-    // kind is reported so the UI shows an error instead of buffering forever.
-    let mediaRecoveryUsed = false;
-    let networkRecoveryUsed = false;
-
-    hls.on(HlsEvents.MANIFEST_PARSED, () => startPlayback());
-
-    hls.on(HlsEvents.ERROR, (_event, data) => {
-      if (!data.fatal) return;
-      if (data.type === HlsErrorTypes.MEDIA_ERROR && !mediaRecoveryUsed) {
-        mediaRecoveryUsed = true;
-        hls?.recoverMediaError();
+    void (async () => {
+      let Hls: typeof HlsType;
+      let HlsEvents: typeof HlsType.Events;
+      let HlsErrorTypes: typeof HlsType.ErrorTypes;
+      try {
+        const module = await import("hls.js");
+        Hls = module.default;
+        HlsEvents = module.Events;
+        HlsErrorTypes = module.ErrorTypes;
+      } catch (err) {
+        if (!destroyed) {
+          options.onError?.(err instanceof Error ? err.message : "Could not load the HLS player");
+        }
         return;
       }
-      if (data.type === HlsErrorTypes.NETWORK_ERROR && !networkRecoveryUsed) {
-        networkRecoveryUsed = true;
-        hls?.startLoad();
-        return;
-      }
-      const detail = data.details ? ` (${data.details})` : "";
-      options.onError?.(`Could not load stream${detail}`);
-    });
+      // Teardown can win the race against the import; do not attach to a dead
+      // video element.
+      if (destroyed) return;
 
-    hls.loadSource(options.url);
-    hls.attachMedia(video);
+      const instance = new Hls(TV_HLS_CONFIG);
+      hls = instance;
+      // Recovery is attempted once per failure class; a second failure of the same
+      // kind is reported so the UI shows an error instead of buffering forever.
+      let mediaRecoveryUsed = false;
+      let networkRecoveryUsed = false;
+
+      instance.on(HlsEvents.MANIFEST_PARSED, () => startPlayback());
+
+      instance.on(HlsEvents.ERROR, (_event, data) => {
+        if (!data.fatal) return;
+        if (data.type === HlsErrorTypes.MEDIA_ERROR && !mediaRecoveryUsed) {
+          mediaRecoveryUsed = true;
+          instance.recoverMediaError();
+          return;
+        }
+        if (data.type === HlsErrorTypes.NETWORK_ERROR && !networkRecoveryUsed) {
+          networkRecoveryUsed = true;
+          instance.startLoad();
+          return;
+        }
+        const detail = data.details ? ` (${data.details})` : "";
+        options.onError?.(`Could not load stream${detail}`);
+      });
+
+      instance.loadSource(options.url);
+      instance.attachMedia(video);
+    })();
   } else {
     video.src = options.url;
     startPlayback();
@@ -85,8 +113,14 @@ export function createHtml5Player(options: CreateMediaPlayerOptions): MediaPlaye
 
   return {
     backend: "html5",
-    play: () => video.play(),
-    pause: () => video.pause(),
+    play: () => {
+      wantPlay = true;
+      return video.play();
+    },
+    pause: () => {
+      wantPlay = false;
+      video.pause();
+    },
     seekTo: (seconds: number) => {
       if (Number.isFinite(seconds) && seconds >= 0) {
         video.currentTime = seconds;
@@ -118,6 +152,8 @@ export function createHtml5Player(options: CreateMediaPlayerOptions): MediaPlaye
       });
     },
     destroy: () => {
+      destroyed = true;
+      wantPlay = false;
       video.removeEventListener("error", onError);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("timeupdate", onTimeUpdate);

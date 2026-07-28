@@ -48,7 +48,9 @@ export function ProfileAvatar({
   return (
     <span className={classes} aria-hidden="true">
       {url ? (
-        <img className="profile-avatar__img" src={url} alt="" />
+        // Not an artwork-ladder object (no width rungs), so it stays a plain
+        // <img> — but it decodes off the paint path like every other image.
+        <img className="profile-avatar__img" src={url} alt="" decoding="async" loading="lazy" />
       ) : (
         <span className="profile-avatar__initial">{initial}</span>
       )}

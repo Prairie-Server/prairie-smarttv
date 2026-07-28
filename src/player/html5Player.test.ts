@@ -63,17 +63,23 @@ vi.mock("hls.js", () => ({
 }));
 
 let container: HTMLDivElement;
+let mseSupported = true;
 
-function createPlayer(overrides: Record<string, unknown> = {}) {
-  return import("./html5Player").then(({ createHtml5Player }) =>
-    createHtml5Player({
-      url: "https://tv.example/transcode/abc/index.m3u8",
-      container,
-      backend: "html5",
-      mimeType: "application/vnd.apple.mpegurl",
-      ...overrides,
-    } as Parameters<typeof createHtml5Player>[0]),
-  );
+/**
+ * hls.js is imported dynamically, so every HLS assertion has to run after the
+ * module promise settles.
+ */
+async function createPlayer(overrides: Record<string, unknown> = {}) {
+  const { createHtml5Player } = await import("./html5Player");
+  const player = createHtml5Player({
+    url: "https://tv.example/transcode/abc/index.m3u8",
+    container,
+    backend: "html5",
+    mimeType: "application/vnd.apple.mpegurl",
+    ...overrides,
+  } as Parameters<typeof createHtml5Player>[0]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return player;
 }
 
 function video(): HTMLVideoElement {
@@ -87,6 +93,11 @@ beforeEach(() => {
   document.body.append(container);
   FakeHls.instances = [];
   FakeHls.supported = true;
+  mseSupported = true;
+  // The backend now probes MSE itself rather than loading hls.js to ask it.
+  (globalThis as { MediaSource?: unknown }).MediaSource = {
+    isTypeSupported: () => mseSupported,
+  };
   // happy-dom resolves play() but jsdom-style errors are irrelevant here.
   HTMLMediaElement.prototype.play = vi.fn(async () => {});
   HTMLMediaElement.prototype.pause = vi.fn();
@@ -96,6 +107,7 @@ beforeEach(() => {
 
 afterEach(() => {
   container.remove();
+  delete (globalThis as { MediaSource?: unknown }).MediaSource;
   vi.restoreAllMocks();
 });
 
@@ -162,6 +174,22 @@ describe("createHtml5Player with HLS", () => {
       details: "manifestLoadTimeOut",
     });
     expect(onError).toHaveBeenCalledWith("Could not load stream (manifestLoadTimeOut)");
+    player.destroy();
+  });
+
+  it("does not resume when the manifest lands after the user paused", async () => {
+    const player = await createPlayer();
+    player.pause();
+    FakeHls.instances[0]?.emit(EVENTS.MANIFEST_PARSED);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    player.destroy();
+  });
+
+  it("falls back to a direct src when MSE cannot handle the codecs", async () => {
+    mseSupported = false;
+    const player = await createPlayer();
+    expect(FakeHls.instances).toHaveLength(0);
+    expect(video().getAttribute("src")).toBe("https://tv.example/transcode/abc/index.m3u8");
     player.destroy();
   });
 

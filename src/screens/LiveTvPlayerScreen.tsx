@@ -10,9 +10,10 @@ import {
   type LiveTvChannel,
 } from "../api/livetv";
 import { FocusButton } from "../components/FocusButton";
-import { isActionableTarget } from "../focus/isActionableTarget";
 import { subscribeBackKeys } from "../platform/backKey";
+import { remoteKeyName } from "../platform/remoteKeys";
 import { detectPlatform } from "../platform/detect";
+import { clearPlayerSurface, usePlayerSurface } from "../player/playerSurface";
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
 import { loadPlaybackSettings } from "../settings/playbackSettings";
@@ -46,15 +47,7 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add("player-active");
-    document.body.classList.add("player-active");
-    return () => {
-      root.classList.remove("player-active");
-      document.body.classList.remove("player-active");
-    };
-  }, []);
+  usePlayerSurface();
 
   useEffect(() => {
     let cancelled = false;
@@ -103,16 +96,22 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      const key = event.key;
-      if (key === "Enter" || key === " " || key === "MediaPlayPause") {
-        if (
-          (key === "Enter" || key === " ") &&
-          (isActionableTarget(event.target) || isActionableTarget(document.activeElement))
-        ) {
-          return;
-        }
+      // OK is left alone so it activates the focused control; only the remote's
+      // transport keys drive playback here.
+      const key = remoteKeyName(event);
+      if (key === "MediaPlayPause") {
         event.preventDefault();
         setPlaying((p) => !p);
+        return;
+      }
+      if (key === "MediaPlay") {
+        event.preventDefault();
+        setPlaying(true);
+        return;
+      }
+      if (key === "MediaPause") {
+        event.preventDefault();
+        setPlaying(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -135,8 +134,7 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
       /* ignore */
     }
     playerRef.current = null;
-    document.documentElement.classList.remove("player-active");
-    document.body.classList.remove("player-active");
+    clearPlayerSurface();
     // Navigate first — never await network on a transparent player plane.
     onExit();
     if (sid) {

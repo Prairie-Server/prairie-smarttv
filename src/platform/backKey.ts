@@ -1,4 +1,5 @@
 import { isBackKey } from "../focus/spatialFocusKeys";
+import { remoteKeyName } from "./remoteKeys";
 
 /**
  * Coalesce rapid duplicate Back events. Tizen often delivers both `tizenhwkey`
@@ -36,7 +37,10 @@ export type BackKeySubscription = {
  */
 export function subscribeBackKeys(onBack: (event: Event) => void): () => void {
   const onKeyDown = (event: KeyboardEvent) => {
-    if (!isBackKey(event.key) && event.key !== "BrowserBack") return;
+    // Tizen/webOS deliver Back as a bare keyCode (10009 / 461) with no usable
+    // `event.key`, so normalize before testing.
+    const key = remoteKeyName(event);
+    if (!isBackKey(key) && key !== "BrowserBack") return;
     if (event.defaultPrevented) return;
     if (!shouldHandleBackNow()) {
       event.preventDefault();

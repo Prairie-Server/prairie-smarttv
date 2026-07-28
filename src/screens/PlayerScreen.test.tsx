@@ -41,7 +41,7 @@ vi.mock("../api/startPlayback", () => ({
     stream_url: "/stream.m3u8",
     position: 0,
     duration_seconds: 120,
-    subtitle_urls: [],
+    subtitle_urls: [{ index: 0, language: "eng", codec: "webvtt", url: "/subs/eng.vtt" }],
     audio_track_index: 0,
     playback_info: { stream_type: "hls" },
   })),
@@ -188,20 +188,61 @@ describe("PlayerScreen chrome and exit", () => {
     expect(container.textContent?.includes("Pause")).toBe(playingBefore);
   });
 
-  it("reveals chrome and toggles play on OK after auto-hide", async () => {
+  /** Label of the middle transport button ("Play" / "Pause"). */
+  function transportLabel(): string {
+    const buttons = [...container.querySelectorAll(".player-controls button")];
+    return buttons[1]?.textContent?.trim() ?? "";
+  }
+
+  it("reveals chrome on OK after auto-hide without toggling playback", async () => {
     await renderPlayer();
     await settle(20);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4100);
     });
     expect(container.querySelector(".player-chrome")).toBeNull();
-    expect(container.textContent?.includes("Pause")).toBe(false);
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
     });
     expect(container.querySelector(".player-chrome")).not.toBeNull();
-    expect(container.textContent?.includes("Play")).toBe(true);
+    // Still playing: OK is the select key, not a transport key.
+    expect(transportLabel()).toBe("Pause");
+  });
+
+  it("toggles playback on the remote play/pause key", async () => {
+    await renderPlayer();
+    await settle(20);
+    expect(transportLabel()).toBe("Pause");
+
+    await act(async () => {
+      // Tizen delivers this as a bare keyCode with no usable `key`.
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Unidentified", keyCode: 10252, cancelable: true }),
+      );
+    });
+    expect(transportLabel()).toBe("Play");
+  });
+
+  it("closes the subtitle menu on Back instead of exiting", async () => {
+    await renderPlayer();
+    await settle(20);
+    const subs = [...container.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes("Subs"),
+    );
+    expect(subs).toBeTruthy();
+    await act(async () => {
+      subs?.click();
+    });
+    expect(container.querySelector(".player-menu")).not.toBeNull();
+
+    await act(async () => {
+      document.dispatchEvent(
+        Object.assign(new Event("tizenhwkey", { cancelable: true }), { keyName: "back" }),
+      );
+    });
+    expect(container.querySelector(".player-menu")).toBeNull();
+    expect(exited).toBe(false);
   });
 
   it("reveals chrome on D-pad after auto-hide", async () => {

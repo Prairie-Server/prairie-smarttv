@@ -1,3 +1,5 @@
+import { resolvePerformanceTier, type PerformanceTier } from "../perf/performanceTier";
+
 /**
  * Caps how many artwork images decode at once.
  *
@@ -10,15 +12,38 @@
  * thread) but jump ahead of lazy work via a priority lane.
  */
 
-/** Two at a time keeps D-pad responsive on mid-range Tizen/webOS SoCs. */
-const MAX_CONCURRENT_LOADS = 2;
+/**
+ * How many artwork loads may be in flight at once, by device tier.
+ *
+ * This was a flat 2 back when every image decoded synchronously on the paint
+ * path, and two was all a mid-range SoC could take without dropping D-pad input.
+ * Artwork now decodes asynchronously, so the cap is mostly protecting memory and
+ * the connection pool rather than the main thread — and a flat 2 was serialising
+ * a screenful of posters into ten round trips.
+ */
+const MAX_CONCURRENT_BY_TIER: Record<PerformanceTier, number> = {
+  high: 6,
+  balanced: 4,
+  low: 2,
+};
+
+let maxConcurrentLoads = MAX_CONCURRENT_BY_TIER[resolvePerformanceTier()];
+
+/** Re-read the tier (called when the performance mode setting changes). */
+export function refreshImageLoadConcurrency(
+  tier: PerformanceTier = resolvePerformanceTier(),
+): number {
+  maxConcurrentLoads = MAX_CONCURRENT_BY_TIER[tier];
+  pump();
+  return maxConcurrentLoads;
+}
 
 let active = 0;
 const priorityWaiting: Array<() => void> = [];
 const waiting: Array<() => void> = [];
 
 function pump(): void {
-  while (active < MAX_CONCURRENT_LOADS && (priorityWaiting.length > 0 || waiting.length > 0)) {
+  while (active < maxConcurrentLoads && (priorityWaiting.length > 0 || waiting.length > 0)) {
     const next = priorityWaiting.shift() ?? waiting.shift();
     if (!next) return;
     active += 1;
@@ -66,10 +91,11 @@ export function acquireImageSlot(
 }
 
 /** @internal Test helper. */
-export function resetImageLoadQueueForTests(): void {
+export function resetImageLoadQueueForTests(tier: PerformanceTier = "low"): void {
   active = 0;
   priorityWaiting.length = 0;
   waiting.length = 0;
+  maxConcurrentLoads = MAX_CONCURRENT_BY_TIER[tier];
 }
 
 /** @internal Test helper. */

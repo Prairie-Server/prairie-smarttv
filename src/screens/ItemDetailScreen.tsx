@@ -1,5 +1,5 @@
 import { ArrowLeft, Bookmark, CheckCircle2, Heart, Play, RotateCcw, Star } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import {
   fetchEpisodes,
@@ -22,15 +22,11 @@ import { ArtworkImage } from "../components/ArtworkImage";
 import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
+import { columnCountForWidth } from "../components/PosterGrid";
+import { currentViewportWidth, designPx, viewportScaleFactor } from "../ui/viewportScale";
 import { useBackKey } from "../focus/useBackKey";
+import { useNearViewport } from "../hooks/useNearViewport";
 import { useStableItemSelect } from "../hooks/useStableItemSelect";
-import {
-  BACKDROP_HERO_WIDTH,
-  LOGO_WIDTH,
-  POSTER_WIDTH,
-  PROFILE_WIDTH,
-  STILL_WIDTH,
-} from "../lib/artworkUrl";
 import {
   crewLine,
   episodeProgressRatio,
@@ -57,12 +53,17 @@ const SIMILAR_LIMIT = 6;
 const SIMILAR_FETCH_BATCH = 2;
 /** Only fetch once the row is genuinely being approached. */
 const SIMILAR_PREFETCH_MARGIN = "10% 0px";
+/** Episodes / cast sit below the fold; load their art as they are approached. */
+const SECTION_PREFETCH_MARGIN_PX = 240;
 /** And not before the hero backdrop has settled (episode/cast art must wait). */
 const SIMILAR_HERO_GRACE_MS = 400;
 /** Safety only: admit poster if the backdrop never fires onLoad/onError. */
 const HERO_SECONDARY_FALLBACK_MS = 8000;
 /** Episode cards mounted initially; the rest expand on demand. */
 const EPISODE_PAGE_SIZE = 8;
+/** Must track `.episode-grid` in styles.css — used for D-pad row jumps. */
+const EPISODE_MIN_COLUMN_WIDTH = 220;
+const EPISODE_GRID_GAP = 14;
 
 interface ItemDetailScreenProps {
   session: PrairieSession;
@@ -83,6 +84,95 @@ function episodeStill(episode: EpisodeSummary): string | null {
   const poster = urlText(episode.poster_url);
   return poster || null;
 }
+
+interface EpisodeCardProps {
+  episode: EpisodeSummary;
+  index: number;
+  /** Art is held back until the hero backdrop has decoded. */
+  showArt: boolean;
+  disabled: boolean;
+  autoFocus: boolean;
+  onPlay: (contentId: string, title: string) => void;
+}
+
+/**
+ * Memoized so hero art/logo readiness — which flips several times while the
+ * backdrop decodes — cannot re-render a whole season of cards behind it.
+ */
+const EpisodeCard = memo(function EpisodeCard({
+  episode,
+  index,
+  showArt,
+  disabled,
+  autoFocus,
+  onPlay,
+}: EpisodeCardProps) {
+  const still = episodeStill(episode);
+  const progress = episodeProgressRatio(episode);
+  const runtime = formatRuntimeMinutes(episode.runtime);
+  const airDate = formatAirDate(episode.air_date);
+  return (
+    <button
+      type="button"
+      className="episode-card"
+      data-focus-index={index}
+      autoFocus={autoFocus}
+      disabled={disabled}
+      onClick={() => onPlay(episode.content_id, episode.title)}
+    >
+      <div className="episode-card__still" aria-hidden="true">
+        {still && showArt ? (
+          <ArtworkImage
+            src={still}
+            alt=""
+            placeholderLabel={episode.title}
+            role="still"
+            width={280}
+            height={158}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : still ? (
+          <div className="poster-card__placeholder" aria-hidden="true">
+            {episode.title.slice(0, 1)}
+          </div>
+        ) : (
+          <div className="episode-card__still-empty">
+            <Play size={28} />
+          </div>
+        )}
+        <span className="episode-card__badge">
+          {episode.episode_number != null ? `E${episode.episode_number}` : "Ep"}
+        </span>
+        {episode.user_data?.played ? (
+          <span className="episode-card__watched">
+            <CheckCircle2 size={16} />
+          </span>
+        ) : null}
+        {progress != null ? (
+          <div className="poster-card__progress">
+            <span style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+        ) : null}
+      </div>
+      <span className="episode-card__body">
+        <strong>{episode.title}</strong>
+        <span className="muted episode-card__meta">
+          {[
+            episode.episode_number != null ? `Episode ${episode.episode_number}` : null,
+            runtime,
+            airDate,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+        {episode.overview ? (
+          <span className="muted episode-card__overview">{episode.overview}</span>
+        ) : null}
+      </span>
+    </button>
+  );
+});
 
 function FactRow({ tokens }: { tokens: FactToken[] }) {
   if (!tokens.length) return null;
@@ -137,6 +227,15 @@ export function ItemDetailScreen({
   const playButtonRef = useRef<HTMLButtonElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
   const watchCacheRef = useRef<Map<string, WatchDetail>>(new Map());
+
+  const episodeGridRef = useRef<HTMLDivElement | null>(null);
+  const [episodeColumns, setEpisodeColumns] = useState(4);
+
+  // Each below-the-fold section waits for its own slot to approach the viewport,
+  // so opening a title no longer mounts every episode still, cast portrait and
+  // recommendation in one commit.
+  const [episodesSlotRef, episodesNear] = useNearViewport(SECTION_PREFETCH_MARGIN_PX);
+  const [castSlotRef, castNear] = useNearViewport(SECTION_PREFETCH_MARGIN_PX);
 
   const [similarNear, setSimilarNear] = useState(false);
   const [heroSettled, setHeroSettled] = useState(false);
@@ -196,6 +295,8 @@ export function ItemDetailScreen({
   }, [detail, heroBackdropReady]);
 
   const similarWanted = similarNear && heroSettled;
+  // People art needs the hero out of the way *and* the rail in reach.
+  const showPeopleArt = heroSettled && castNear;
 
   const selectSimilar = useStableItemSelect(onOpenItem);
   const similarItemKey = useCallback((item: CatalogItem) => item.content_id, []);
@@ -412,6 +513,12 @@ export function ItemDetailScreen({
     node.focus({ preventScroll: true });
   }, [detail, loading, nextUp]);
 
+  // Stable identity for memoized children, with a fresh closure every render.
+  const playContentRef = useRef<(id: string, title: string) => void>(() => undefined);
+  const openEpisode = useCallback((id: string, title: string) => {
+    playContentRef.current(id, title);
+  }, []);
+
   async function resolveWatchDetail(id: string): Promise<WatchDetail> {
     const cached = watchCacheRef.current.get(id);
     if (cached) return cached;
@@ -455,6 +562,8 @@ export function ItemDetailScreen({
       setBusyPlay(false);
     }
   }
+
+  playContentRef.current = (id, title) => void playContent(id, title);
 
   async function toggleFavorite() {
     if (!detail) return;
@@ -536,6 +645,27 @@ export function ItemDetailScreen({
     () => episodes.slice(0, episodeMountCount),
     [episodes, episodeMountCount],
   );
+
+  // Publishing the column count keeps D-pad navigation on the indexed fast path.
+  // Without it spatial focus falls back to measuring every focusable on the page
+  // for each press, which is what made this screen stop answering the remote.
+  useLayoutEffect(() => {
+    const el = episodeGridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const scale = viewportScaleFactor(currentViewportWidth());
+      setEpisodeColumns(
+        columnCountForWidth(
+          el.clientWidth || 1280,
+          designPx(EPISODE_MIN_COLUMN_WIDTH, scale),
+          designPx(EPISODE_GRID_GAP, scale),
+        ),
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [visibleEpisodes.length]);
   const facts = detail
     ? isSeries
       ? seriesFacts(detail, seasons.length || detail.season_count)
@@ -576,6 +706,10 @@ export function ItemDetailScreen({
     return code ? `Play ${code}` : "Play";
   })();
 
+  const showStartOver = (!isSeries && movieResume) || (isSeries && episodeResume && nextUp != null);
+  // Play, optional Start Over, then the three circle toggles.
+  const actionCount = showStartOver ? 5 : 4;
+
   const studios = detail?.studios?.filter(Boolean) ?? [];
   const networks = detail?.networks?.filter(Boolean) ?? [];
   const cast = detail?.cast ?? [];
@@ -591,7 +725,7 @@ export function ItemDetailScreen({
             className="detail-hero__art"
             src={heroSrc}
             alt=""
-            widthHint={heroBackdropUrl ? BACKDROP_HERO_WIDTH : POSTER_WIDTH}
+            role={heroBackdropUrl ? "backdropHero" : "poster"}
             loading="eager"
             decoding="async"
             fetchPriority="high"
@@ -624,7 +758,7 @@ export function ItemDetailScreen({
                       src={heroPosterUrl}
                       alt=""
                       placeholderLabel={detail.title}
-                      widthHint={POSTER_WIDTH}
+                      role="poster"
                       width={220}
                       height={330}
                       loading="lazy"
@@ -642,27 +776,28 @@ export function ItemDetailScreen({
               <div className="detail-hero__copy">
                 <p className="eyebrow">{sources.join(" · ") || typeLabel(detail.type)}</p>
                 {heroLogoUrl ? (
-                  <>
-                    {!heroLogoReady ? <h1 className="browse-title">{detail.title}</h1> : null}
-                    {showHeroLogo ? (
-                      <div
-                        className="detail-hero__logo"
-                        hidden={!heroLogoReady}
-                        aria-hidden={!heroLogoReady}
-                      >
-                        <ArtworkImage
-                          src={heroLogoUrl}
-                          alt={detail.title}
-                          widthHint={LOGO_WIDTH}
-                          width={352}
-                          height={120}
-                          loading="lazy"
-                          decoding="async"
-                          onLoad={() => setHeroLogoReady(true)}
-                        />
-                      </div>
+                  // The logo box always occupies its reserved height, and the
+                  // title sits inside it until the logo has decoded. It must NOT
+                  // be `hidden`: that is `display: none`, under which a lazy
+                  // image never loads — so the logo waited to be shown, and was
+                  // only shown once it loaded. Titles never became logos at all.
+                  <div className="detail-hero__logo">
+                    {!heroLogoReady ? (
+                      <h1 className="browse-title detail-hero__logo-title">{detail.title}</h1>
                     ) : null}
-                  </>
+                    {showHeroLogo ? (
+                      <ArtworkImage
+                        src={heroLogoUrl}
+                        alt={detail.title}
+                        role="logo"
+                        width={352}
+                        height={120}
+                        loading="eager"
+                        decoding="async"
+                        onLoad={() => setHeroLogoReady(true)}
+                      />
+                    ) : null}
+                  </div>
                 ) : (
                   <h1 className="browse-title">{detail.title}</h1>
                 )}
@@ -687,11 +822,16 @@ export function ItemDetailScreen({
                 {directed ? <p className="detail-crew muted">{directed}</p> : null}
                 {starring ? <p className="detail-starring muted">{starring}</p> : null}
 
-                <div className="row-actions detail-actions">
+                <div
+                  className="row-actions detail-actions"
+                  data-focus-container="horizontal"
+                  data-focus-count={actionCount}
+                >
                   {!isSeries ? (
                     <FocusButton
                       ref={playButtonRef}
                       autoFocus
+                      data-focus-index={0}
                       icon={<Play />}
                       disabled={busyPlay}
                       onClick={() => void playContent(contentId, detail.title)}
@@ -702,6 +842,7 @@ export function ItemDetailScreen({
                     <FocusButton
                       ref={playButtonRef}
                       autoFocus
+                      data-focus-index={0}
                       icon={<Play />}
                       disabled={busyPlay || !seriesPlayReady}
                       onClick={() => {
@@ -712,9 +853,10 @@ export function ItemDetailScreen({
                       {playLabel}
                     </FocusButton>
                   )}
-                  {(!isSeries && movieResume) || (isSeries && episodeResume && nextUp) ? (
+                  {showStartOver ? (
                     <FocusButton
                       variant="secondary"
+                      data-focus-index={1}
                       icon={<RotateCcw />}
                       disabled={busyPlay}
                       onClick={() =>
@@ -730,6 +872,7 @@ export function ItemDetailScreen({
                   ) : null}
                   <FocusButton
                     variant="circle"
+                    data-focus-index={showStartOver ? 2 : 1}
                     active={Boolean(detail.user_state?.is_favorite)}
                     disabled={busyAction}
                     aria-label={
@@ -740,6 +883,7 @@ export function ItemDetailScreen({
                   />
                   <FocusButton
                     variant="circle"
+                    data-focus-index={showStartOver ? 3 : 2}
                     active={Boolean(detail.user_state?.in_watchlist)}
                     disabled={busyAction}
                     aria-label={
@@ -752,6 +896,7 @@ export function ItemDetailScreen({
                   />
                   <FocusButton
                     variant="circle"
+                    data-focus-index={showStartOver ? 4 : 3}
                     active={Boolean(detail.user_state?.played)}
                     disabled={busyAction}
                     aria-label={detail.user_state?.played ? "Mark unwatched" : "Mark watched"}
@@ -773,7 +918,7 @@ export function ItemDetailScreen({
       </div>
 
       {isSeries ? (
-        <div className="detail-episodes">
+        <div className="detail-episodes" ref={episodesSlotRef}>
           <div className="detail-section-header">
             <div>
               <p className="eyebrow">
@@ -788,12 +933,19 @@ export function ItemDetailScreen({
             ) : null}
           </div>
           {seasons.length > 1 ? (
-            <div className="season-tabs" role="tablist" aria-label="Seasons">
-              {seasons.map((season) => (
+            <div
+              className="season-tabs"
+              role="tablist"
+              aria-label="Seasons"
+              data-focus-container="horizontal"
+              data-focus-count={seasons.length}
+            >
+              {seasons.map((season, index) => (
                 <button
                   key={season.season_number}
                   type="button"
                   role="tab"
+                  data-focus-index={index}
                   aria-selected={seasonNumber === season.season_number}
                   className={`season-chip${seasonNumber === season.season_number ? " is-active" : ""}`}
                   onClick={() => setSeasonNumber(season.season_number)}
@@ -811,81 +963,25 @@ export function ItemDetailScreen({
 
           {episodesLoading ? <p className="muted">Loading episodes…</p> : null}
 
-          <div className="episode-grid">
+          <div
+            className="episode-grid"
+            ref={episodeGridRef}
+            data-focus-container="grid"
+            data-focus-columns={episodeColumns}
+            data-focus-count={visibleEpisodes.length}
+          >
             {!episodesLoading
-              ? visibleEpisodes.map((episode, index) => {
-                  const still = episodeStill(episode);
-                  const progress = episodeProgressRatio(episode);
-                  const runtime = formatRuntimeMinutes(episode.runtime);
-                  const airDate = formatAirDate(episode.air_date);
-                  return (
-                    <button
-                      key={episode.content_id}
-                      type="button"
-                      className="episode-card"
-                      autoFocus={index === 0 && !nextUp}
-                      disabled={busyPlay}
-                      onClick={() => void playContent(episode.content_id, episode.title)}
-                    >
-                      <div className="episode-card__still" aria-hidden="true">
-                        {still && heroSettled ? (
-                          <ArtworkImage
-                            src={still}
-                            alt=""
-                            placeholderLabel={episode.title}
-                            widthHint={STILL_WIDTH}
-                            width={280}
-                            height={158}
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        ) : still ? (
-                          <div className="poster-card__placeholder" aria-hidden="true">
-                            {episode.title.slice(0, 1)}
-                          </div>
-                        ) : (
-                          <div className="episode-card__still-empty">
-                            <Play size={28} />
-                          </div>
-                        )}
-                        <span className="episode-card__badge">
-                          {episode.episode_number != null ? `E${episode.episode_number}` : "Ep"}
-                        </span>
-                        {episode.user_data?.played ? (
-                          <span className="episode-card__watched">
-                            <CheckCircle2 size={16} />
-                          </span>
-                        ) : null}
-                        {progress != null ? (
-                          <div className="poster-card__progress">
-                            <span
-                              style={{
-                                width: `${Math.round(progress * 100)}%`,
-                              }}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                      <span className="episode-card__body">
-                        <strong>{episode.title}</strong>
-                        <span className="muted episode-card__meta">
-                          {[
-                            episode.episode_number != null
-                              ? `Episode ${episode.episode_number}`
-                              : null,
-                            runtime,
-                            airDate,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                        {episode.overview ? (
-                          <span className="muted episode-card__overview">{episode.overview}</span>
-                        ) : null}
-                      </span>
-                    </button>
-                  );
-                })
+              ? visibleEpisodes.map((episode, index) => (
+                  <EpisodeCard
+                    key={episode.content_id}
+                    episode={episode}
+                    index={index}
+                    showArt={heroSettled && episodesNear}
+                    disabled={busyPlay}
+                    autoFocus={index === 0 && !nextUp}
+                    onPlay={openEpisode}
+                  />
+                ))
               : null}
           </div>
           {!episodesLoading && episodes.length > episodeMountCount ? (
@@ -912,9 +1008,11 @@ export function ItemDetailScreen({
         </div>
       ) : null}
 
-      {/* Cast/crew photos compete with the hero for the decode queue — wait. */}
-      {heroSettled && (cast.length > 0 || crew.length > 0) ? (
-        <div className="detail-body-section">
+      {/* Cast/crew photos compete with the hero for the decode queue, and sit
+          below the fold: their art waits for the hero AND for the rail to be
+          approached. Mounting all of them at once is what froze the remote. */}
+      {cast.length > 0 || crew.length > 0 ? (
+        <div className="detail-body-section" ref={castSlotRef}>
           {cast.length > 0 ? (
             <>
               <div className="detail-section-header">
@@ -930,16 +1028,20 @@ export function ItemDetailScreen({
                     className="cast-card"
                   >
                     <div className="cast-card__photo" aria-hidden="true">
-                      {member.photo_url ? (
+                      {member.photo_url && showPeopleArt ? (
                         <ArtworkImage
                           src={member.photo_url}
                           alt=""
                           placeholderLabel={member.name}
-                          widthHint={PROFILE_WIDTH}
+                          role="portrait"
                           width={120}
                           height={120}
                           loading="lazy"
                         />
+                      ) : member.photo_url ? (
+                        <div className="cast-card__photo-empty">
+                          {(member.name ?? "?").slice(0, 1)}
+                        </div>
                       ) : (
                         <div className="cast-card__photo-empty">
                           {(member.name ?? "?").slice(0, 1)}
@@ -973,16 +1075,20 @@ export function ItemDetailScreen({
                     className="cast-card"
                   >
                     <div className="cast-card__photo" aria-hidden="true">
-                      {member.photo_url ? (
+                      {member.photo_url && showPeopleArt ? (
                         <ArtworkImage
                           src={member.photo_url}
                           alt=""
                           placeholderLabel={member.name}
-                          widthHint={PROFILE_WIDTH}
+                          role="portrait"
                           width={120}
                           height={120}
                           loading="lazy"
                         />
+                      ) : member.photo_url ? (
+                        <div className="cast-card__photo-empty">
+                          {(member.name ?? "?").slice(0, 1)}
+                        </div>
                       ) : (
                         <div className="cast-card__photo-empty">
                           {(member.name ?? "?").slice(0, 1)}

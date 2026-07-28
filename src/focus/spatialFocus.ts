@@ -164,6 +164,34 @@ function listFocusContainers(root: ParentNode = document): HTMLElement[] {
   });
 }
 
+/**
+ * Nearest mounted item at or before `index` in this container.
+ *
+ * Only used when *entering* a container from another one. Rows can be ragged —
+ * a Live TV guide row has Watch plus zero to two Record buttons — and without
+ * this an ArrowDown from column 2 would find no column 2 in the next row and
+ * silently skip past it to a later row. Clamping inside a container is still
+ * wrong (it would trap ArrowDown at the end of a grid), so this stays here.
+ */
+function focusNearestContainerIndex(container: HTMLElement, index: number): HTMLElement | null {
+  const exact = focusAtContainerIndex(container, index);
+  if (exact) return exact;
+  const items = listContainerFocusables(container);
+  if (!items.length) return null;
+  let best: HTMLElement | null = null;
+  let bestIndex = -1;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    const itemIndex = parseAbsoluteIndex(item, i);
+    if (itemIndex <= index && itemIndex > bestIndex) {
+      best = item;
+      bestIndex = itemIndex;
+    }
+  }
+  if (best) lastIndexByContainer.set(container, bestIndex);
+  return best;
+}
+
 function findAcrossContainers(
   fromContainer: HTMLElement,
   key: "ArrowUp" | "ArrowDown",
@@ -176,7 +204,7 @@ function findAcrossContainers(
   for (let i = fromIndex + step; i >= 0 && i < containers.length; i += step) {
     const target = containers[i]!;
     const remembered = lastIndexByContainer.get(target);
-    const next = focusAtContainerIndex(target, remembered ?? preferredIndex);
+    const next = focusNearestContainerIndex(target, remembered ?? preferredIndex);
     if (next) return next;
   }
   return null;

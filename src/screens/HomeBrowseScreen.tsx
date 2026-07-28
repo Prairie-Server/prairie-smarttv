@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogItem } from "../api/catalog";
 import { ApiError } from "../api/client";
 import { fetchHomeSections, type HomeSection } from "../api/home";
+import { takeHomePrefetch } from "../api/homePrefetch";
 import type { LiveTvChannel } from "../api/livetv";
 import { HomeHero } from "../components/HomeHero";
 import { LandscapeCard } from "../components/LandscapeCard";
@@ -223,7 +224,10 @@ export function HomeBrowseScreen({
     void (async () => {
       setError(null);
       try {
-        const next = await fetchHomeSections(session);
+        // boot() may already have this request in flight — join it rather than
+        // starting a second one.
+        const prefetched = takeHomePrefetch(session.serverUrl, session.profileId);
+        const next = (await prefetched) ?? (await fetchHomeSections(session));
         if (!cancelled) {
           const populated = next.filter((s) => s.items.length > 0);
           const rowCount = nonFeaturedRowCount(populated);

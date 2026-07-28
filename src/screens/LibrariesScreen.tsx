@@ -71,7 +71,7 @@ export function LibrariesScreen({ session, onOpenLibrary }: LibrariesScreenProps
       {!loading && !error && libraries.length === 0 ? (
         <p className="muted">No libraries are available for this profile.</p>
       ) : null}
-      <div className="library-grid">
+      <div className="library-grid" data-focus-container="grid" data-focus-count={libraries.length}>
         {!loading
           ? libraries.map((library, index) => {
               const poster = library.poster_url?.trim();
@@ -80,11 +80,18 @@ export function LibrariesScreen({ session, onOpenLibrary }: LibrariesScreenProps
                   key={library.id}
                   type="button"
                   className={`library-card${poster ? " library-card--art" : ""}`}
+                  data-focus-index={index}
                   autoFocus={index === 0}
                   onClick={() => onOpenLibrary(library)}
                 >
                   {poster ? (
-                    <ArtworkImage className="library-card__art" src={poster} alt="" />
+                    <ArtworkImage
+                      className="library-card__art"
+                      src={poster}
+                      alt=""
+                      role="libraryTile"
+                      loading="lazy"
+                    />
                   ) : (
                     <span className="library-card__icon" aria-hidden="true">
                       {libraryIcon(library.type)}

@@ -145,6 +145,7 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
               <ArtworkImage
                 src={item.imageUrl}
                 alt=""
+                role="channel"
                 placeholderLabel={item.title}
                 loading="lazy"
               />

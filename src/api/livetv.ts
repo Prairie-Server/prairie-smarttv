@@ -237,11 +237,59 @@ export function channelDisplayLabel(channel: LiveTvChannel): string {
   return name || `Channel ${channel.number_override || channel.number}`;
 }
 
+/**
+ * Guide entries grouped by channel and sorted by start time.
+ *
+ * Built once per guide fetch. Looking a channel up used to filter *and sort*
+ * the whole program array per row, which on a 100-channel lineup meant
+ * thousands of date parses and a fresh array allocation on every render.
+ */
+export type GuideIndex = Map<string, LiveTvProgram[]>;
+
+export function indexProgramsByChannel(programs: LiveTvProgram[]): GuideIndex {
+  const index: GuideIndex = new Map();
+  for (const program of programs) {
+    const list = index.get(program.channel_id);
+    if (list) list.push(program);
+    else index.set(program.channel_id, [program]);
+  }
+  for (const list of index.values()) {
+    list.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  }
+  return index;
+}
+
 function programsForChannel(programs: LiveTvProgram[], channelId: string): LiveTvProgram[] {
-  return programs
-    .filter((p) => p.channel_id === channelId)
-    .slice()
-    .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  return indexProgramsByChannel(programs).get(channelId) ?? [];
+}
+
+/** Pick the program airing "now" for a channel from a prebuilt index. */
+export function currentProgramInIndex(
+  index: GuideIndex,
+  channelId: string,
+  nowMs: number = Date.now(),
+): LiveTvProgram | null {
+  for (const program of index.get(channelId) ?? []) {
+    const start = Date.parse(program.start);
+    const stop = Date.parse(program.stop);
+    if (Number.isFinite(start) && Number.isFinite(stop) && start <= nowMs && nowMs < stop) {
+      return program;
+    }
+  }
+  return null;
+}
+
+/** Pick the next upcoming program after "now" from a prebuilt index. */
+export function nextProgramInIndex(
+  index: GuideIndex,
+  channelId: string,
+  nowMs: number = Date.now(),
+): LiveTvProgram | null {
+  for (const program of index.get(channelId) ?? []) {
+    const start = Date.parse(program.start);
+    if (Number.isFinite(start) && start > nowMs) return program;
+  }
+  return null;
 }
 
 /** Pick the program airing "now" for a channel from a guide window. */

@@ -252,12 +252,18 @@ export function ServerListScreen({
         {saved.length > 0 ? (
           <section className="server-list-section" aria-label="Saved servers">
             <h2 className="server-list-section__title">Saved</h2>
-            <div className="server-list-grid" role="list">
+            <div
+              className="server-list-grid"
+              role="list"
+              data-focus-container="vertical"
+              data-focus-count={saved.length}
+            >
               {saved.map((entry, index) => (
                 <button
                   key={entry.id}
                   type="button"
                   role="listitem"
+                  data-focus-index={index}
                   className={`server-card focusable ${
                     entry.id === registry.activeServerId ? "is-active" : ""
                   }`}

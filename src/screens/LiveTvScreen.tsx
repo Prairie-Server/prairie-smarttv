@@ -4,11 +4,12 @@ import { ApiError } from "../api/client";
 import {
   cancelLiveTvRecording,
   channelDisplayLabel,
-  currentProgramForChannel,
+  currentProgramInIndex,
   fetchLiveTvChannels,
   fetchLiveTvGuide,
   fetchLiveTvRecordings,
-  nextProgramForChannel,
+  nextProgramInIndex,
+  indexProgramsByChannel,
   scheduleLiveTvRecording,
   type LiveTvChannel,
   type LiveTvProgram,
@@ -65,6 +66,8 @@ function canCancelRecording(recording: LiveTvRecording): boolean {
 export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const [channels, setChannels] = useState<LiveTvChannel[]>([]);
   const [programs, setPrograms] = useState<LiveTvProgram[]>([]);
+  // Group + sort the guide once per fetch instead of per channel row per render.
+  const guideIndex = useMemo(() => indexProgramsByChannel(programs), [programs]);
   const [recordings, setRecordings] = useState<LiveTvRecording[]>([]);
   const [loading, setLoading] = useState(true);
   const [recordingsLoading, setRecordingsLoading] = useState(false);
@@ -263,18 +266,25 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
 
       {channels.length > 0 ? (
         <>
-          <div className="season-tabs livetv-tabs" role="tablist" aria-label="Live TV sections">
+          <div
+            className="season-tabs livetv-tabs"
+            role="tablist"
+            aria-label="Live TV sections"
+            data-focus-container="horizontal"
+            data-focus-count={3}
+          >
             {(
               [
                 ["guide", "Guide"],
                 ["channels", "Channels"],
                 ["recordings", "My recordings"],
               ] as const
-            ).map(([tab, label]) => (
+            ).map(([tab, label], tabIndex) => (
               <button
                 key={tab}
                 type="button"
                 role="tab"
+                data-focus-index={tabIndex}
                 aria-selected={activeTab === tab}
                 className={`season-chip${activeTab === tab ? " is-active" : ""}`}
                 autoFocus={tab === "guide"}
@@ -291,8 +301,8 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
           {activeTab === "guide" ? (
             <div className="livetv-guide" role="list" aria-label="Guide">
               {channels.map((channel, index) => {
-                const now = currentProgramForChannel(programs, channel.id);
-                const next = nextProgramForChannel(programs, channel.id);
+                const now = currentProgramInIndex(guideIndex, channel.id);
+                const next = nextProgramInIndex(guideIndex, channel.id);
                 return (
                   <article
                     key={channel.id}
@@ -319,9 +329,18 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                         <p>{programLine(next, "Nothing listed")}</p>
                       </div>
                     </div>
-                    <div className="row-actions livetv-guide-row__actions">
+                    {/* One container per row: guide rows are ragged (Watch, plus
+                        Record now / Record next only when listed), so the row is
+                        the only shape the index model can describe. Up/Down then
+                        steps row to row and clamps onto the nearest column. */}
+                    <div
+                      className="row-actions livetv-guide-row__actions"
+                      data-focus-container="horizontal"
+                      data-focus-count={1 + (now?.id ? 1 : 0) + (next?.id ? 1 : 0)}
+                    >
                       <FocusButton
                         autoFocus={index === 0}
+                        data-focus-index={0}
                         icon={<Play />}
                         onClick={() => onTune(channel)}
                       >
@@ -329,6 +348,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                       </FocusButton>
                       {now?.id ? (
                         <FocusButton
+                          data-focus-index={1}
                           icon={<Circle />}
                           disabled={recordingBusy}
                           onClick={() => void handleRecord(now)}
@@ -338,6 +358,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                       ) : null}
                       {next?.id ? (
                         <FocusButton
+                          data-focus-index={now?.id ? 2 : 1}
                           icon={<Circle />}
                           disabled={recordingBusy}
                           onClick={() => void handleRecord(next)}
@@ -353,13 +374,22 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
           ) : null}
 
           {activeTab === "channels" ? (
-            <div className="livetv-channel-list" role="list" aria-label="Channels">
+            <div
+              className="livetv-channel-list"
+              role="list"
+              aria-label="Channels"
+              // Longest list in the app — without an indexed container every
+              // D-pad press measured every focusable on the page.
+              data-focus-container="vertical"
+              data-focus-count={channels.length}
+            >
               {channels.map((channel, index) => (
                 <button
                   key={channel.id}
                   type="button"
                   role="listitem"
                   className="livetv-channel"
+                  data-focus-index={index}
                   autoFocus={index === 0}
                   onClick={() => onTune(channel)}
                 >
@@ -370,7 +400,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                   <span className="livetv-channel__body">
                     <strong>{channelDisplayLabel(channel)}</strong>
                     <span className="muted">
-                      {programLine(currentProgramForChannel(programs, channel.id), "No guide data")}
+                      {programLine(currentProgramInIndex(guideIndex, channel.id), "No guide data")}
                     </span>
                   </span>
                 </button>

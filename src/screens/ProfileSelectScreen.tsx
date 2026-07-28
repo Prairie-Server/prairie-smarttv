@@ -115,12 +115,17 @@ export function ProfileSelectScreen({ auth, onSelected, onCancel }: ProfileSelec
       ) : null}
 
       {!pinProfile ? (
-        <div className="profile-grid">
+        <div
+          className="profile-grid"
+          data-focus-container="grid"
+          data-focus-count={profiles.length}
+        >
           {profiles.map((profile, index) => (
             <button
               key={profile.id}
               type="button"
               className="profile-card"
+              data-focus-index={index}
               autoFocus={index === 0}
               disabled={busy}
               onClick={() => void selectProfile(profile)}

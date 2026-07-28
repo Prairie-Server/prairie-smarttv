@@ -301,6 +301,31 @@ describe("spatialFocus", () => {
     expect(findSpatialNeighbor(b0, "ArrowUp")).toBe(t1);
   });
 
+  it("clamps onto the nearest column of a shorter row instead of skipping it", () => {
+    // Live TV guide shape: rows carry Watch plus zero to two Record buttons.
+    const rows = [3, 1, 2].map((count, row) => {
+      const container = document.createElement("div");
+      container.dataset.focusContainer = "horizontal";
+      container.dataset.focusCount = String(count);
+      for (let column = 0; column < count; column++) {
+        const button = document.createElement("button");
+        button.dataset.focusIndex = String(column);
+        button.textContent = `r${row}c${column}`;
+        container.append(button);
+        place(button, column * 120, row * 200);
+      }
+      document.body.append(container);
+      return container;
+    });
+
+    const from = rows[0]!.children[2] as HTMLElement;
+    // Row 1 has no column 2: land on its only button rather than jumping to row 2.
+    const down = findSpatialNeighbor(from, "ArrowDown");
+    expect(down?.textContent).toBe("r1c0");
+    // Continuing down enters the next row at the column we just clamped to.
+    expect(findSpatialNeighbor(down, "ArrowDown")?.textContent).toBe("r2c0");
+  });
+
   it("navigates a grid container by columns", () => {
     const grid = document.createElement("div");
     grid.dataset.focusContainer = "grid";

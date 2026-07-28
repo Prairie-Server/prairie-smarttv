@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { lazy, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { CollectionCard } from "./api/collections";
 import { checkServer } from "./api/checkServer";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
@@ -12,21 +12,8 @@ import { ShellNav, type ShellTab } from "./components/ShellNav";
 import type { DiscoveryHit } from "./discovery/discover";
 import { handleSpatialArrowKey } from "./focus/spatialFocus";
 import { ServerUrlContext } from "./serverUrlContext";
-import { CollectionBrowseScreen } from "./screens/CollectionBrowseScreen";
-import { CollectionsScreen } from "./screens/CollectionsScreen";
-import { ConnectScreen } from "./screens/ConnectScreen";
 import { HomeBrowseScreen } from "./screens/HomeBrowseScreen";
-import { ItemDetailScreen } from "./screens/ItemDetailScreen";
-import { LibrariesScreen } from "./screens/LibrariesScreen";
-import { LibraryBrowseScreen } from "./screens/LibraryBrowseScreen";
-import { LiveTvPlayerScreen } from "./screens/LiveTvPlayerScreen";
-import { LiveTvScreen } from "./screens/LiveTvScreen";
-import { ManualServerScreen } from "./screens/ManualServerScreen";
-import { PlayerScreen, type PlayerLaunch } from "./screens/PlayerScreen";
-import { ProfileSelectScreen } from "./screens/ProfileSelectScreen";
-import { SearchScreen } from "./screens/SearchScreen";
-import { ServerListScreen } from "./screens/ServerListScreen";
-import { PlaybackSettingsScreen } from "./settings/PlaybackSettingsScreen";
+import type { PlayerLaunch } from "./screens/PlayerScreen";
 import { saveLastServerUrl } from "./storage/persist";
 import {
   addOrUpdate,
@@ -47,6 +34,56 @@ import {
   type AuthTokens,
   type PrairieSession,
 } from "./storage/session";
+
+/**
+ * Screens are code-split so launch only parses what the first paint needs.
+ *
+ * A TV reads these chunks from local flash, so the load is negligible, while
+ * the JavaScript the app must parse before it can show anything drops by
+ * roughly a third. Home stays static: it is the screen we boot into.
+ */
+const CollectionBrowseScreen = lazy(() =>
+  import("./screens/CollectionBrowseScreen").then((m) => ({ default: m.CollectionBrowseScreen })),
+);
+const CollectionsScreen = lazy(() =>
+  import("./screens/CollectionsScreen").then((m) => ({ default: m.CollectionsScreen })),
+);
+const ConnectScreen = lazy(() =>
+  import("./screens/ConnectScreen").then((m) => ({ default: m.ConnectScreen })),
+);
+const ItemDetailScreen = lazy(() =>
+  import("./screens/ItemDetailScreen").then((m) => ({ default: m.ItemDetailScreen })),
+);
+const LibrariesScreen = lazy(() =>
+  import("./screens/LibrariesScreen").then((m) => ({ default: m.LibrariesScreen })),
+);
+const LibraryBrowseScreen = lazy(() =>
+  import("./screens/LibraryBrowseScreen").then((m) => ({ default: m.LibraryBrowseScreen })),
+);
+const LiveTvPlayerScreen = lazy(() =>
+  import("./screens/LiveTvPlayerScreen").then((m) => ({ default: m.LiveTvPlayerScreen })),
+);
+const LiveTvScreen = lazy(() =>
+  import("./screens/LiveTvScreen").then((m) => ({ default: m.LiveTvScreen })),
+);
+const ManualServerScreen = lazy(() =>
+  import("./screens/ManualServerScreen").then((m) => ({ default: m.ManualServerScreen })),
+);
+const ProfileSelectScreen = lazy(() =>
+  import("./screens/ProfileSelectScreen").then((m) => ({ default: m.ProfileSelectScreen })),
+);
+const SearchScreen = lazy(() =>
+  import("./screens/SearchScreen").then((m) => ({ default: m.SearchScreen })),
+);
+const ServerListScreen = lazy(() =>
+  import("./screens/ServerListScreen").then((m) => ({ default: m.ServerListScreen })),
+);
+const PlaybackSettingsScreen = lazy(() =>
+  import("./settings/PlaybackSettingsScreen").then((m) => ({ default: m.PlaybackSettingsScreen })),
+);
+const PlayerScreen = lazy(() =>
+  import("./screens/PlayerScreen").then((m) => ({ default: m.PlayerScreen })),
+);
 
 type Route =
   | { name: "servers"; back?: "home"; autoScan?: boolean }

@@ -3,11 +3,14 @@ import {
   cancelLiveTvRecording,
   channelDisplayLabel,
   currentProgramForChannel,
+  currentProgramInIndex,
+  indexProgramsByChannel,
   fetchLiveTvChannels,
   fetchLiveTvGuide,
   fetchLiveTvRecordings,
   isWatchableHls,
   nextProgramForChannel,
+  nextProgramInIndex,
   playableLiveUrl,
   programProgressFraction,
   releaseLiveTvSession,
@@ -240,6 +243,24 @@ describe("guide helpers", () => {
     expect(
       currentProgramForChannel([{ ...programs[0]!, start: "bad", stop: "bad" }], "ch-1", now),
     ).toBeNull();
+  });
+
+  it("groups and sorts the guide once, with the same answers as the per-call helpers", () => {
+    const shuffled = [programs[2]!, programs[3]!, programs[0]!, programs[1]!];
+    const index = indexProgramsByChannel(shuffled);
+
+    expect([...index.keys()].sort()).toEqual(["ch-1", "ch-2"]);
+    expect(index.get("ch-1")?.map((p) => p.title)).toEqual(["Earlier", "Now Show", "Next Show"]);
+    expect(currentProgramInIndex(index, "ch-1", now)?.title).toBe("Now Show");
+    expect(nextProgramInIndex(index, "ch-1", now)?.title).toBe("Next Show");
+    expect(currentProgramInIndex(index, "missing", now)).toBeNull();
+    expect(nextProgramInIndex(index, "missing", now)).toBeNull();
+  });
+
+  it("ignores unparseable guide times in the indexed lookups", () => {
+    const index = indexProgramsByChannel([{ ...programs[0]!, start: "bad", stop: "bad" }]);
+    expect(currentProgramInIndex(index, "ch-1", now)).toBeNull();
+    expect(nextProgramInIndex(index, "ch-1", now)).toBeNull();
   });
 
   it("computes programme progress fraction", () => {

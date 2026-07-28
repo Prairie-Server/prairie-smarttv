@@ -24,6 +24,29 @@ export function isHlsSource(url: string, mimeType?: string): boolean {
   return path.endsWith(".m3u8");
 }
 
+/**
+ * Whether MSE can play the codecs hls.js needs.
+ *
+ * This mirrors `Hls.isSupported()` so the decision can be made *before* paying
+ * to download and parse hls.js — the library is only fetched once a source
+ * actually needs it.
+ */
+export function isMseHlsCapable(
+  mediaSource: typeof MediaSource | undefined = typeof MediaSource !== "undefined"
+    ? MediaSource
+    : undefined,
+): boolean {
+  if (!mediaSource || typeof mediaSource.isTypeSupported !== "function") return false;
+  try {
+    return (
+      mediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,mp4a.40.2"') ||
+      mediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export interface Html5SourceInput {
   url: string;
   mimeType?: string;
