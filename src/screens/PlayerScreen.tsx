@@ -16,6 +16,8 @@ import {
   type WatchDetail,
 } from "../api/watch";
 import { FocusButton } from "../components/FocusButton";
+import { isActionableTarget } from "../focus/isActionableTarget";
+import { subscribeBackKeys } from "../platform/backKey";
 import { detectPlatform } from "../platform/detect";
 import { resolveAdvertisedCapabilities } from "../platform/tizen/deviceCapabilities";
 import { PlayerHost } from "../player/PlayerHost";
@@ -163,6 +165,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     };
   }, []);
 
+  function clearPlayerActive(): void {
+    document.documentElement.classList.remove("player-active");
+    document.body.classList.remove("player-active");
+  }
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -251,22 +258,25 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   // Sessions are stopped only via handleExit (Back / error dismiss).
 
   useEffect(() => {
+    return subscribeBackKeys((event) => {
+      event.preventDefault?.();
+      void handleExitRef.current();
+    });
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const key = event.key;
-      if (
-        key === "Escape" ||
-        key === "Backspace" ||
-        key === "XF86Back" ||
-        key === "BrowserBack" ||
-        key === "GoBack"
-      ) {
-        event.preventDefault();
-        void handleExitRef.current();
-        return;
-      }
       if (error) return;
       if (key === "Enter" || key === " " || key === "MediaPlayPause") {
         if (menu !== "none") return;
+        // OK/Enter on a chrome button must activate that button — not play/pause.
+        if (
+          (key === "Enter" || key === " ") &&
+          (isActionableTarget(event.target) || isActionableTarget(document.activeElement))
+        ) {
+          return;
+        }
         event.preventDefault();
         setPlaying((p) => !p);
         bumpControlsRef.current();
@@ -293,6 +303,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     }
     setControlsVisible(true);
     if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
+    // Keep chrome up while the stream is still preparing.
+    if (loading || !streamUrl) return;
     hideTimer.current = window.setTimeout(() => {
       setMenu((m) => {
         if (m === "none") setControlsVisible(false);
@@ -300,6 +312,14 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       });
     }, 4000);
   }
+
+  // Start the auto-hide clock once playback is ready. Without this the chrome
+  // stays up forever after launch (controlsVisible defaults to true).
+  useEffect(() => {
+    if (loading || error || !streamUrl) return;
+    bumpControls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-arm when readiness changes
+  }, [loading, error, streamUrl]);
 
   async function forceHlsFallback(reason: string): Promise<boolean> {
     if (exitedRef.current || hlsFallbackTriedRef.current || fallingBackRef.current) return false;
@@ -463,6 +483,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       window.clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
+    // Restore opaque backgrounds before navigating. If Back also backgrounds the
+    // packaged app (unhandled tizenhwkey), a lingering player-active class left
+    // only the TV wallpaper / empty shell visible.
+    clearPlayerActive();
     // Navigate first so we never sit on a transparent player plane / body gradient
     // while awaiting network teardown.
     const sid = playbackRef.current?.session_id;

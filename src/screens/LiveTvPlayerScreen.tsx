@@ -10,6 +10,8 @@ import {
   type LiveTvChannel,
 } from "../api/livetv";
 import { FocusButton } from "../components/FocusButton";
+import { isActionableTarget } from "../focus/isActionableTarget";
+import { subscribeBackKeys } from "../platform/backKey";
 import { detectPlatform } from "../platform/detect";
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
@@ -42,6 +44,16 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("player-active");
+    document.body.classList.add("player-active");
+    return () => {
+      root.classList.remove("player-active");
+      document.body.classList.remove("player-active");
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,22 +94,24 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   }, [session, channel.id]);
 
   useEffect(() => {
+    return subscribeBackKeys((event) => {
+      event.preventDefault?.();
+      void handleExitRef.current();
+    });
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const key = event.key;
       if (key === "Enter" || key === " " || key === "MediaPlayPause") {
+        if (
+          (key === "Enter" || key === " ") &&
+          (isActionableTarget(event.target) || isActionableTarget(document.activeElement))
+        ) {
+          return;
+        }
         event.preventDefault();
         setPlaying((p) => !p);
-        return;
-      }
-      if (
-        key === "Escape" ||
-        key === "Backspace" ||
-        key === "XF86Back" ||
-        key === "BrowserBack" ||
-        key === "GoBack"
-      ) {
-        event.preventDefault();
-        void handleExitRef.current();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -107,12 +121,15 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   const handleExit = useCallback(async () => {
     if (exitedRef.current) return;
     exitedRef.current = true;
+    document.documentElement.classList.remove("player-active");
+    document.body.classList.remove("player-active");
     const sid = liveSessionId.current;
-    if (sid) {
-      await releaseLiveTvSession(session, sid).catch(() => undefined);
-      liveSessionId.current = null;
-    }
+    liveSessionId.current = null;
+    // Navigate first — never await network on a transparent player plane.
     onExit();
+    if (sid) {
+      void releaseLiveTvSession(session, sid).catch(() => undefined);
+    }
   }, [session, onExit]);
 
   useEffect(() => {

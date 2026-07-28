@@ -359,21 +359,35 @@ export function App() {
   }
 
   if (route.name === "player") {
+    const playerRoute = route;
     return (
       <ServerUrlContext.Provider value={session.serverUrl}>
-        <PlayerScreen session={session} launch={route.launch} onExit={() => setRoute(route.back)} />
+        {guard(
+          "Playback",
+          <PlayerScreen
+            session={session}
+            launch={playerRoute.launch}
+            onExit={() => setRoute(playerRoute.back)}
+          />,
+          () => setRoute(playerRoute.back),
+        )}
       </ServerUrlContext.Provider>
     );
   }
 
   if (route.name === "livetv-player") {
+    const liveRoute = route;
     return (
       <ServerUrlContext.Provider value={session.serverUrl}>
-        <LiveTvPlayerScreen
-          session={session}
-          channel={route.channel}
-          onExit={() => setRoute(route.back)}
-        />
+        {guard(
+          "Live TV",
+          <LiveTvPlayerScreen
+            session={session}
+            channel={liveRoute.channel}
+            onExit={() => setRoute(liveRoute.back)}
+          />,
+          () => setRoute(liveRoute.back),
+        )}
       </ServerUrlContext.Provider>
     );
   }
