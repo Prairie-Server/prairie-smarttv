@@ -179,8 +179,7 @@ export async function preparePlayableSession(
     requireSegment: true,
     throwOnTimeout: true,
     keepAliveEveryMs: 10_000,
-    onKeepAlive: () =>
-      reportPlaybackProgress(session, sessionId, mediaPosition, true, fetchImpl),
+    onKeepAlive: () => reportPlaybackProgress(session, sessionId, mediaPosition, true, fetchImpl),
   });
 
   return {

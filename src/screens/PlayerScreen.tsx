@@ -213,8 +213,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         pendingResumeRef.current =
           prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
         setCurrentTime(
-          toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) ||
-            seekAt,
+          toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
         );
         setPlaying(true);
         if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
@@ -307,10 +306,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     setError(null);
     setBuffering(false);
     setControlsVisible(true);
-    const seekAt = toMediaTime(
-      playerRef.current?.getCurrentTime() ?? 0,
-      streamOriginRef.current,
-    ) || currentTime;
+    const seekAt =
+      toMediaTime(playerRef.current?.getCurrentTime() ?? 0, streamOriginRef.current) || currentTime;
     const oldSid = current.session_id;
     try {
       await stopPlaybackSession(session, oldSid).catch(() => undefined);
@@ -339,7 +336,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       streamOriginRef.current = prepared.streamOriginSeconds;
       pendingResumeRef.current =
         prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
-      setCurrentTime(toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt);
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+      );
       setPlaying(true);
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
       return true;
@@ -411,7 +410,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       streamOriginRef.current = prepared.streamOriginSeconds;
       pendingResumeRef.current =
         prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
-      setCurrentTime(toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt);
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+      );
       setPlaying(true);
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
     } catch (err) {
@@ -605,7 +606,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       streamOriginRef.current = prepared.streamOriginSeconds;
       pendingResumeRef.current =
         prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
-      setCurrentTime(toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt);
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+      );
       setStreamUrl(prepared.streamUrl);
       setMenu("none");
       bumpControls();
