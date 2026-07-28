@@ -23,6 +23,11 @@ export default defineConfig({
       modernPolyfills: true,
       additionalLegacyPolyfills: ["regenerator-runtime/runtime"],
       renderLegacyChunks: true,
+      // Chrome 69 cannot execute the es2019+ modern chunks (optional chaining,
+      // nullish coalescing land in Chrome 80), so emitting them alongside the
+      // legacy set only doubled the JS packaged into the .wgt and parsed from
+      // flash on the weakest hardware. Legacy-only for this single-target build.
+      renderModernChunks: false,
     }),
   ],
   base: "./",

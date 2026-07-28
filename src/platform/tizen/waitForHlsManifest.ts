@@ -25,6 +25,12 @@ export interface WaitForHlsManifestOptions {
   /** Fired periodically during the wait (e.g. POST /playback/.../progress). */
   onKeepAlive?: () => void | Promise<void>;
   keepAliveEveryMs?: number;
+  /**
+   * Stops polling (and its keepalives) when aborted. Without it, navigating away
+   * from a slow-starting transcode leaves this loop running and posting progress
+   * keepalives that actively hold the server session alive until it times out.
+   */
+  signal?: AbortSignal;
 }
 
 async function fetchText(
@@ -124,6 +130,8 @@ export async function waitForHlsManifest(
   let nextKeepAliveAt = Date.now();
 
   while (Date.now() < deadline) {
+    // Bail the moment the caller navigates away so we stop holding the session.
+    if (options.signal?.aborted) return false;
     if (options.onKeepAlive && Date.now() >= nextKeepAliveAt) {
       try {
         await options.onKeepAlive();

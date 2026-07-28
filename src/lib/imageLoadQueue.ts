@@ -25,6 +25,19 @@ const MAX_CONCURRENT_BY_TIER: Record<PerformanceTier, number> = {
   low: 2,
 };
 
+/**
+ * How long a single load may hold its slot before we assume it stalled.
+ *
+ * The queue only advances when slots are released on load/error/unmount. A
+ * stalled TCP connection on flaky TV Wi-Fi fires neither event, so its slot is
+ * held indefinitely; with only 2-3 slots, a couple of stuck loads starve every
+ * other poster/backdrop app-wide (including on screens navigated to later). The
+ * watchdog frees the slot so queued work proceeds — the `<img>` keeps loading in
+ * the background and still resolves if the socket recovers. Generous enough that
+ * a legitimately slow load is not cut short.
+ */
+const SLOT_TIMEOUT_MS = 8000;
+
 /** Default until `refreshImageLoadConcurrency` runs from boot / settings. */
 let maxConcurrentLoads = MAX_CONCURRENT_BY_TIER.low;
 
@@ -63,16 +76,27 @@ export function acquireImageSlot(
 ): () => void {
   let released = false;
   let started = false;
+  let watchdog: number | null = null;
   const lane = options.priority ? priorityWaiting : waiting;
 
   const begin = () => {
     started = true;
+    if (typeof window !== "undefined") {
+      // Free the slot if this load never reports back (stalled socket), so it
+      // cannot wedge the shared queue. release() is a no-op when the real
+      // load/error fires afterward.
+      watchdog = window.setTimeout(release, SLOT_TIMEOUT_MS);
+    }
     start();
   };
 
   const release = () => {
     if (released) return;
     released = true;
+    if (watchdog != null) {
+      window.clearTimeout(watchdog);
+      watchdog = null;
+    }
     if (started) {
       active = Math.max(0, active - 1);
       pump();
