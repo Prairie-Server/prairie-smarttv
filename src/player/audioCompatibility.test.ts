@@ -21,6 +21,7 @@ describe("audioCompatibility", () => {
     expect(isAudioCodecSupported("aac", base)).toBe(true);
     expect(isAudioCodecSupported("e-ac-3", base)).toBe(true);
     expect(isAudioCodecSupported("ac3", ["eac3"])).toBe(true);
+    expect(isAudioCodecSupported("ac3", ["ec3"])).toBe(true);
     expect(isAudioCodecSupported("ec3", ["eac3"])).toBe(true);
     expect(isAudioCodecSupported("truehd", base)).toBe(false);
     expect(isAudioCodecSupported("truehd", [...base, "truehd"])).toBe(true);
@@ -73,6 +74,16 @@ describe("audioCompatibility", () => {
     expect(primaryAudioCodec({ file_id: 5, codec_audio: "flac" })).toBe("flac");
     expect(primaryAudioCodec(null)).toBe(null);
     expect(primaryAudioCodec({ file_id: 6, audio_tracks: [{ codec: "opus" }] })).toBe("opus");
+    expect(
+      primaryAudioCodec({
+        file_id: 7,
+        audio_tracks: [
+          { codec: "aac", default: false },
+          { codec: "ac3", default: true },
+        ],
+      }),
+    ).toBe("ac3");
+    expect(primaryAudioCodec({ file_id: 8, audio_tracks: undefined })).toBe(null);
 
     const watch: WatchDetail = {
       content_id: "m1",

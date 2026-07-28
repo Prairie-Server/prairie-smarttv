@@ -96,9 +96,43 @@ describe("playableLiveUrl", () => {
     expect(playableLiveUrl({ session_id: "s", hls_url: "   ", stream_url: "  " })).toBeNull();
     expect(playableLiveUrl({ session_id: "s" })).toBeNull();
   });
+
+  it("uses stream_url when transport is hls but hls_url is empty", () => {
+    expect(
+      playableLiveUrl({
+        session_id: "s",
+        stream_url: "/fallback.m3u8",
+        transport: "hls",
+      }),
+    ).toBe("/fallback.m3u8");
+  });
+
+  it("returns non-HLS hls_url when no HLS-looking stream is available", () => {
+    expect(
+      playableLiveUrl({
+        session_id: "s",
+        hls_url: "/proxy/raw",
+        stream_url: "/mpegts",
+      }),
+    ).toBe("/proxy/raw");
+  });
+
+  it("returns null for mpegts transport with no stream_url", () => {
+    expect(
+      playableLiveUrl({
+        session_id: "s",
+        hls_url: "   ",
+        transport: "mpegts",
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("isWatchableHls", () => {
+  it("is false when no playable URL is available", () => {
+    expect(isWatchableHls({ session_id: "s" })).toBe(false);
+  });
+
   it("is false for mpegts-only streams", () => {
     expect(
       isWatchableHls({
@@ -309,6 +343,9 @@ describe("Live TV API", () => {
 
     const missing = vi.fn(async () => new Response("nope", { status: 404 }));
     await expect(fetchLiveTvChannels(session, missing)).resolves.toEqual([]);
+
+    const noChannels = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
+    await expect(fetchLiveTvChannels(session, noChannels)).resolves.toEqual([]);
 
     const boom = vi.fn(async () => new Response("nope", { status: 500 }));
     await expect(fetchLiveTvChannels(session, boom)).rejects.toThrow();

@@ -53,6 +53,21 @@ describe("fetchLibraryCollections", () => {
     );
     await expect(fetchLibraryCollections(session, 2, fetchImpl)).resolves.toEqual([]);
   });
+
+  it("uses name as the title fallback for ungrouped cards", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ungrouped: { collections: [{ id: "c3", name: "Named Only" }] },
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(fetchLibraryCollections(session, 3, fetchImpl)).resolves.toEqual([
+      { id: "c3", name: "Named Only", library_id: 3, title: "Named Only" },
+    ]);
+  });
 });
 
 describe("fetchPersonalCollections", () => {
@@ -79,5 +94,20 @@ describe("fetchPersonalCollections", () => {
       async () => new Response(JSON.stringify({ groups: [{}] }), { status: 200 }),
     );
     await expect(fetchPersonalCollections(session, fetchImpl)).resolves.toEqual([]);
+  });
+
+  it("uses name as the title fallback inside grouped personal collections", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            groups: [{ collections: [{ id: "p3", name: "Grouped Name" }] }],
+          }),
+          { status: 200 },
+        ),
+    );
+    await expect(fetchPersonalCollections(session, fetchImpl)).resolves.toEqual([
+      { id: "p3", name: "Grouped Name", title: "Grouped Name" },
+    ]);
   });
 });
