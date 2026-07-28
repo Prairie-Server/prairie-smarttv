@@ -110,6 +110,21 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const playPauseRef = useRef<HTMLButtonElement | null>(null);
   /** Read by the Back subscription, which is mounted once. */
   const menuRef = useRef<MenuMode>("none");
+  /**
+   * Aborts whichever preparation is running (startup, HLS fallback, retry,
+   * re-anchor, audio switch). Manifest readiness polls for up to 90s while
+   * posting keepalives, so an exit that does not cancel it holds the server
+   * session open long after the screen is gone.
+   */
+  const prepareAbortRef = useRef<AbortController | null>(null);
+
+  /** Cancel any preparation still in flight and hand out a fresh signal. */
+  function beginPrepare(): AbortSignal {
+    prepareAbortRef.current?.abort();
+    const controller = new AbortController();
+    prepareAbortRef.current = controller;
+    return controller.signal;
+  }
 
   const deviceCaps = useMemo(
     () =>
@@ -173,6 +188,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   useEffect(() => {
     let cancelled = false;
     const abort = new AbortController();
+    prepareAbortRef.current?.abort();
+    prepareAbortRef.current = abort;
     void (async () => {
       setLoading(true);
       setError(null);
@@ -249,6 +266,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       // Stop the manifest-readiness poll (and its session-holding keepalives)
       // when we navigate away mid-startup.
       abort.abort();
+      if (prepareAbortRef.current === abort) prepareAbortRef.current = null;
     };
   }, [
     launch.fileId,
@@ -437,6 +455,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       const prepared = await preparePlayableSession(session, started, seekAt, {
         sourceResolution: sourceResolutionForFile(watch, started.media_file_id),
         maxResolution: deviceCaps.max_resolution,
+        signal: beginPrepare(),
       });
       if (exitedRef.current) {
         void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
@@ -511,6 +530,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       const prepared = await preparePlayableSession(session, started, seekAt, {
         sourceResolution: sourceResolutionForFile(watch, started.media_file_id),
         maxResolution: deviceCaps.max_resolution,
+        signal: beginPrepare(),
       });
       if (exitedRef.current) {
         void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
@@ -559,6 +579,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   async function handleExit() {
     if (exitedRef.current) return;
     exitedRef.current = true;
+    // Kill any in-flight manifest poll first — otherwise it keeps posting
+    // progress keepalives that re-hold the session we are about to stop.
+    prepareAbortRef.current?.abort();
+    prepareAbortRef.current = null;
     if (backgroundStopTimer.current != null) {
       window.clearTimeout(backgroundStopTimer.current);
       backgroundStopTimer.current = null;
@@ -661,6 +685,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       const prepared = await preparePlayableSession(session, started, mediaSeconds, {
         sourceResolution: sourceResolutionForFile(watch, started.media_file_id),
         maxResolution: deviceCaps.max_resolution,
+        signal: beginPrepare(),
       });
       if (exitedRef.current) {
         void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
@@ -730,7 +755,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       const prepared = await preparePlayableSession(session, nextSession, seekAt, {
         sourceResolution: sourceResolutionForFile(watch, nextSession.media_file_id),
         maxResolution: deviceCaps.max_resolution,
+        signal: beginPrepare(),
       });
+      if (exitedRef.current) {
+        void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
+        return;
+      }
       setPlayback(prepared.session);
       streamOriginRef.current = prepared.streamOriginSeconds;
       pendingResumeRef.current =

@@ -4,7 +4,7 @@ import {
   restoreDurableStorage,
   scheduleDurablePersist,
 } from "./durableStorage";
-import { STORAGE_SCHEMA_KEY } from "./persist";
+import { SESSION_KEY, STORAGE_SCHEMA_KEY } from "./persist";
 
 describe("durableStorage", () => {
   it("no-ops restore/persist when Tizen filesystem is unavailable", async () => {
@@ -24,6 +24,17 @@ describe("durableStorage", () => {
     const storage = { getItem, setItem: vi.fn() };
     await expect(restoreDurableStorage(storage)).resolves.toBe(0);
     expect(getItem).toHaveBeenCalledWith(STORAGE_SCHEMA_KEY);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("treats a session with no schema key as a live store, not a wipe", async () => {
+    // A sideload wipe clears localStorage wholesale, so any surviving preserved
+    // key means no wipe happened. Restoring over a live store would resurrect
+    // keys the app deliberately cleared (a logout drops the session but leaves
+    // the mirror until the next persist tick).
+    const getItem = vi.fn((key: string) => (key === SESSION_KEY ? "{}" : null));
+    const storage = { getItem, setItem: vi.fn() };
+    await expect(restoreDurableStorage(storage)).resolves.toBe(0);
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 

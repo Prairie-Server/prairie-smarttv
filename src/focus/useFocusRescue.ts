@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { listFocusables } from "./spatialFocus";
 
 /**
@@ -18,21 +18,38 @@ import { listFocusables } from "./spatialFocus";
 export function useFocusRescue<T extends HTMLElement>(containerRef: RefObject<T | null>): void {
   const lastFocused = useRef<HTMLElement | null>(null);
   const lastIndex = useRef(0);
+  const attached = useRef<T | null>(null);
 
+  const onFocusIn = useCallback((event: FocusEvent) => {
+    const container = attached.current;
+    if (!container) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && container.contains(target)) {
+      lastFocused.current = target;
+      const index = listFocusables(container).indexOf(target);
+      if (index >= 0) lastIndex.current = index;
+    }
+  }, []);
+
+  // Deliberately dependency-free so it re-checks after every render: the
+  // container often mounts later than the hook (On Now renders a skeleton until
+  // the guide lands, the episode grid only exists for series). A one-shot mount
+  // effect attaches to nothing on those paths and focus rescue never runs.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target;
-      if (target instanceof HTMLElement && container.contains(target)) {
-        lastFocused.current = target;
-        const index = listFocusables(container).indexOf(target);
-        if (index >= 0) lastIndex.current = index;
-      }
-    };
-    container.addEventListener("focusin", onFocusIn);
-    return () => container.removeEventListener("focusin", onFocusIn);
-  }, [containerRef]);
+    if (container === attached.current) return;
+    attached.current?.removeEventListener("focusin", onFocusIn);
+    attached.current = container;
+    container?.addEventListener("focusin", onFocusIn);
+  });
+
+  useEffect(
+    () => () => {
+      attached.current?.removeEventListener("focusin", onFocusIn);
+      attached.current = null;
+    },
+    [onFocusIn],
+  );
 
   useLayoutEffect(() => {
     const container = containerRef.current;

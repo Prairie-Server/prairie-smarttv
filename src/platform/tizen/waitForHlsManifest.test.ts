@@ -26,6 +26,19 @@ describe("firstMediaSegmentUrl", () => {
       "https://x/seg.ts?auth=1",
     );
   });
+  it("keeps a segment's own query instead of the playlist's", () => {
+    expect(
+      firstMediaSegmentUrl(
+        "https://x/a.m3u8?auth=1",
+        "#EXTM3U\n#EXTINF:1,\nhttps://y/s.ts?sig=2\n",
+      ),
+    ).toBe("https://y/s.ts?sig=2");
+  });
+  it("returns null for an unparseable segment line", () => {
+    expect(
+      firstMediaSegmentUrl("https://x/a.m3u8", "#EXTM3U\n#EXTINF:1,\nhttp://[bad\n"),
+    ).toBeNull();
+  });
 });
 
 describe("waitForHlsManifest", () => {
@@ -63,6 +76,32 @@ describe("waitForHlsManifest", () => {
     ).resolves.toBe(true);
     expect(fetchSpy).toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+
+  it("keeps polling when the playlist's segment line cannot be parsed", async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes(".m3u8")) {
+        return new Response("#EXTM3U\n#EXTINF:2.0,\nhttp://[bad\n", { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 20,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("uses the default 90s budget when no timeout is given", async () => {
+    const fetchImpl = vi.fn(async () => new Response("#EXTM3U\n", { status: 200 }));
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        requireSegment: false,
+      }),
+    ).resolves.toBe(true);
   });
 
   it("resolves false on timeout when throwOnTimeout is false", async () => {
@@ -208,5 +247,90 @@ describe("waitForHlsManifest", () => {
     ).resolves.toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(onKeepAlive).not.toHaveBeenCalled();
+  });
+
+  it("aborts a manifest fetch that is already in flight", async () => {
+    const controller = new AbortController();
+    // Never settles on its own — only the propagated abort can end it.
+    const fetchImpl = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const pending = waitForHlsManifest("https://x/a.m3u8", {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      intervalMs: 1,
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    controller.abort();
+    // Resolves off the abort, not off the 60s deadline or the 8s fetch budget.
+    await expect(pending).resolves.toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops without a further fetch when the keepalive aborts", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async () => new Response("", { status: 404 }));
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 60_000,
+        keepAliveEveryMs: 1,
+        // The keepalive POST is the first network leg of each pass; an exit
+        // during it must not be followed by another manifest fetch.
+        onKeepAlive: () => {
+          controller.abort();
+        },
+        signal: controller.signal,
+      }),
+    ).resolves.toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("aborts a segment probe that is already in flight", async () => {
+    const controller = new AbortController();
+    let probeStarted = false;
+    const fetchImpl = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes(".m3u8")) {
+        return Promise.resolve(new Response("#EXTM3U\n#EXTINF:2.0,\nseg.ts\n", { status: 200 }));
+      }
+      // The segment HEAD probe hangs — its own budget is 12s.
+      probeStarted = true;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    });
+    const pending = waitForHlsManifest("https://x/a.m3u8", {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      intervalMs: 1,
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(probeStarted).toBe(true));
+
+    controller.abort();
+    await expect(pending).resolves.toBe(false);
+  });
+
+  it("wakes out of the backoff sleep on abort", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async () => new Response("", { status: 404 }));
+    const pending = waitForHlsManifest("https://x/a.m3u8", {
+      // A 4s backoff would otherwise hold the session open after navigate-away.
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      intervalMs: 30_000,
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    });
+    // Let the first poll complete and enter the sleep.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    controller.abort();
+    await expect(pending).resolves.toBe(false);
   });
 });

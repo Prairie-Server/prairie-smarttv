@@ -51,6 +51,23 @@ function Grid({ ids }: { ids: string[] }) {
   );
 }
 
+// On Now renders a skeleton (no container) until the guide lands, and the
+// episode grid only exists for series — the container mounts after the hook.
+function LateGrid({ ids, ready }: { ids: string[]; ready: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusRescue(ref);
+  if (!ready) return <div data-testid="skeleton" />;
+  return (
+    <div ref={ref} data-focus-container="grid">
+      {ids.map((id) => (
+        <button key={id} type="button" data-id={id}>
+          {id}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 describe("useFocusRescue", () => {
   it("moves focus to a neighbour when the focused element is removed", () => {
     act(() => root.render(<Grid ids={["a", "b", "c"]} />));
@@ -72,6 +89,18 @@ describe("useFocusRescue", () => {
     // Remove every item — there is nothing to rescue focus to.
     act(() => root.render(<Grid ids={[]} />));
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("rescues focus in a container that mounts after the first render", () => {
+    act(() => root.render(<LateGrid ids={["a", "b", "c"]} ready={false} />));
+    act(() => root.render(<LateGrid ids={["a", "b", "c"]} ready />));
+    const b = host.querySelector<HTMLButtonElement>('[data-id="b"]')!;
+    act(() => b.focus());
+
+    act(() => root.render(<LateGrid ids={["a", "c"]} ready />));
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect((document.activeElement as HTMLElement | null)?.tagName).toBe("BUTTON");
   });
 
   it("does not steal focus that is elsewhere", () => {

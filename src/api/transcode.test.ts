@@ -340,4 +340,101 @@ describe("preparePlayableSession", () => {
       }),
     ).rejects.toBeInstanceOf(TranscodeStartupTimeoutError);
   });
+
+  it("stops the encode session it created when startup times out", async () => {
+    // /transcode/start handed back its own session id. The caller only knows
+    // the /playback/start one, so if we do not stop this one on the way out the
+    // encode job runs on until the server's own inactivity timeout.
+    const deleted: string[] = [];
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/playback/transcode/start")) {
+        return manifestResponse({ session_id: "encode-2" });
+      }
+      if (init?.method === "DELETE") {
+        deleted.push(href);
+        return new Response(null, { status: 204 });
+      }
+      if (href.includes("/progress")) return new Response(null, { status: 204 });
+      // Playlist is served, but its segment never materialises.
+      if (href.includes(".m3u8")) return new Response(READY_PLAYLIST, { status: 200 });
+      return new Response("", { status: 404 });
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = preparePlayableSession(session, started("transcode"), 0, { fetchImpl });
+      const settled = expect(pending).rejects.toBeInstanceOf(TranscodeStartupTimeoutError);
+      // Run past TRANSCODE_STARTUP_TIMEOUT_MS so the readiness poll gives up.
+      await vi.advanceTimersByTimeAsync(95_000);
+      await settled;
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toContain("/playback/encode-2");
+  });
+
+  it("leaves the caller's session alone when the encode reused its id", async () => {
+    // Same id both sides — the caller stops it in its own error path, so a
+    // DELETE from here would tear down a session it may still be using.
+    let deletes = 0;
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/playback/transcode/start")) return manifestResponse();
+      if (init?.method === "DELETE") {
+        deletes += 1;
+        return new Response(null, { status: 204 });
+      }
+      if (href.includes("/progress")) return new Response(null, { status: 204 });
+      if (href.includes(".m3u8")) return new Response(READY_PLAYLIST, { status: 200 });
+      return new Response("", { status: 404 });
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = preparePlayableSession(session, started("transcode"), 0, { fetchImpl });
+      const settled = expect(pending).rejects.toBeInstanceOf(TranscodeStartupTimeoutError);
+      await vi.advanceTimersByTimeAsync(95_000);
+      await settled;
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(deletes).toBe(0);
+  });
+
+  it("still surfaces the startup timeout when the cleanup DELETE fails", async () => {
+    let deletes = 0;
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/playback/transcode/start")) {
+        return manifestResponse({ session_id: "encode-3" });
+      }
+      if (init?.method === "DELETE") {
+        deletes += 1;
+        return new Response("gone", { status: 500 });
+      }
+      if (href.includes("/progress")) return new Response(null, { status: 204 });
+      if (href.includes(".m3u8")) return new Response(READY_PLAYLIST, { status: 200 });
+      return new Response("", { status: 404 });
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = preparePlayableSession(session, started("transcode"), 0, { fetchImpl });
+      const settled = expect(pending).rejects.toBeInstanceOf(TranscodeStartupTimeoutError);
+      await vi.advanceTimersByTimeAsync(95_000);
+      await settled;
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Best-effort cleanup: a failed DELETE must not replace the real error.
+    expect(deletes).toBe(1);
+  });
 });

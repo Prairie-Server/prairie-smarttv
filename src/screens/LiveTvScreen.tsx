@@ -73,8 +73,10 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
   const [recordingsLoading, setRecordingsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<LiveTvTab>("guide");
-  // Track which program is scheduling, not a global flag, so pressing Record on
-  // one program does not flip and disable every other row's Record buttons.
+  // Track which program is scheduling so only that row shows "Scheduling…".
+  // Every Record button still disables while one request is in flight: the
+  // synchronous guard below rejects a second one anyway, and on a remote a
+  // button that silently does nothing reads as a dead app.
   const [recordingBusyId, setRecordingBusyId] = useState<string | null>(null);
   const [cancelBusyId, setCancelBusyId] = useState<string | null>(null);
   const [recordingMessage, setRecordingMessage] = useState<{
@@ -352,7 +354,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                         <FocusButton
                           data-focus-index={1}
                           icon={<Circle />}
-                          disabled={recordingBusyId === now.id}
+                          disabled={recordingBusyId !== null}
                           onClick={() => void handleRecord(now)}
                         >
                           {recordingBusyId === now.id ? "Scheduling…" : "Record now"}
@@ -362,7 +364,7 @@ export function LiveTvScreen({ session, onTune }: LiveTvScreenProps) {
                         <FocusButton
                           data-focus-index={now?.id ? 2 : 1}
                           icon={<Circle />}
-                          disabled={recordingBusyId === next.id}
+                          disabled={recordingBusyId !== null}
                           onClick={() => void handleRecord(next)}
                         >
                           {recordingBusyId === next.id ? "Scheduling…" : "Record next"}
@@ -478,7 +480,7 @@ function RecordingsSection({
                     autoFocus={index === 0}
                     variant="ghost"
                     icon={<X />}
-                    disabled={cancelBusyId === recording.id}
+                    disabled={cancelBusyId !== null}
                     onClick={() => onCancel(recording)}
                   >
                     {cancelBusyId === recording.id ? "Cancelling…" : "Cancel"}

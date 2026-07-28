@@ -41,18 +41,32 @@ describe("scheduleCompositorRepaint", () => {
     // Covers the late-paint window so a slow destination screen is un-holed
     // after its content lands, not only on the first (still-blank) frame.
     vi.advanceTimersByTime(1600);
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // One frame pass + one per REPAINT_SCHEDULE_MS entry.
+    expect(spy.mock.calls.length).toBe(5);
   });
 
-  it("cancels pending passes so repeated calls do not stack", () => {
+  it("does not stack passes when scheduled repeatedly", () => {
     vi.useFakeTimers();
     const root = mountRoot();
     const spy = vi.spyOn(root, "offsetHeight", "get");
     scheduleCompositorRepaint();
+    scheduleCompositorRepaint();
+    scheduleCompositorRepaint();
+    vi.advanceTimersByTime(1600);
+    // Only the last schedule survives — the superseded frame callbacks are
+    // invalidated rather than repainting a screen they no longer belong to.
+    expect(spy.mock.calls.length).toBe(5);
+  });
+
+  it("cancels pending passes, including a frame already queued", () => {
+    vi.useFakeTimers();
+    const root = mountRoot();
+    const spy = vi.spyOn(root, "offsetHeight", "get");
+    scheduleCompositorRepaint();
+    scheduleCompositorRepaint();
     cancelScheduledCompositorRepaint();
     vi.advanceTimersByTime(1600);
-    // The rAF pass may already have fired; the timed passes must not.
-    expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("falls back to a timeout when requestAnimationFrame is unavailable", () => {
