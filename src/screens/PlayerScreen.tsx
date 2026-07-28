@@ -21,6 +21,7 @@ import { resolveAdvertisedCapabilities } from "../platform/tizen/deviceCapabilit
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
 import { humanizePlaybackError } from "../player/humanizePlaybackError";
+import { toMediaTime, toPlayerTime } from "../player/mediaTimeline";
 import { filterClientRenderableSubtitles } from "../player/subtitleFormats";
 import { formatPlaybackClock } from "../player/timeFormat";
 import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../player/types";
@@ -89,11 +90,15 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const lastProgressAt = useRef(0);
   const hideTimer = useRef<number | null>(null);
   const backgroundStopTimer = useRef<number | null>(null);
-  const pendingResumeRef = useRef<number | null>(launch.startPositionSeconds ?? null);
+  /** Player-local seek after bootstrap; 0 for windowed encoded resume. */
+  const pendingResumeRef = useRef<number | null>(null);
+  /** Media-time origin of the current HLS window. */
+  const streamOriginRef = useRef(0);
   const activeSubtitleIndexRef = useRef(-1);
   const exitedRef = useRef(false);
   const hlsFallbackTriedRef = useRef(false);
   const fallingBackRef = useRef(false);
+  const reanchoringRef = useRef(false);
   const seekByRef = useRef<(delta: number) => void>(() => undefined);
   const bumpControlsRef = useRef<() => void>(() => undefined);
   const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
@@ -165,7 +170,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       setError(null);
       setBuffering(false);
       hlsFallbackTriedRef.current = false;
-      pendingResumeRef.current = launch.startPositionSeconds ?? null;
+      pendingResumeRef.current = null;
+      streamOriginRef.current = 0;
       try {
         let watchDetail = launch.watch ?? null;
         if (!watchDetail && launch.contentId) {
@@ -210,7 +216,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         }
         setPlayback(prepared.session);
         setStreamUrl(prepared.streamUrl);
-        pendingResumeRef.current = prepared.playerStartSeconds;
+        streamOriginRef.current = prepared.streamOriginSeconds;
+        pendingResumeRef.current =
+          prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
+        setCurrentTime(
+          toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+        );
         setPlaying(true);
         if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
       } catch (err) {
@@ -302,7 +313,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     setError(null);
     setBuffering(false);
     setControlsVisible(true);
-    const seekAt = playerRef.current?.getCurrentTime() ?? currentTime;
+    const seekAt =
+      toMediaTime(playerRef.current?.getCurrentTime() ?? 0, streamOriginRef.current) || currentTime;
     const oldSid = current.session_id;
     try {
       await stopPlaybackSession(session, oldSid).catch(() => undefined);
@@ -328,7 +340,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       }
       setPlayback(prepared.session);
       setStreamUrl(prepared.streamUrl);
-      pendingResumeRef.current = prepared.playerStartSeconds;
+      streamOriginRef.current = prepared.streamOriginSeconds;
+      pendingResumeRef.current =
+        prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+      );
       setPlaying(true);
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
       return true;
@@ -397,7 +414,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       }
       setPlayback(prepared.session);
       setStreamUrl(prepared.streamUrl);
-      pendingResumeRef.current = prepared.playerStartSeconds;
+      streamOriginRef.current = prepared.streamOriginSeconds;
+      pendingResumeRef.current =
+        prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+      );
       setPlaying(true);
       if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
     } catch (err) {
@@ -410,13 +432,19 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     }
   }
 
+  function mediaPositionSeconds(): number {
+    const player = playerRef.current;
+    if (!player) return currentTime;
+    return toMediaTime(player.getCurrentTime(), streamOriginRef.current);
+  }
+
   async function reportProgress(force = false, isPaused = !playing) {
     const sid = playbackRef.current?.session_id;
     if (!sid) return;
     const now = Date.now();
     if (!force && now - lastProgressAt.current < PROGRESS_INTERVAL_MS) return;
     lastProgressAt.current = now;
-    const position = playerRef.current?.getCurrentTime() ?? currentTime;
+    const position = mediaPositionSeconds();
     try {
       await reportPlaybackProgress(session, sid, position, isPaused);
     } catch {
@@ -438,7 +466,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     // Navigate first so we never sit on a transparent player plane / body gradient
     // while awaiting network teardown.
     const sid = playbackRef.current?.session_id;
-    const position = playerRef.current?.getCurrentTime() ?? currentTime;
+    const position = mediaPositionSeconds();
     playbackRef.current = null;
     onExit();
     void (async () => {
@@ -481,13 +509,76 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- session stable for this mount
   }, [session]);
 
+  /** Re-plan the HLS window at a media-time target (seek before window head). */
+  async function reanchorAtMediaTime(mediaSeconds: number) {
+    const current = playbackRef.current;
+    if (!current || reanchoringRef.current || exitedRef.current) return;
+    reanchoringRef.current = true;
+    setLoading(true);
+    setError(null);
+    setBuffering(true);
+    const oldSid = current.session_id;
+    try {
+      await stopPlaybackSession(session, oldSid).catch(() => undefined);
+      if (exitedRef.current) return;
+      const forced =
+        current.play_method.trim().toLowerCase() === "transcode"
+          ? "transcode"
+          : resolveForcedPlayMethod(settings);
+      const started = await startPlayback(session, {
+        fileId: launch.fileId,
+        profileId: session.profileId,
+        forcedPlayMethod: forced,
+        startPosition: mediaSeconds,
+        codecsVideo: deviceCaps.codecs_video,
+        codecsAudio: deviceCaps.codecs_audio,
+        containers: deviceCaps.containers,
+        maxResolution: deviceCaps.max_resolution,
+        hdr: deviceCaps.hdr,
+      });
+      const prepared = await preparePlayableSession(session, started, mediaSeconds, {
+        sourceResolution: sourceResolutionForFile(watch, started.media_file_id),
+        maxResolution: deviceCaps.max_resolution,
+      });
+      if (exitedRef.current) {
+        void stopPlaybackSession(session, prepared.session.session_id).catch(() => undefined);
+        return;
+      }
+      setPlayback(prepared.session);
+      setStreamUrl(prepared.streamUrl);
+      streamOriginRef.current = prepared.streamOriginSeconds;
+      pendingResumeRef.current =
+        prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || mediaSeconds,
+      );
+      setPlaying(true);
+      if (prepared.session.duration_seconds) setDuration(prepared.session.duration_seconds);
+    } catch (err) {
+      if (exitedRef.current) return;
+      if (err instanceof ApiError) setError(humanizePlaybackError(err.message));
+      else if (err instanceof Error) setError(humanizePlaybackError(err.message));
+      else setError("Could not seek");
+    } finally {
+      reanchoringRef.current = false;
+      setLoading(false);
+      setBuffering(false);
+    }
+  }
+
   function seekBy(delta: number) {
     bumpControls();
     const player = playerRef.current;
-    if (!player) return;
-    const next = Math.max(0, player.getCurrentTime() + delta);
-    void player.seekTo(next);
-    setCurrentTime(next);
+    if (!player || reanchoringRef.current) return;
+    const mediaNext = Math.max(0, mediaPositionSeconds() + delta);
+    const playerNext = toPlayerTime(mediaNext, streamOriginRef.current);
+    if (playerNext < 0) {
+      // Before the current window — Jellyfin/Plex-style seek = new manifest.
+      void reanchorAtMediaTime(mediaNext);
+      return;
+    }
+    void player.seekTo(playerNext);
+    setCurrentTime(mediaNext);
     void reportProgress(true);
   }
 
@@ -504,7 +595,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     setBusyAudio(true);
     setError(null);
     try {
-      const position = playerRef.current?.getCurrentTime() ?? currentTime;
+      const position = mediaPositionSeconds();
       const updated = await switchPlaybackAudio(session, sid, index, position);
       const nextSession: PlaybackSessionResponse = {
         ...current,
@@ -513,13 +604,18 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         audio_track_index: updated.audio_track_index,
         position,
       };
-      const seekAt = updated.player_start_seconds ?? position;
+      const seekAt = position;
       const prepared = await preparePlayableSession(session, nextSession, seekAt, {
         sourceResolution: sourceResolutionForFile(watch, nextSession.media_file_id),
         maxResolution: deviceCaps.max_resolution,
       });
       setPlayback(prepared.session);
-      pendingResumeRef.current = prepared.playerStartSeconds;
+      streamOriginRef.current = prepared.streamOriginSeconds;
+      pendingResumeRef.current =
+        prepared.playerStartSeconds > 0 ? prepared.playerStartSeconds : null;
+      setCurrentTime(
+        toMediaTime(prepared.playerStartSeconds, prepared.streamOriginSeconds) || seekAt,
+      );
       setStreamUrl(prepared.streamUrl);
       setMenu("none");
       bumpControls();
@@ -620,11 +716,14 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           onReady={(player) => {
             playerRef.current = player;
             setBuffering(false);
+            // Windowed encoded resumes start at playlist entry 0 — no client seek.
+            // Only apply a player-local offset when the server asked for one
+            // (e.g. remux keyframe snap inside the window).
             const resume = pendingResumeRef.current;
+            pendingResumeRef.current = null;
             if (resume != null && resume > 0) {
               void player.seekTo(resume);
-              setCurrentTime(resume);
-              pendingResumeRef.current = null;
+              setCurrentTime(toMediaTime(resume, streamOriginRef.current));
             }
             // Re-sync selection after every player recreate (e.g. audio switch).
             const index =
@@ -638,9 +737,12 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
             }
           }}
           onTimeUpdate={(time, dur) => {
-            if (error) return;
-            setCurrentTime(time);
-            if (dur > 0) setDuration(dur);
+            if (error || reanchoringRef.current) return;
+            setCurrentTime(toMediaTime(time, streamOriginRef.current));
+            // Prefer the server media runtime; player duration is window-local.
+            if (dur > 0 && streamOriginRef.current <= 0 && !playback?.duration_seconds) {
+              setDuration(dur);
+            }
             void reportProgress(false);
           }}
         />

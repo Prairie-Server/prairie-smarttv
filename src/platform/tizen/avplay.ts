@@ -341,6 +341,24 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     applyExternalSubtitlePath(localPath);
   };
 
+  const runSeek = (targetMs: number) => {
+    seekInFlight = true;
+    const onDone = () => {
+      seekInFlight = false;
+      if (destroyed) return;
+      if (pendingSeekMs == null) return;
+      const next = pendingSeekMs;
+      pendingSeekMs = null;
+      runSeek(next);
+    };
+    try {
+      avplay.seekTo(targetMs, onDone, onDone);
+    } catch (err) {
+      seekInFlight = false;
+      options.onError?.(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const onPrepared = () => {
     if (destroyed) return;
     ready = true;
@@ -352,6 +370,11 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     }
     if (pendingTrackSelect && overlayEnabled) {
       selectExternalTextTrack();
+    }
+    if (pendingSeekMs != null && !seekInFlight) {
+      const targetMs = pendingSeekMs;
+      pendingSeekMs = null;
+      runSeek(targetMs);
     }
     if (playWhenReady) safePlay();
   };
@@ -382,8 +405,9 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
     if (destroyed || prepareStarted) return;
     void (async () => {
       if (hls) {
-        // preparePlayableSession already waited for segment 0; this is a short
-        // safety poll for paths that hand AVPlay a URL without that gate.
+        // preparePlayableSession already waited for the window-head segment;
+        // this is a short safety poll for paths that hand AVPlay a URL without
+        // that gate.
         const ready = await waitForHlsManifest(options.url, {
           timeoutMs: 15_000,
           requireSegment: true,
@@ -432,29 +456,14 @@ export function createAvPlayPlayer(options: AvPlayPlayerOptions): AvPlayPlayerHa
       safePause();
     },
     seekTo: (seconds: number) => {
-      if (destroyed || !ready) return;
+      if (destroyed) return;
       const ms = Math.max(0, Math.floor(seconds * 1000));
-      if (seekInFlight) {
+      // Queue until READY so scrub is not dropped during prepare. Windowed
+      // encoded resumes start at playlist entry 0 and need no client seek.
+      if (!ready || seekInFlight) {
         pendingSeekMs = ms;
         return;
       }
-      const runSeek = (targetMs: number) => {
-        seekInFlight = true;
-        const onDone = () => {
-          seekInFlight = false;
-          if (destroyed) return;
-          if (pendingSeekMs == null) return;
-          const next = pendingSeekMs;
-          pendingSeekMs = null;
-          runSeek(next);
-        };
-        try {
-          avplay.seekTo(targetMs, onDone, onDone);
-        } catch (err) {
-          seekInFlight = false;
-          options.onError?.(err instanceof Error ? err.message : String(err));
-        }
-      };
       runSeek(ms);
     },
     getCurrentTime: () => {
