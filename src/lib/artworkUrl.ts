@@ -13,14 +13,49 @@ import { getImageFormats, orderRasterCandidates } from "./imageFormats";
 
 /**
  * Width rungs must exist in the server ladder (internal/artworkkey.VariantWidths):
- *   poster / still / profile -> w500, w300
+ *   poster / still / profile -> w500, w300, w200
  *   backdrop                 -> w1920, w1280, w300
  *   logo                     -> w500
+ *
+ * Rungs are sized against the *rendered* CSS width, which on a TV is the design
+ * width times the panel chrome scale — not the panel's pixel count. TV WebViews
+ * keep a ~1920 CSS viewport even on 4K/8K and let the compositor upscale, so a
+ * card grows by PANEL_CHROME_SCALE (1.28 on UHD, 1.55 on 8K), not by 2x or 4x.
+ *
+ * These widths are ADVISORY: against a production server they do nothing.
+ *
+ * Artwork URLs are signed with an HMAC over the exact object key, so rewriting
+ * the variant segment invalidates the signature — `artworkWidthVariant` bails on
+ * any signed URL for exactly that reason. Signing is always on in production
+ * (the store is built with the JWT secret), so every constant below is skipped
+ * and the client renders whichever rung the server chose to sign.
+ *
+ * The server picks it per device class from the `X-Prairie-Device-Platform`
+ * header this client already sends: see `catalog.cachedImageVariantKeyFor`
+ * server-side, which is where a TV's poster/profile/backdrop rungs are decided.
+ * Editing the constants below will not change what a TV downloads; edit that.
+ *
+ * They do still apply to unsigned artwork paths — local dev without a URL
+ * secret, and the unit tests — so they are kept in step with the server's TV
+ * choices rather than left to drift.
  */
 
-/** Poster cards (~155 CSS-px design width). */
-export const POSTER_WIDTH = 300;
-/** Episode stills (~280 CSS-px, upscaled on 4K panels). */
+/**
+ * Poster cards (~155 CSS-px design width, ~198 on UHD chrome scale).
+ *
+ * w300 decoded ~3.7x the pixels actually shown at FHD. w200 is the narrowest
+ * rung the server generates and still covers the UHD rendered width, roughly
+ * halving both bytes and decoded surface — which on TV is the cost that matters,
+ * since decoded surface is what triggers the GC pauses that read as input lag.
+ */
+export const POSTER_WIDTH = 200;
+/**
+ * Episode stills (~280 CSS-px, ~358 on UHD chrome scale).
+ *
+ * Deliberately NOT dropped to the w200 rung: at 358 rendered px it would be
+ * upscaled, and w300 only just covers it. Stills are also far fewer per screen
+ * than poster cards, so the saving would be small and the softening visible.
+ */
 export const STILL_WIDTH = 500;
 /** Backdrop-fed landscape cards (~352 CSS-px); backdrops have no w500 rung. */
 export const BACKDROP_CARD_WIDTH = 300;
@@ -30,8 +65,8 @@ export const BACKDROP_CARD_WIDTH = 300;
  * panels upscale the hero behind a shade layer anyway.
  */
 export const BACKDROP_HERO_WIDTH = 1280;
-/** Cast/crew portrait thumbnails (~120 CSS-px). */
-export const PROFILE_WIDTH = 300;
+/** Cast/crew portrait thumbnails (~120 CSS-px, ~154 on UHD chrome scale). */
+export const PROFILE_WIDTH = 200;
 /** Title logos on detail hero. */
 export const LOGO_WIDTH = 500;
 
