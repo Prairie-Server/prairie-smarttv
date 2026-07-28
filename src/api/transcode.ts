@@ -43,9 +43,10 @@ export function buildTranscodeStartRequest(input: TranscodeStartInput): Transcod
     session_id: input.sessionId,
     seek_seconds: Math.max(0, input.seekSeconds),
     // Remux = container remux (video copy at native resolution).
-    // Transcode = h264/aac at min(source, device max) — keep 4K when the TV can.
+    // Transcode = encode at min(source, device max). Omit target_codec_video so
+    // the server picks best(client.codecs_video ∩ encodable) — hevc > h264.
     target_resolution: targetResolution,
-    target_codec_video: isRemux ? "copy" : "h264",
+    ...(isRemux ? { target_codec_video: "copy" } : {}),
     target_codec_audio: isRemux ? remuxAudio : "aac",
     target_bitrate_kbps: isRemux ? 0 : targetBitrateKbpsForResolution(targetResolution),
     segment_duration: 2,
