@@ -7,6 +7,8 @@ vi.mock("./avplay", () => ({
 import { isAvPlayAvailable } from "./avplay";
 import {
   applyAv1AdvertiseOverrides,
+  canPlayAv1,
+  describeAv1Probe,
   probeAv1Support,
   probeSupportedAudioCodecs,
   probeTvPlaybackCapabilities,
@@ -314,6 +316,67 @@ describe("AV1 advertisement", () => {
   });
 });
 
+describe("canPlayAv1 / describeAv1Probe", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("reads canPlayType and survives createElement failures", () => {
+    const video = {
+      canPlayType: (type: string) => (type.includes("av01") ? "probably" : ""),
+    };
+    vi.spyOn(document, "createElement").mockReturnValue(video as unknown as HTMLVideoElement);
+    expect(canPlayAv1()).toBe(true);
+
+    vi.spyOn(document, "createElement").mockReturnValue({} as unknown as HTMLVideoElement);
+    expect(canPlayAv1()).toBe(false);
+
+    vi.spyOn(document, "createElement").mockImplementation(() => {
+      throw new Error("no video");
+    });
+    expect(canPlayAv1()).toBe(false);
+  });
+
+  it("summarises probe signals for diagnostics", () => {
+    const summary = describeAv1Probe({
+      systemInfo: { isSupportedVideoCodec: () => false },
+      tizenVersion: 6.5,
+      canPlayAv1: true,
+    });
+    expect(summary).toEqual({
+      tizenVersion: 6.5,
+      systeminfo: false,
+      canPlayType: true,
+      supported: true,
+    });
+
+    const missingProbe = describeAv1Probe({
+      systemInfo: {},
+      tizenVersion: 6.5,
+      canPlayAv1: false,
+    });
+    expect(missingProbe.systeminfo).toBeNull();
+    expect(missingProbe.supported).toBe(false);
+
+    // Default path: resolve systeminfo + canPlayType from the runtime.
+    stubWindow({
+      innerWidth: 1920,
+      innerHeight: 1080,
+      webapis: { systeminfo: { isSupportedVideoCodec: () => false } },
+    });
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (SMART-TV; Tizen 6.5)" });
+    vi.spyOn(document, "createElement").mockReturnValue({
+      canPlayType: () => "",
+    } as unknown as HTMLVideoElement);
+    const live = describeAv1Probe();
+    expect(live.tizenVersion).toBe(6.5);
+    expect(live.systeminfo).toBe(false);
+    expect(live.canPlayType).toBe(false);
+    expect(live.supported).toBe(false);
+  });
+});
+
 describe("AV1 advertise overrides", () => {
   it("force-injects and strips av1 independently of the probe", () => {
     const base = {
@@ -331,9 +394,16 @@ describe("AV1 advertise overrides", () => {
     expect(
       applyAv1AdvertiseOverrides(
         { ...base, codecs_video: ["h264", "hevc", "av1"] },
+        { forceAv1: true },
+      ).codecs_video,
+    ).toEqual(["h264", "hevc", "av1"]);
+    expect(
+      applyAv1AdvertiseOverrides(
+        { ...base, codecs_video: ["h264", "hevc", "av1"] },
         { disableAv1: true },
       ).codecs_video,
     ).toEqual(["h264", "hevc"]);
+    expect(applyAv1AdvertiseOverrides(base, {}).codecs_video).toEqual(["h264", "hevc"]);
     expect(
       resolveAdvertisedCapabilities(
         { forceAv1: true },
