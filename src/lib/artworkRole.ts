@@ -8,7 +8,7 @@
  * behaviour for each kind of artwork are decided in exactly one place.
  *
  * Width rungs must exist in the server ladder (internal/artworkkey.VariantWidths):
- *   poster / still / profile -> w500, w300
+ *   poster / still / profile -> w500, w300, w200
  *   backdrop                 -> w1920, w1280, w300
  *   logo                     -> w500
  */

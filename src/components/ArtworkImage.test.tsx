@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ArtworkImage } from "./ArtworkImage";
+import { artworkRoleWidth } from "../lib/artworkRole";
 import { BACKDROP_CARD_WIDTH } from "../lib/artworkUrl";
 import { resetImageLoadQueueForTests } from "../lib/imageLoadQueue";
 import { ServerUrlContext } from "../serverUrlContext";
@@ -74,7 +75,9 @@ describe("ArtworkImage", () => {
   it("requests a sized rung, never the original object", async () => {
     await render(<ArtworkImage src="/artwork/lib/original.webp" alt="" role="libraryTile" />);
     const src = images()[0]?.getAttribute("src") ?? "";
-    expect(src).toContain("/w300.");
+    // Assert against the ladder rather than a literal, so moving a role to a
+    // different rung does not need this test edited.
+    expect(src).toContain(`/w${artworkRoleWidth("libraryTile")}.`);
     expect(src).not.toContain("/original.");
   });
 
