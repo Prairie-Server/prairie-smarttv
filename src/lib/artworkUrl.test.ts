@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   artworkCandidates,
+  artworkPreferred,
   artworkSized,
   artworkSizedCandidates,
   artworkWidthVariant,
@@ -92,15 +93,30 @@ describe("artworkSized", () => {
 describe("artworkCandidates", () => {
   beforeEach(() => {
     resetImageFormatsCacheForTests();
-    localStorage.setItem("prairie.imageFormats", "webp,avif,png");
+    localStorage.setItem("prairie.imageFormats", "avif,webp,png");
   });
 
-  it("orders WebP → AVIF → PNG for WebP artwork", () => {
-    expect(artworkCandidates("/art/original.rev.webp")).toEqual([
-      "/art/original.rev.webp",
-      "/art/original.rev.avif",
-      "/art/original.rev.png",
-    ]);
+  it("does not invent AVIF/PNG siblings from a WebP path", () => {
+    expect(artworkCandidates("/art/original.rev.webp")).toEqual(["/art/original.rev.webp"]);
+  });
+
+  it("picks the single best among API-provided siblings", () => {
+    expect(
+      artworkPreferred("/art/original.rev.webp", {
+        avif: "/art/original.rev.avif",
+        png: "/art/original.rev.png",
+      }),
+    ).toBe("/art/original.rev.avif");
+  });
+
+  it("uses WebP when the client cannot decode AVIF even if AVIF is provided", () => {
+    resetImageFormatsCacheForTests();
+    localStorage.setItem("prairie.imageFormats", "webp,png");
+    expect(
+      artworkPreferred("/art/original.rev.webp", {
+        avif: "/art/original.rev.avif",
+      }),
+    ).toBe("/art/original.rev.webp");
   });
 
   it("returns the original URL alone when it is not WebP", () => {
@@ -119,22 +135,27 @@ describe("artworkSizedCandidates", () => {
     localStorage.setItem("prairie.imageFormats", "webp,png");
   });
 
-  it("tries the width variant first, then the canonical ladder", () => {
-    // A width rung the server never generated must not dead-end on siblings
-    // of a missing object — the original has to remain reachable.
+  it("tries the width variant then the same-format original — never a format cascade", () => {
     expect(artworkSizedCandidates("/art/original.rev.webp", 300)).toEqual([
       "/art/w300.rev.webp",
-      "/art/w300.rev.png",
       "/art/original.rev.webp",
-      "/art/original.rev.png",
     ]);
   });
 
-  it("falls back to the plain ladder when no rewrite applies", () => {
+  it("applies width to the preferred API sibling", () => {
+    resetImageFormatsCacheForTests();
+    localStorage.setItem("prairie.imageFormats", "avif,webp,png");
+    expect(
+      artworkSizedCandidates("/art/original.rev.webp", 300, {
+        avif: "/art/original.rev.avif",
+      }),
+    ).toEqual(["/art/w300.rev.avif", "/art/original.rev.avif"]);
+  });
+
+  it("falls back to the plain URL when no rewrite applies", () => {
     expect(artworkSizedCandidates("/art/cover.jpg", 300)).toEqual(["/art/cover.jpg"]);
     expect(artworkSizedCandidates("/art/original.rev.webp", null)).toEqual([
       "/art/original.rev.webp",
-      "/art/original.rev.png",
     ]);
     expect(artworkSizedCandidates("", 300)).toEqual([]);
     expect(artworkSizedCandidates(null, 300)).toEqual([]);

@@ -19,7 +19,10 @@ export interface CatalogItem {
   rating_imdb?: number | null;
   overview?: string | null;
   poster_url?: string | null;
+  /** Present when the server has an AVIF sibling — prefer over inventing .avif paths. */
+  poster_avif_url?: string | null;
   backdrop_url?: string | null;
+  backdrop_avif_url?: string | null;
   logo_url?: string | null;
   series_id?: string | null;
   series_title?: string | null;

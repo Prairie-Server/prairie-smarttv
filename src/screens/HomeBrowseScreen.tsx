@@ -145,6 +145,7 @@ const HomeRow = memo(function HomeRow({
             }
             meta={remaining ? `${remaining} left` : null}
             imageUrl={item.backdrop_url || item.poster_url}
+            imageAvifUrl={item.backdrop_url ? item.backdrop_avif_url : item.poster_avif_url}
             progress={progress}
             watched={Boolean(item.user_state?.played)}
             imageLoading={imageLoading}
@@ -157,6 +158,7 @@ const HomeRow = memo(function HomeRow({
           title={item.title}
           subtitle={catalogItemSubtitle(item)}
           posterUrl={item.poster_url}
+          posterAvifUrl={item.poster_avif_url}
           progress={progress}
           watched={Boolean(item.user_state?.played)}
           favorite={Boolean(item.user_state?.is_favorite)}
