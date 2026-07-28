@@ -16,6 +16,13 @@ export interface PlaybackSettings {
   forceDirectPlay: boolean;
   /** Send play_method: "transcode" to Prairie. */
   forceTranscode: boolean;
+  /**
+   * Advertise `av1` in codecs_video even when the capability probe said no —
+   * escape hatch for panels (e.g. some 2022 QLEDs) that misreport support.
+   */
+  forceAv1: boolean;
+  /** Strip `av1` from codecs_video even when the probe said yes. */
+  disableAv1: boolean;
   /** On-screen subtitle look (text / background). */
   subtitleAppearance: SubtitleAppearance;
   /** Preferred subtitle language code when available (e.g. "eng"). Empty = Off preference. */
@@ -26,6 +33,8 @@ export const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = {
   playerBackend: "auto",
   forceDirectPlay: false,
   forceTranscode: false,
+  forceAv1: false,
+  disableAv1: false,
   subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE },
   preferredSubtitleLanguage: "",
 };
@@ -49,6 +58,8 @@ export function normalizePlaybackSettings(
 
   next.forceDirectPlay = next.forceDirectPlay === true;
   next.forceTranscode = next.forceTranscode === true;
+  next.forceAv1 = next.forceAv1 === true;
+  next.disableAv1 = next.disableAv1 === true;
   next.preferredSubtitleLanguage =
     typeof next.preferredSubtitleLanguage === "string"
       ? next.preferredSubtitleLanguage.trim().toLowerCase()
@@ -57,6 +68,10 @@ export function normalizePlaybackSettings(
   // Direct wins when both are somehow set (UI should prevent this).
   if (next.forceDirectPlay && next.forceTranscode) {
     next.forceTranscode = false;
+  }
+  // Disable wins over force — safer default if both are somehow set.
+  if (next.forceAv1 && next.disableAv1) {
+    next.forceAv1 = false;
   }
 
   return next;

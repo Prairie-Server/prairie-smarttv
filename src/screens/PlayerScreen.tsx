@@ -17,7 +17,7 @@ import {
 } from "../api/watch";
 import { FocusButton } from "../components/FocusButton";
 import { detectPlatform } from "../platform/detect";
-import { probeTvPlaybackCapabilities } from "../platform/tizen/deviceCapabilities";
+import { resolveAdvertisedCapabilities } from "../platform/tizen/deviceCapabilities";
 import { PlayerHost } from "../player/PlayerHost";
 import { selectPlayerBackend } from "../player/createPlayer";
 import { humanizePlaybackError } from "../player/humanizePlaybackError";
@@ -98,7 +98,14 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const bumpControlsRef = useRef<() => void>(() => undefined);
   const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
 
-  const deviceCaps = useMemo(() => probeTvPlaybackCapabilities(), []);
+  const deviceCaps = useMemo(
+    () =>
+      resolveAdvertisedCapabilities({
+        forceAv1: settings.forceAv1,
+        disableAv1: settings.disableAv1,
+      }),
+    [settings.forceAv1, settings.disableAv1],
+  );
 
   const [playback, setPlayback] = useState<PlaybackSessionResponse | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);

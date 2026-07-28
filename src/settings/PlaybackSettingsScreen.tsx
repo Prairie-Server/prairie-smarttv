@@ -5,6 +5,10 @@ import { SettingsChoiceRow, SettingsToggleRow } from "../components/SettingsRows
 import { isBackKey } from "../focus/spatialFocus";
 import { resetImageFormatTierCache } from "../lib/imageFormats";
 import { detectPlatform } from "../platform/detect";
+import {
+  describeAv1Probe,
+  resolveAdvertisedCapabilities,
+} from "../platform/tizen/deviceCapabilities";
 import type { PlayerBackendPreference } from "../platform/types";
 import {
   changelogUrlOrNull,
@@ -14,6 +18,7 @@ import {
 } from "../update/appUpdateStatus";
 import { checkAppUpdate } from "../update/checkAppUpdate";
 import {
+  describePlayMethodPreference,
   loadPlaybackSettings,
   savePlaybackSettings,
   type PlaybackSettings,
@@ -42,7 +47,6 @@ interface PlaybackSettingsScreenProps {
   onSwitchServer?: () => void;
 }
 
-type StreamMethodChoice = "auto" | "direct" | "transcode";
 type SettingsSectionId = "servers" | "playback" | "display" | "subtitles" | "about";
 
 const BACKEND_OPTIONS: { value: PlayerBackendPreference; label: string }[] = [
@@ -87,16 +91,10 @@ const OPACITY_OPTIONS = [
   { value: "100", label: "100%" },
 ];
 
-const STREAM_OPTIONS: Array<{ value: StreamMethodChoice; label: string }> = [
-  { value: "auto", label: "Auto" },
-  { value: "direct", label: "Direct play" },
-  { value: "transcode", label: "Transcode" },
-];
-
-function streamMethodFromSettings(settings: PlaybackSettings): StreamMethodChoice {
-  if (settings.forceDirectPlay) return "direct";
-  if (settings.forceTranscode) return "transcode";
-  return "auto";
+function formatProbeTriState(value: boolean | null): string {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "n/a";
 }
 
 export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSettingsScreenProps) {
@@ -126,6 +124,16 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
   const changelogUrl = changelogUrlOrNull(updateStatus);
   const activeSection = sections.find((item) => item.id === section) ?? sections[0];
   const resolvedTier = resolvePerformanceTier(performanceMode);
+  const av1Probe = useMemo(() => describeAv1Probe(), []);
+  const advertisedCaps = useMemo(
+    () =>
+      resolveAdvertisedCapabilities({
+        forceAv1: settings.forceAv1,
+        disableAv1: settings.disableAv1,
+      }),
+    [settings.forceAv1, settings.disableAv1],
+  );
+  const playMethodLabel = describePlayMethodPreference(settings);
 
   useEffect(() => {
     if (!sections.some((item) => item.id === section)) {
@@ -157,8 +165,11 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
   function update(partial: Partial<PlaybackSettings>) {
     setSettings((prev) => {
       const next = { ...prev, ...partial };
+      // resolveForcedPlayMethod checks direct first — keep the pair exclusive.
       if (partial.forceDirectPlay) next.forceTranscode = false;
       if (partial.forceTranscode) next.forceDirectPlay = false;
+      if (partial.forceAv1) next.disableAv1 = false;
+      if (partial.disableAv1) next.forceAv1 = false;
       return savePlaybackSettings(next);
     });
   }
@@ -166,13 +177,6 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
   function updateAppearance(partial: Partial<SubtitleAppearance>) {
     update({
       subtitleAppearance: { ...appearance, ...partial },
-    });
-  }
-
-  function setStreamMethod(choice: StreamMethodChoice) {
-    update({
-      forceDirectPlay: choice === "direct",
-      forceTranscode: choice === "transcode",
     });
   }
 
@@ -208,13 +212,55 @@ export function PlaybackSettingsScreen({ onBack, onSwitchServer }: PlaybackSetti
           options={BACKEND_OPTIONS}
           onChange={(playerBackend) => update({ playerBackend })}
         />
-        <SettingsChoiceRow
-          label="Stream method"
-          hint="Auto prefers remux when possible"
-          value={streamMethodFromSettings(settings)}
-          options={STREAM_OPTIONS}
-          onChange={setStreamMethod}
+        <SettingsToggleRow
+          label="Force direct play"
+          hint="Ask Prairie for Direct Play only (clears Force transcode)"
+          checked={settings.forceDirectPlay}
+          onChange={(forceDirectPlay) => update({ forceDirectPlay })}
         />
+        <SettingsToggleRow
+          label="Force transcode"
+          hint="Ask Prairie to transcode (clears Force direct play)"
+          checked={settings.forceTranscode}
+          onChange={(forceTranscode) => update({ forceTranscode })}
+        />
+        <SettingsToggleRow
+          label="Advertise AV1 (override)"
+          hint="Force-advertise av1 when the panel probe is wrong"
+          checked={settings.forceAv1}
+          onChange={(forceAv1) => update({ forceAv1 })}
+        />
+        <SettingsToggleRow
+          label="Disable AV1"
+          hint="Never advertise av1, even when the probe says yes"
+          checked={settings.disableAv1}
+          onChange={(disableAv1) => update({ disableAv1 })}
+        />
+        <div className="settings-diagnostics" aria-label="Playback diagnostics">
+          <p className="eyebrow">Diagnostics</p>
+          <p className="muted settings-note">
+            Play method <strong>{playMethodLabel}</strong>
+          </p>
+          <p className="muted settings-note">
+            Tizen <strong>{av1Probe.tizenVersion || "n/a"}</strong>
+            {" · "}
+            AV1 systeminfo <strong>{formatProbeTriState(av1Probe.systeminfo)}</strong>
+            {" · "}
+            canPlayType <strong>{av1Probe.canPlayType ? "yes" : "no"}</strong>
+            {" · "}
+            probe <strong>{av1Probe.supported ? "av1" : "no-av1"}</strong>
+          </p>
+          <p className="muted settings-note">
+            Advertised video <strong>{advertisedCaps.codecs_video.join(", ") || "none"}</strong>
+          </p>
+          <p className="muted settings-note">
+            Audio <strong>{advertisedCaps.codecs_audio.join(", ") || "none"}</strong>
+            {" · "}
+            Max <strong>{advertisedCaps.max_resolution}</strong>
+            {" · "}
+            HDR <strong>{advertisedCaps.hdr ? "yes" : "no"}</strong>
+          </p>
+        </div>
       </div>
     );
   } else if (section === "display") {
