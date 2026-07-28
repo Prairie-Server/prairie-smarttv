@@ -14,7 +14,8 @@ interface AvPlayApi {
   setDisplayRect(x: number, y: number, width: number, height: number): void;
   setDisplayMethod?(displayMode: string): void;
   setStreamingProperty?(propertyType: string, propertyParam: string): void;
-  setListener(listener: Record<string, unknown>): void;
+  // null clears the listener (releases native decoder refs on teardown).
+  setListener(listener: Record<string, unknown> | null): void;
   play(): void;
   pause(): void;
   stop(): void;
