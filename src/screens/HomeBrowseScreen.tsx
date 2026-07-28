@@ -25,8 +25,13 @@ interface HomeBrowseScreenProps {
  * and every skeleton card is mounted then torn down when data lands. */
 const SKELETON_ROW_COUNT = 2;
 const SKELETON_CARD_COUNT = 6;
-/** Rows mounted in the first commit; the rest follow one frame at a time. */
+/** Rows mounted in the first commit when there is no cache. */
 const INITIAL_ROW_COUNT = 1;
+/**
+ * With a warm cache the first viewport already has real content — mount enough
+ * rows to cover it so IntersectionObserver does not drip-feed the fold.
+ */
+const CACHED_INITIAL_ROW_COUNT = 3;
 const ROW_MOUNT_CHUNK = 2;
 /**
  * Mount a row once its reserved slot comes within this much of the viewport.
@@ -40,6 +45,59 @@ const ON_NOW_FOCUS_GRACE_MS = 700;
 
 /** How many images in the first row decode eagerly; the rest stay lazy. */
 const EAGER_IMAGE_COUNT = 2;
+
+/** Cheap equality for skipping a no-op Home refresh that would still re-render. */
+export function homeSectionsSignature(sections: HomeSection[]): string {
+  return sections
+    .map((section) => {
+      const items = section.items
+        .map(
+          (item) =>
+            `${item.content_id}:${item.position_seconds ?? ""}:${item.poster_url ?? ""}:${item.backdrop_url ?? ""}`,
+        )
+        .join(",");
+      return `${section.id}:${section.featured ? 1 : 0}:${section.title}:${items}`;
+    })
+    .join("|");
+}
+
+function featuredLeadId(sections: HomeSection[]): string | null {
+  const featured = sections.find((section) => section.featured);
+  return featured?.items[0]?.content_id ?? null;
+}
+
+function nonFeaturedRowCount(sections: HomeSection[]): number {
+  return sections.reduce((count, section) => count + (section.featured ? 0 : 1), 0);
+}
+
+/**
+ * Keep rows the user already scrolled into view across a background refresh.
+ * Resetting to INITIAL_ROW_COUNT unmounted Continue Watching mid-session and
+ * stole focus back to the top of the page.
+ */
+export function reconcileMountedRows(
+  prev: ReadonlySet<number>,
+  rowCount: number,
+  ensureCount: number = INITIAL_ROW_COUNT,
+): ReadonlySet<number> {
+  if (rowCount <= 0) return prev.size === 0 ? prev : new Set();
+  const next = new Set<number>();
+  for (const index of prev) {
+    if (index >= 0 && index < rowCount) next.add(index);
+  }
+  for (let i = 0; i < Math.min(ensureCount, rowCount); i++) next.add(i);
+  if (next.size === prev.size) {
+    let same = true;
+    for (const index of next) {
+      if (!prev.has(index)) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return prev;
+  }
+  return next;
+}
 
 interface HomeRowProps {
   section: HomeSection;
@@ -137,9 +195,15 @@ export function HomeBrowseScreen({
   const [loading, setLoading] = useState(() => (cachedSections.current?.length ?? 0) === 0);
   const [error, setError] = useState<string | null>(null);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [mountedRows, setMountedRows] = useState<ReadonlySet<number>>(
-    () => new Set(Array.from({ length: INITIAL_ROW_COUNT }, (_, index) => index)),
-  );
+  const featuredLeadRef = useRef<string | null>(featuredLeadId(cachedSections.current ?? []));
+  const [mountedRows, setMountedRows] = useState<ReadonlySet<number>>(() => {
+    const cachedCount = nonFeaturedRowCount(cachedSections.current ?? []);
+    const initial =
+      cachedCount > 0
+        ? Math.min(cachedCount, Math.max(INITIAL_ROW_COUNT, CACHED_INITIAL_ROW_COUNT))
+        : INITIAL_ROW_COUNT;
+    return new Set(Array.from({ length: initial }, (_, index) => index));
+  });
   const [onNowStatus, setOnNowStatus] = useState<OnNowStatus>("loading");
   const paneRef = useRef<HTMLElement>(null);
   const rowObserverRef = useRef<IntersectionObserver | null>(null);
@@ -152,9 +216,19 @@ export function HomeBrowseScreen({
         const next = await fetchHomeSections(session);
         if (!cancelled) {
           const populated = next.filter((s) => s.items.length > 0);
-          setSections(populated);
-          setHeroIndex(0);
-          setMountedRows(new Set(Array.from({ length: INITIAL_ROW_COUNT }, (_, i) => i)));
+          const rowCount = nonFeaturedRowCount(populated);
+          const nextLead = featuredLeadId(populated);
+          setSections((prev) =>
+            homeSectionsSignature(prev) === homeSectionsSignature(populated) ? prev : populated,
+          );
+          // Only rewind the hero when the featured title actually changed.
+          if (featuredLeadRef.current !== nextLead) {
+            featuredLeadRef.current = nextLead;
+            setHeroIndex(0);
+          }
+          // Never collapse already-mounted rows — that is what made Continue
+          // Watching disappear mid-scroll and jump focus back to the top.
+          setMountedRows((prev) => reconcileMountedRows(prev, rowCount));
           saveCachedHomeSections(populated, session.serverUrl, session.profileId);
         }
       } catch (err) {
@@ -194,7 +268,10 @@ export function HomeBrowseScreen({
           `.media-row--${variant}:not(.media-row--deferred):not(.media-row--skeleton)`,
         );
         const height = Math.round(row?.getBoundingClientRect().height ?? 0);
-        if (height > 0 && prev[variant] !== height) {
+        // Only grow (or first-measure). Shrinking reserved height when a row
+        // remounts is a common CLS source on TV.
+        const previous = prev[variant];
+        if (height > 0 && (previous == null || height > previous)) {
           next = { ...next, [variant]: height };
         }
       }

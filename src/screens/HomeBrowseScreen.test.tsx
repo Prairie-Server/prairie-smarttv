@@ -2,7 +2,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeSection } from "../api/home";
+import { saveCachedHomeSections } from "../lib/homeSectionsCache";
 import type { PrairieSession } from "../storage/session";
+import { homeSectionsSignature, reconcileMountedRows } from "./HomeBrowseScreen";
 
 const session: PrairieSession = {
   serverUrl: "https://tv.example.com",
@@ -15,6 +17,8 @@ let homeDelay = 0;
 let channelCount = 4;
 /** Resolved by the test to release the Live TV channel request. */
 let releaseChannels: (() => void) | null = null;
+/** Optional override so a refresh can return different rows than the first paint. */
+let homeSectionsOverride: HomeSection[] | null = null;
 
 function item(prefix: string, index: number) {
   return {
@@ -39,7 +43,7 @@ vi.mock("../api/home", async (importOriginal) => {
     ...actual,
     fetchHomeSections: vi.fn(async () => {
       if (homeDelay > 0) await new Promise((resolve) => setTimeout(resolve, homeDelay));
-      return sections;
+      return homeSectionsOverride ?? sections;
     }),
   };
 });
@@ -137,11 +141,13 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   homeDelay = 0;
+  homeSectionsOverride = null;
   releaseChannels = null;
   channelCount = 4;
   frameQueue = [];
   observedSlots = [];
   intersectionCallbacks = [];
+  localStorage.clear();
   realIntersectionObserver = window.IntersectionObserver;
   class TestIntersectionObserver {
     constructor(callback: IntersectionObserverCallback) {
@@ -173,6 +179,29 @@ afterEach(() => {
     root = null;
   }
   container.remove();
+});
+
+describe("reconcileMountedRows", () => {
+  it("keeps scrolled-in rows when a refresh arrives", () => {
+    const prev = new Set([0, 1, 2, 4]);
+    const next = reconcileMountedRows(prev, 8);
+    expect([...next].sort((a, b) => a - b)).toEqual([0, 1, 2, 4]);
+  });
+
+  it("prunes indices past the new row count", () => {
+    const prev = new Set([0, 1, 5, 7]);
+    const next = reconcileMountedRows(prev, 3);
+    expect([...next].sort((a, b) => a - b)).toEqual([0, 1]);
+  });
+});
+
+describe("homeSectionsSignature", () => {
+  it("changes when continue-watching progress changes", () => {
+    const base = sections[0]!;
+    const a = [{ ...base, items: [{ ...base.items[0]!, position_seconds: 10 }] }];
+    const b = [{ ...base, items: [{ ...base.items[0]!, position_seconds: 40 }] }];
+    expect(homeSectionsSignature(a)).not.toBe(homeSectionsSignature(b));
+  });
 });
 
 describe("HomeBrowseScreen first paint", () => {
@@ -226,6 +255,45 @@ describe("HomeBrowseScreen first paint", () => {
     );
     expect(eager.length).toBeGreaterThan(0);
     expect(eager.length).toBeLessThanOrEqual(4);
+  });
+
+  it("does not collapse scrolled-in rows when the network refresh lands", async () => {
+    // Seed a warm cache so Home paints immediately, then delay the refresh.
+    saveCachedHomeSections(sections, session.serverUrl, session.profileId);
+    homeDelay = 80;
+    // Refresh returns slightly newer progress so setSections actually runs.
+    homeSectionsOverride = sections.map((section, rowIndex) =>
+      rowIndex === 0
+        ? {
+            ...section,
+            items: section.items.map((entry, i) =>
+              i === 0 ? { ...entry, position_seconds: 120 } : entry,
+            ),
+          }
+        : section,
+    );
+
+    await renderHome();
+    await settle();
+
+    const deferred = [...container.querySelectorAll<HTMLElement>(".media-row--deferred")];
+    expect(deferred.length).toBeGreaterThan(0);
+    await scrollSlotsIntoView(deferred.slice(0, 2));
+    const mountedBefore = rowScrollers();
+    expect(mountedBefore).toBeGreaterThan(1);
+
+    const focused = container.querySelectorAll<HTMLElement>("[data-focus-index]")[3];
+    expect(focused).toBeTruthy();
+    await act(async () => {
+      focused!.focus();
+    });
+    expect(document.activeElement).toBe(focused);
+
+    await settle(100);
+
+    // Refresh must not tear down rows the user already reached.
+    expect(rowScrollers()).toBeGreaterThanOrEqual(mountedBefore);
+    expect(document.activeElement).toBe(focused);
   });
 });
 
