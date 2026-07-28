@@ -188,6 +188,36 @@ describe("PlayerScreen chrome and exit", () => {
     expect(container.textContent?.includes("Pause")).toBe(playingBefore);
   });
 
+  it("reveals chrome and toggles play on OK after auto-hide", async () => {
+    await renderPlayer();
+    await settle(20);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+    expect(container.querySelector(".player-chrome")).toBeNull();
+    expect(container.textContent?.includes("Pause")).toBe(false);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
+    });
+    expect(container.querySelector(".player-chrome")).not.toBeNull();
+    expect(container.textContent?.includes("Play")).toBe(true);
+  });
+
+  it("reveals chrome on D-pad after auto-hide", async () => {
+    await renderPlayer();
+    await settle(20);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+    expect(container.querySelector(".player-chrome")).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true }));
+    });
+    expect(container.querySelector(".player-chrome")).not.toBeNull();
+  });
+
   it("exits on tizenhwkey back and clears player-active", async () => {
     await renderPlayer();
     await settle(20);
@@ -195,12 +225,13 @@ describe("PlayerScreen chrome and exit", () => {
 
     await act(async () => {
       document.dispatchEvent(
-        Object.assign(new Event("tizenhwkey", { cancelable: true }), { keyName: "back" }),
+        Object.assign(new Event("tizenhwkey", { cancelable: true }), { keyName: "Back" }),
       );
     });
 
     expect(exited).toBe(true);
     expect(document.documentElement.classList.contains("player-active")).toBe(false);
     expect(document.body.classList.contains("player-active")).toBe(false);
+    expect(player.destroy).toHaveBeenCalled();
   });
 });

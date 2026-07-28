@@ -33,7 +33,7 @@ describe("subscribeBackKeys", () => {
 
     resetBackKeyCoalesceForTests();
     document.dispatchEvent(
-      Object.assign(new Event("tizenhwkey", { cancelable: true }), { keyName: "back" }),
+      Object.assign(new Event("tizenhwkey", { cancelable: true }), { keyName: "BACK" }),
     );
     expect(onBack).toHaveBeenCalledTimes(2);
 

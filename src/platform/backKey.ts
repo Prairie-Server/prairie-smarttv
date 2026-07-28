@@ -46,12 +46,12 @@ export function subscribeBackKeys(onBack: (event: Event) => void): () => void {
   };
 
   const onHwKey = (event: Event) => {
-    const keyName = (event as { keyName?: string }).keyName;
+    const keyName = String((event as { keyName?: string }).keyName ?? "").toLowerCase();
     if (keyName !== "back") return;
-    if (!shouldHandleBackNow()) {
-      event.preventDefault?.();
-      return;
-    }
+    // Always consume the HW back so Tizen does not background the app even when
+    // we coalesce a duplicate of the keyboard Back that already ran.
+    event.preventDefault?.();
+    if (!shouldHandleBackNow()) return;
     onBack(event);
   };
 

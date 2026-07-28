@@ -17,6 +17,7 @@ import {
 } from "../api/watch";
 import { FocusButton } from "../components/FocusButton";
 import { isActionableTarget } from "../focus/isActionableTarget";
+import { isArrowKey } from "../focus/spatialFocusKeys";
 import { subscribeBackKeys } from "../platform/backKey";
 import { detectPlatform } from "../platform/detect";
 import { resolveAdvertisedCapabilities } from "../platform/tizen/deviceCapabilities";
@@ -127,6 +128,8 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState(-1);
   const [busyAudio, setBusyAudio] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsVisibleRef = useRef(controlsVisible);
+  controlsVisibleRef.current = controlsVisible;
 
   const audioTracks = useMemo(() => {
     if (!watch || !playback) return [];
@@ -268,6 +271,43 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     function onKeyDown(event: KeyboardEvent) {
       const key = event.key;
       if (error) return;
+
+      const chromeUp = controlsVisibleRef.current || menu !== "none";
+
+      // Hidden chrome: any remote activity must reveal controls. Capture phase
+      // so this wins over spatial focus (which would otherwise focus a dead
+      // target or the old full-screen tap button and swallow the press).
+      if (!chromeUp) {
+        if (
+          isArrowKey(key) ||
+          key === "Enter" ||
+          key === " " ||
+          key === "MediaPlayPause" ||
+          key === "MediaPlay" ||
+          key === "MediaPause" ||
+          key === "MediaRewind" ||
+          key === "MediaFastForward" ||
+          (key === "ArrowLeft" && event.altKey) ||
+          (key === "ArrowRight" && event.altKey)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          bumpControlsRef.current();
+          if (key === "Enter" || key === " " || key === "MediaPlayPause") {
+            setPlaying((p) => !p);
+          } else if (key === "MediaPause") {
+            setPlaying(false);
+          } else if (key === "MediaPlay") {
+            setPlaying(true);
+          } else if (key === "MediaRewind" || (key === "ArrowLeft" && event.altKey)) {
+            seekByRef.current(-SEEK_STEP_SECONDS);
+          } else if (key === "MediaFastForward" || (key === "ArrowRight" && event.altKey)) {
+            seekByRef.current(SEEK_STEP_SECONDS);
+          }
+        }
+        return;
+      }
+
       if (key === "Enter" || key === " " || key === "MediaPlayPause") {
         if (menu !== "none") return;
         // OK/Enter on a chrome button must activate that button — not play/pause.
@@ -282,6 +322,18 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         bumpControlsRef.current();
         return;
       }
+      if (key === "MediaPlay") {
+        event.preventDefault();
+        setPlaying(true);
+        bumpControlsRef.current();
+        return;
+      }
+      if (key === "MediaPause") {
+        event.preventDefault();
+        setPlaying(false);
+        bumpControlsRef.current();
+        return;
+      }
       if (key === "MediaRewind" || (key === "ArrowLeft" && event.altKey)) {
         event.preventDefault();
         seekByRef.current(-SEEK_STEP_SECONDS);
@@ -292,8 +344,9 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
         seekByRef.current(SEEK_STEP_SECONDS);
       }
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Capture: reveal chrome before App spatial focus consumes D-pad.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [menu, error]);
 
   function bumpControls() {
@@ -483,15 +536,29 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
       window.clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
+    // Capture progress before tearing down the decoder.
+    const sid = playbackRef.current?.session_id;
+    const position = mediaPositionSeconds();
+    playbackRef.current = null;
+    // Tear down AVPlay/html5 before navigating. Leaving the video plane up after
+    // player-active is cleared is what reads as a blank app shell on Tizen.
+    try {
+      playerRef.current?.pause();
+    } catch {
+      /* ignore */
+    }
+    try {
+      playerRef.current?.destroy();
+    } catch {
+      /* ignore */
+    }
+    playerRef.current = null;
     // Restore opaque backgrounds before navigating. If Back also backgrounds the
     // packaged app (unhandled tizenhwkey), a lingering player-active class left
     // only the TV wallpaper / empty shell visible.
     clearPlayerActive();
     // Navigate first so we never sit on a transparent player plane / body gradient
     // while awaiting network teardown.
-    const sid = playbackRef.current?.session_id;
-    const position = mediaPositionSeconds();
-    playbackRef.current = null;
     onExit();
     void (async () => {
       if (sid) {
@@ -937,10 +1004,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
           </div>
         </div>
       ) : (
-        <button
-          type="button"
+        <div
           className="player-tap-catcher"
           onClick={bumpControls}
+          onMouseMove={bumpControls}
           aria-label="Show controls"
         />
       )}
