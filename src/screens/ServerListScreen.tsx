@@ -88,7 +88,12 @@ export function ServerListScreen({
   const saved = sortedEntries(registry);
   const savedUrls = new Set(saved.map((e) => e.url));
   const freshHits = discovered.filter((hit) => !savedUrls.has(hit.url));
-  const controlsLocked = busy || connecting;
+  // A running LAN scan must never lock the screen: discovery can hang (dead
+  // hosts time out one by one), and if it did lock the UI the user could not
+  // bail to a saved server or manual entry — the exact trap that stranded a
+  // hung "Quick scan 24/145…". Only an in-flight connect locks the controls;
+  // the Scan button itself is gated on `busy` separately below.
+  const controlsLocked = connecting;
 
   useEffect(() => {
     return () => {
@@ -226,7 +231,7 @@ export function ServerListScreen({
           <FocusButton
             icon={<Radar />}
             onClick={() => void startScan(true)}
-            disabled={controlsLocked}
+            disabled={busy || connecting}
             autoFocus={!saved.length}
           >
             {busy ? "Scanning…" : connecting ? "Connecting…" : "Scan again"}
