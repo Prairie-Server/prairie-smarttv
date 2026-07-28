@@ -460,6 +460,68 @@ describe("spatialFocus", () => {
     expect(findSpatialNeighbor(a, "ArrowRight")).toBeNull();
   });
 
+  it("clamps to the nearest column when entering a ragged row from above", () => {
+    const row1 = document.createElement("div");
+    row1.dataset.focusContainer = "horizontal";
+    row1.dataset.focusCount = "3";
+    const watch1 = document.createElement("button");
+    watch1.dataset.focusIndex = "0";
+    const recNow = document.createElement("button");
+    recNow.dataset.focusIndex = "1";
+    const recNext = document.createElement("button");
+    recNext.dataset.focusIndex = "2";
+    row1.append(watch1, recNow, recNext);
+
+    const row2 = document.createElement("div");
+    row2.dataset.focusContainer = "horizontal";
+    row2.dataset.focusCount = "1";
+    const watch2 = document.createElement("button");
+    watch2.dataset.focusIndex = "0";
+    row2.append(watch2);
+
+    document.body.append(row1, row2);
+    place(watch1, 0, 0);
+    place(recNow, 120, 0);
+    place(recNext, 240, 0);
+    place(watch2, 0, 200);
+
+    recNext.focus();
+    expect(findSpatialNeighbor(recNext, "ArrowDown")).toBe(watch2);
+  });
+
+  it("clamps to the nearest column when re-entering a shorter row", () => {
+    const row1 = document.createElement("div");
+    row1.dataset.focusContainer = "horizontal";
+    row1.dataset.focusCount = "3";
+    const watch1 = document.createElement("button");
+    watch1.dataset.focusIndex = "0";
+    const recNow = document.createElement("button");
+    recNow.dataset.focusIndex = "1";
+    const recNext = document.createElement("button");
+    recNext.dataset.focusIndex = "2";
+    row1.append(watch1, recNow, recNext);
+
+    const row2 = document.createElement("div");
+    row2.dataset.focusContainer = "horizontal";
+    row2.dataset.focusCount = "1";
+    const watch2 = document.createElement("button");
+    watch2.dataset.focusIndex = "0";
+    row2.append(watch2);
+
+    document.body.append(row1, row2);
+    place(watch1, 0, 0);
+    place(recNow, 120, 0);
+    place(recNext, 240, 0);
+    place(watch2, 240, 200);
+
+    recNext.focus();
+    expect(findSpatialNeighbor(recNext, "ArrowDown")).toBe(watch2);
+
+    // Row two only has column zero; re-enter row one on the nearest mounted column.
+    row1.removeChild(recNext);
+    expect(findSpatialNeighbor(watch2, "ArrowUp")).toBe(recNow);
+  });
+
   it("clamps invalid focusCount and stays put at a horizontal edge", () => {
     const row = document.createElement("div");
     row.dataset.focusContainer = "horizontal";

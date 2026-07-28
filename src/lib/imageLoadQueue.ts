@@ -1,4 +1,4 @@
-import { resolvePerformanceTier, type PerformanceTier } from "../perf/performanceTier";
+import type { PerformanceTier } from "../perf/performanceTier";
 
 /**
  * Caps how many artwork images decode at once.
@@ -15,24 +15,21 @@ import { resolvePerformanceTier, type PerformanceTier } from "../perf/performanc
 /**
  * How many artwork loads may be in flight at once, by device tier.
  *
- * This was a flat 2 back when every image decoded synchronously on the paint
- * path, and two was all a mid-range SoC could take without dropping D-pad input.
- * Artwork now decodes asynchronously, so the cap is mostly protecting memory and
- * the connection pool rather than the main thread — and a flat 2 was serialising
- * a screenful of posters into ten round trips.
+ * Keep this conservative: a flat 2 was what stopped multi-minute D-pad lock-ups
+ * on mid-range Tizen after decode went async. Higher tiers may admit one extra
+ * in-flight image; raising further needs on-device confirmation.
  */
 const MAX_CONCURRENT_BY_TIER: Record<PerformanceTier, number> = {
-  high: 6,
-  balanced: 4,
+  high: 3,
+  balanced: 2,
   low: 2,
 };
 
-let maxConcurrentLoads = MAX_CONCURRENT_BY_TIER[resolvePerformanceTier()];
+/** Default until `refreshImageLoadConcurrency` runs from boot / settings. */
+let maxConcurrentLoads = MAX_CONCURRENT_BY_TIER.low;
 
 /** Re-read the tier (called when the performance mode setting changes). */
-export function refreshImageLoadConcurrency(
-  tier: PerformanceTier = resolvePerformanceTier(),
-): number {
+export function refreshImageLoadConcurrency(tier: PerformanceTier): number {
   maxConcurrentLoads = MAX_CONCURRENT_BY_TIER[tier];
   pump();
   return maxConcurrentLoads;
@@ -52,7 +49,7 @@ function pump(): void {
 }
 
 export type AcquireImageSlotOptions = {
-  /** Jump ahead of lazy loads. Still respects MAX_CONCURRENT_LOADS. */
+  /** Jump ahead of lazy loads. Still respects the current concurrency cap. */
   priority?: boolean;
 };
 

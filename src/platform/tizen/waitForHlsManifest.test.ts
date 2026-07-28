@@ -21,6 +21,11 @@ describe("firstMediaSegmentUrl", () => {
       "https://x/segment/seg_00000.ts?token=1",
     );
   });
+  it("inherits the playlist query on relative segments", () => {
+    expect(firstMediaSegmentUrl("https://x/a.m3u8?auth=1", "#EXTM3U\n#EXTINF:1,\nseg.ts\n")).toBe(
+      "https://x/seg.ts?auth=1",
+    );
+  });
 });
 
 describe("waitForHlsManifest", () => {
@@ -121,5 +126,69 @@ describe("waitForHlsManifest", () => {
         throwOnTimeout: false,
       }),
     ).resolves.toBe(false);
+  });
+
+  it("falls back from HEAD to a ranged GET when HEAD is unsupported", async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes(".m3u8")) {
+        return new Response("#EXTM3U\n#EXTINF:2.0,\nseg.ts\n", { status: 200 });
+      }
+      if (init?.method === "HEAD") return new Response(null, { status: 405 });
+      if (init?.method === "GET") return new Response(null, { status: 206 });
+      return new Response("", { status: 404 });
+    });
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8?token=1", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 500,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it("ignores keepalive failures and keeps polling", async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes(".m3u8")) {
+        return new Response("#EXTM3U\n", { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 20,
+        requireSegment: false,
+        keepAliveEveryMs: 1,
+        onKeepAlive: () => {
+          throw new Error("keepalive down");
+        },
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it("keeps polling when the playlist has no media segments yet", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes(".m3u8")) {
+        calls += 1;
+        if (calls < 2) return new Response("#EXTM3U\n", { status: 200 });
+        return new Response("#EXTM3U\n#EXTINF:2.0,\nseg.ts\n", { status: 200 });
+      }
+      if (init?.method === "HEAD" || href.endsWith("seg.ts")) {
+        return new Response(null, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await expect(
+      waitForHlsManifest("https://x/a.m3u8", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        intervalMs: 1,
+        timeoutMs: 500,
+      }),
+    ).resolves.toBe(true);
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 });

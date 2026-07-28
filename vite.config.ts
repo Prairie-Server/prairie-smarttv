@@ -40,7 +40,6 @@ export default defineConfig({
     maxWorkers: "50%",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     // Gate logic modules at 95% across statements/branches/functions/lines.
-    // UI screens and native AVPlay/Starfish adapters stay excluded.
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
@@ -70,9 +69,7 @@ export default defineConfig({
       exclude: ["src/**/*.test.ts", "src/storage/durableStorage.ts"],
       thresholds: {
         statements: 95,
-        // Container/index focus adds many defensive branches; keep the gate
-        // tight on statements/lines/functions and accept 94% branches.
-        branches: 94,
+        branches: 95,
         functions: 95,
         lines: 95,
       },

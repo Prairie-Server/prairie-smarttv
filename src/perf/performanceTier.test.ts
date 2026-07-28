@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyPerformanceTier,
   compareTiers,
@@ -55,6 +55,17 @@ describe("performanceTier", () => {
     expect(loadPerformanceMode(storage)).toBe("low");
     expect(applyPerformanceTier("balanced")).toBe("balanced");
     expect(document.documentElement.dataset.perf).toBe("balanced");
+  });
+
+  it("refreshes image load concurrency when tier is applied", async () => {
+    const mod = await import("../lib/imageLoadQueue");
+    mod.resetImageLoadQueueForTests("low");
+    applyPerformanceTier("high");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const started = Array.from({ length: 4 }, () => vi.fn());
+    started.forEach((start) => mod.acquireImageSlot(start));
+    expect(mod.imageLoadQueueDepth().active).toBe(3);
+    mod.resetImageLoadQueueForTests("low");
   });
 
   it("strips AVIF on low tier and cycles modes", () => {

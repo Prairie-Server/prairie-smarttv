@@ -114,7 +114,16 @@ describe("watch helpers", () => {
     expect(formatAudioLabel({}, 1)).toBe("Audio 2");
     expect(formatSubtitleLabel({ language: "spa", forced: true })).toContain("Forced");
     expect(formatSubtitleLabel({ title: "English", hearing_impaired: true })).toContain("HI");
+    expect(formatSubtitleLabel({ label: "Custom" })).toBe("Custom");
     expect(formatSubtitleLabel({})).toBe("Subtitle");
+    expect(
+      selectPlaybackFileId({
+        content_id: "x",
+        type: "movie",
+        title: "t",
+        versions: undefined as unknown as WatchDetail["versions"],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -137,5 +146,12 @@ describe("watchDetailFromItemDetail", () => {
     } as ItemDetail);
     expect(mapped?.versions[0]?.file_id).toBe(9);
     expect(mapped?.user_data?.position_seconds).toBe(120);
+
+    const typed = watchDetailFromItemDetail({
+      content_id: "m2",
+      title: "Untyped",
+      versions: [{ file_id: 1 }],
+    } as ItemDetail);
+    expect(typed?.type).toBe("movie");
   });
 });

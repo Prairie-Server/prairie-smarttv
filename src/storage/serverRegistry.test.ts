@@ -264,4 +264,43 @@ describe("serverRegistry", () => {
     );
     expect(JSON.parse(storage.getItem("prairie.serverRegistry")!).entries).toHaveLength(1);
   });
+
+  it("preserves existing profile and token fields on partial updates", () => {
+    let registry = addOrUpdate(emptyRegistry(), {
+      url: "https://a.example.com",
+      fetchedName: "A",
+      username: "u",
+      profileId: "p1",
+      profileName: "Primary",
+      accessToken: "tok",
+      profileToken: "pt",
+      lastUsedAt: 100,
+    });
+    registry = addOrUpdate(registry, { url: "https://a.example.com", username: "" });
+    const entry = registry.entries[0]!;
+    expect(entry.profileId).toBe("p1");
+    expect(entry.profileName).toBe("Primary");
+    expect(entry.accessToken).toBe("tok");
+    expect(entry.profileToken).toBe("pt");
+    expect(entry.fetchedName).toBe("A");
+    expect(entry.lastUsedAt).toBe(100);
+  });
+
+  it("purges persisted token material when loading the registry", () => {
+    const storage = memoryStorage({
+      "prairie.serverRegistry": JSON.stringify({
+        entries: [
+          {
+            url: "https://tok.example",
+            accessToken: "secret",
+            profileToken: "ptok",
+          },
+        ],
+      }),
+    });
+    const loaded = loadRegistry(storage);
+    expect(loaded.entries[0]?.accessToken).toBe("");
+    expect(loaded.entries[0]?.profileToken).toBe("");
+    expect(JSON.parse(storage.getItem("prairie.serverRegistry")!).entries[0].accessToken).toBe("");
+  });
 });

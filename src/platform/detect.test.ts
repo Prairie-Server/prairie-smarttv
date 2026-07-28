@@ -48,6 +48,12 @@ describe("detectPlatform", () => {
     vi.stubGlobal("navigator", { userAgent: "SMART-TV; Tizen; Samsung TV" });
     expect(detectPlatform()).toBe("browser");
   });
+
+  it("does not treat a non-TV Tizen user agent as TV", () => {
+    vi.stubGlobal("window", { navigator: { userAgent: "Tizen 6.0" } });
+    vi.stubGlobal("navigator", { userAgent: "Tizen 6.0" });
+    expect(detectPlatform()).toBe("browser");
+  });
 });
 
 describe("isTvPlatform", () => {

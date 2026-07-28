@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { CollectionCard } from "./api/collections";
 import { checkServer } from "./api/checkServer";
 import { fetchLiveTvChannels, type LiveTvChannel } from "./api/livetv";
@@ -162,9 +162,15 @@ export function App() {
   // Keying the boundary on the route clears a stale error when the user
   // navigates away, so a crashed screen never sticks to the next one.
   const routeKey = route.name === "detail" ? `detail:${route.contentId}` : route.name;
+  // Suspense must wrap each lazy screen *inside* the shell (and each fullscreen
+  // route), not the whole App: a root-only boundary unmounted ShellNav on every
+  // first visit to Libraries / Search / … and flashed a blank page.
+  const lazyGate = (node: ReactNode) => (
+    <Suspense fallback={<div className="screen" aria-busy="true" />}>{node}</Suspense>
+  );
   const guard = (screen: string, node: ReactNode, onBack?: () => void) => (
     <ScreenErrorBoundary key={routeKey} screen={screen} onBack={onBack}>
-      {node}
+      {lazyGate(node)}
     </ScreenErrorBoundary>
   );
 
@@ -320,29 +326,29 @@ export function App() {
   }
 
   if (route.name === "servers") {
-    return (
+    return lazyGate(
       <ServerListScreen
         autoScan={route.autoScan !== false}
         onSelectSaved={handleSelectSaved}
         onSelectDiscovery={handleSelectDiscovery}
         onAddManual={() => setRoute({ name: "manual" })}
         onBack={route.back === "home" && session ? () => setRoute({ name: "home" }) : undefined}
-      />
+      />,
     );
   }
 
   if (route.name === "manual") {
-    return (
+    return lazyGate(
       <ManualServerScreen
         initialUrl={route.initialUrl}
         onBack={() => goServers(false)}
         onContinue={(serverUrl, options) => openLogin(serverUrl, options)}
-      />
+      />,
     );
   }
 
   if (route.name === "connect") {
-    return (
+    return lazyGate(
       <ConnectScreen
         serverUrl={route.serverUrl}
         serverName={route.serverName}
@@ -352,12 +358,12 @@ export function App() {
           setSession(null);
           setRoute({ name: "profiles", auth });
         }}
-      />
+      />,
     );
   }
 
   if (route.name === "profiles") {
-    return (
+    return lazyGate(
       <ProfileSelectScreen
         auth={route.auth}
         onSelected={(next) => {
@@ -369,28 +375,30 @@ export function App() {
           setSession(null);
           goServers(false);
         }}
-      />
+      />,
     );
   }
 
   if (!session) {
-    return (
+    return lazyGate(
       <ServerListScreen
         autoScan
         onSelectSaved={handleSelectSaved}
         onSelectDiscovery={handleSelectDiscovery}
         onAddManual={() => setRoute({ name: "manual" })}
-      />
+      />,
     );
   }
 
   if (route.name === "settings") {
     return (
       <ServerUrlContext.Provider value={session.serverUrl}>
-        <PlaybackSettingsScreen
-          onBack={() => setRoute(route.back)}
-          onSwitchServer={() => setRoute({ name: "servers", back: "home", autoScan: true })}
-        />
+        {lazyGate(
+          <PlaybackSettingsScreen
+            onBack={() => setRoute(route.back)}
+            onSwitchServer={() => setRoute({ name: "servers", back: "home", autoScan: true })}
+          />,
+        )}
       </ServerUrlContext.Provider>
     );
   }

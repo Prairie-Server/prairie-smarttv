@@ -107,6 +107,11 @@ export function applyPerformanceTier(
   tier: PerformanceTier = resolvePerformanceTier(),
 ): PerformanceTier {
   document.documentElement.dataset.perf = tier;
+  // Keep the artwork decode queue on the same budget as the visual tier —
+  // settings used to update CSS alone and leave the queue at boot's value.
+  void import("../lib/imageLoadQueue").then((mod) => {
+    mod.refreshImageLoadConcurrency(tier);
+  });
   return tier;
 }
 

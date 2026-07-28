@@ -109,6 +109,20 @@ describe("viewportScale", () => {
     window.webapis = previous;
   });
 
+  it("ignores failing productinfo probes and keeps scanning", () => {
+    const previous = window.webapis;
+    window.webapis = {
+      productinfo: {
+        is8KPanelSupported: () => {
+          throw new Error("unsupported");
+        },
+        isUdPanelSupported: () => true,
+      },
+    };
+    expect(detectPanelClass({ cssWidth: 1920, screenWidth: 1920 })).toBe("uhd");
+    window.webapis = previous;
+  });
+
   it("falls back when productinfo is absent on webapis", () => {
     const previous = window.webapis;
     window.webapis = {};
