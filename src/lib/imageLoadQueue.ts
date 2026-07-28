@@ -10,7 +10,8 @@
  * thread) but jump ahead of lazy work via a priority lane.
  */
 
-const MAX_CONCURRENT_LOADS = 4;
+/** Two at a time keeps D-pad responsive on mid-range Tizen/webOS SoCs. */
+const MAX_CONCURRENT_LOADS = 2;
 
 let active = 0;
 const priorityWaiting: Array<() => void> = [];

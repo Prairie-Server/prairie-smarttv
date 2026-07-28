@@ -57,10 +57,10 @@ const SIMILAR_LIMIT = 6;
 const SIMILAR_FETCH_BATCH = 2;
 /** Only fetch once the row is genuinely being approached. */
 const SIMILAR_PREFETCH_MARGIN = "10% 0px";
-/** And not before the hero's own requests and decodes have had a head start. */
-const SIMILAR_HERO_GRACE_MS = 900;
-/** Poster/logo wait for the backdrop before competing for decode slots. */
-const HERO_SECONDARY_FALLBACK_MS = 1200;
+/** And not before the hero backdrop has settled (episode/cast art must wait). */
+const SIMILAR_HERO_GRACE_MS = 400;
+/** Safety only: admit poster if the backdrop never fires onLoad/onError. */
+const HERO_SECONDARY_FALLBACK_MS = 8000;
 /** Episode cards mounted initially; the rest expand on demand. */
 const EPISODE_PAGE_SIZE = 8;
 
@@ -141,6 +141,8 @@ export function ItemDetailScreen({
   const [similarNear, setSimilarNear] = useState(false);
   const [heroSettled, setHeroSettled] = useState(false);
   const [heroBackdropReady, setHeroBackdropReady] = useState(false);
+  const [heroPosterReady, setHeroPosterReady] = useState(false);
+  const [heroLogoReady, setHeroLogoReady] = useState(false);
   const similarObserverRef = useRef<IntersectionObserver | null>(null);
   const similarSlotRef = useCallback((node: HTMLElement | null) => {
     if (!node) return;
@@ -166,15 +168,29 @@ export function ItemDetailScreen({
   }, []);
 
   useEffect(() => {
-    if (!detail) return;
+    setHeroSettled(false);
+    setHeroBackdropReady(false);
+    setHeroPosterReady(false);
+    setHeroLogoReady(false);
+  }, [contentId]);
+
+  // Episode/cast/similar art wait until the backdrop has settled — a fixed timer
+  // from detail mount used to admit them while the hero was still decoding.
+  useEffect(() => {
+    if (!detail || !heroBackdropReady) return;
     const handle = window.setTimeout(() => setHeroSettled(true), SIMILAR_HERO_GRACE_MS);
     return () => window.clearTimeout(handle);
-  }, [detail]);
+  }, [detail, heroBackdropReady]);
 
-  // If the backdrop never fires onLoad (cached error, empty art), still admit
-  // poster/logo so the hero does not stay half-blank forever.
+  // Admit poster after the backdrop is ready. Only use the long fallback when a
+  // backdrop URL exists but never fires load/error — never force poster early.
   useEffect(() => {
     if (!detail || heroBackdropReady) return;
+    const backdrop = urlText(detail.backdrop_url);
+    if (!backdrop) {
+      setHeroBackdropReady(true);
+      return;
+    }
     const handle = window.setTimeout(() => setHeroBackdropReady(true), HERO_SECONDARY_FALLBACK_MS);
     return () => window.clearTimeout(handle);
   }, [detail, heroBackdropReady]);
@@ -513,7 +529,9 @@ export function ItemDetailScreen({
   // Large hero surfaces stay on WebP — AVIF decode on TV is what locked D-pad
   // navigation even after Play/poster paint improved.
   const heroSrc = heroBackdropUrl || heroPosterUrl;
-  const showHeroSecondary = heroBackdropReady || !heroBackdropUrl;
+  const showHeroPoster = heroBackdropReady || !heroBackdropUrl;
+  // Logo waits for the poster (when present) so they never decode together.
+  const showHeroLogo = showHeroPoster && (heroPosterReady || !heroPosterUrl || !heroBackdropUrl);
   const visibleEpisodes = useMemo(
     () => episodes.slice(0, episodeMountCount),
     [episodes, episodeMountCount],
@@ -601,7 +619,7 @@ export function ItemDetailScreen({
             <div className="detail-hero__body">
               {heroPosterUrl && heroBackdropUrl ? (
                 <div className="detail-hero__poster" aria-hidden="true">
-                  {showHeroSecondary ? (
+                  {showHeroPoster ? (
                     <ArtworkImage
                       src={heroPosterUrl}
                       alt=""
@@ -611,6 +629,8 @@ export function ItemDetailScreen({
                       height={330}
                       loading="lazy"
                       decoding="async"
+                      onLoad={() => setHeroPosterReady(true)}
+                      onError={() => setHeroPosterReady(true)}
                     />
                   ) : (
                     <div className="poster-card__placeholder" aria-hidden="true">
@@ -622,21 +642,27 @@ export function ItemDetailScreen({
               <div className="detail-hero__copy">
                 <p className="eyebrow">{sources.join(" · ") || typeLabel(detail.type)}</p>
                 {heroLogoUrl ? (
-                  <div className="detail-hero__logo">
-                    {showHeroSecondary ? (
-                      <ArtworkImage
-                        src={heroLogoUrl}
-                        alt={detail.title}
-                        widthHint={LOGO_WIDTH}
-                        width={352}
-                        height={120}
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <h1 className="browse-title">{detail.title}</h1>
-                    )}
-                  </div>
+                  <>
+                    {!heroLogoReady ? <h1 className="browse-title">{detail.title}</h1> : null}
+                    {showHeroLogo ? (
+                      <div
+                        className="detail-hero__logo"
+                        hidden={!heroLogoReady}
+                        aria-hidden={!heroLogoReady}
+                      >
+                        <ArtworkImage
+                          src={heroLogoUrl}
+                          alt={detail.title}
+                          widthHint={LOGO_WIDTH}
+                          width={352}
+                          height={120}
+                          loading="lazy"
+                          decoding="async"
+                          onLoad={() => setHeroLogoReady(true)}
+                        />
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <h1 className="browse-title">{detail.title}</h1>
                 )}

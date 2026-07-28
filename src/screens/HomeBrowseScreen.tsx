@@ -8,7 +8,6 @@ import { LandscapeCard } from "../components/LandscapeCard";
 import {
   LiveTvOnNowRow,
   LiveTvOnNowSkeleton,
-  type OnNowStatus,
 } from "../components/LiveTvOnNowRow";
 import { MediaRow, mediaRowMinHeight, type MediaRowVariant } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
@@ -50,8 +49,8 @@ const ROW_MOUNT_CHUNK = 2;
  * 16:9 and mounted almost every Home row immediately.
  */
 const ROW_PREFETCH_MARGIN = "280px 0px";
-/** How long entry focus waits for On now before settling on the first row. */
-const ON_NOW_FOCUS_GRACE_MS = 700;
+/** On now sits below home rows — only fetch/decode once it nears the viewport. */
+const ON_NOW_PREFETCH_MARGIN = "200px 0px";
 
 /** How many images in the first row decode eagerly; the rest stay lazy. */
 const EAGER_IMAGE_COUNT = 2;
@@ -217,9 +216,10 @@ export function HomeBrowseScreen({
         : INITIAL_ROW_COUNT;
     return new Set(Array.from({ length: initial }, (_, index) => index));
   });
-  const [onNowStatus, setOnNowStatus] = useState<OnNowStatus>("loading");
   const paneRef = useRef<HTMLElement>(null);
   const rowObserverRef = useRef<IntersectionObserver | null>(null);
+  const onNowObserverRef = useRef<IntersectionObserver | null>(null);
+  const [onNowNear, setOnNowNear] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -262,13 +262,7 @@ export function HomeBrowseScreen({
     [sections, featured],
   );
 
-  const expectOnNow = (showOnNow || reserveOnNow) && onOpenLiveChannel != null;
-  const handleOnNowStatus = useCallback((status: OnNowStatus) => setOnNowStatus(status), []);
-  useEffect(() => {
-    // Reserve mode has no fetcher; keep status at loading so entry focus waits
-    // the same grace window as a real On now row.
-    if (reserveOnNow && !showOnNow) setOnNowStatus("loading");
-  }, [reserveOnNow, showOnNow]);
+  const wantsOnNow = (showOnNow || reserveOnNow) && onOpenLiveChannel != null;
   const selectHandler = useStableItemSelect(onOpenItem);
 
   // Reserve the height a real row actually occupies rather than the design
@@ -336,6 +330,8 @@ export function HomeBrowseScreen({
     return () => {
       rowObserverRef.current?.disconnect();
       rowObserverRef.current = null;
+      onNowObserverRef.current?.disconnect();
+      onNowObserverRef.current = null;
     };
   }, []);
 
@@ -353,50 +349,49 @@ export function HomeBrowseScreen({
     return () => window.cancelAnimationFrame(handle);
   }, [hasIntersectionObserver, loading, mountedRows, rows.length]);
 
-  // Entry focus goes to the topmost real card in DOM order — On now when it has
-  // cards, otherwise the first row — instead of a hardcoded row index. Waiting
-  // for On now to resolve avoids focusing a row and then jumping up to it, but
-  // the wait is bounded so a slow guide never leaves the screen unfocused.
-  const [onNowGraceExpired, setOnNowGraceExpired] = useState(false);
-  useEffect(() => {
-    if (!expectOnNow) return;
-    const handle = window.setTimeout(() => setOnNowGraceExpired(true), ON_NOW_FOCUS_GRACE_MS);
-    return () => window.clearTimeout(handle);
-  }, [expectOnNow]);
-  const awaitingOnNow = expectOnNow && onNowStatus === "loading" && !onNowGraceExpired;
+  /** Observe the below-fold On now slot; only then mount the guide fetch. */
+  const onNowSlotRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (!node || !hasIntersectionObserver) return;
+      onNowObserverRef.current?.disconnect();
+      onNowObserverRef.current = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            setOnNowNear(true);
+            onNowObserverRef.current?.disconnect();
+            onNowObserverRef.current = null;
+          }
+        },
+        { rootMargin: ON_NOW_PREFETCH_MARGIN },
+      );
+      onNowObserverRef.current.observe(node);
+    },
+    [hasIntersectionObserver],
+  );
 
-  // Focus parked by this screen, so a late On now row can still claim it. Any
-  // remote press clears it and the user keeps their place.
-  const parkedFocusRef = useRef<HTMLElement | null>(null);
+  // No IntersectionObserver: admit On now only after every home row has mounted
+  // so the guide/channel fetch cannot contend with first-paint row work.
   useEffect(() => {
-    const clear = () => {
-      parkedFocusRef.current = null;
-    };
-    window.addEventListener("keydown", clear, { once: true });
-    return () => window.removeEventListener("keydown", clear);
-  }, []);
+    if (hasIntersectionObserver || loading || !wantsOnNow || onNowNear) return;
+    if (mountedRows.size < rows.length) return;
+    setOnNowNear(true);
+  }, [hasIntersectionObserver, loading, wantsOnNow, onNowNear, mountedRows, rows.length]);
 
+  // Entry focus goes to the first real card in DOM order (hero handles itself).
+  // On now lives below the fold and must not delay or steal focus while loading.
   useEffect(() => {
     if (loading || error || featured) return;
     const pane = paneRef.current;
     if (!pane) return;
     const active = document.activeElement;
-    const parked = parkedFocusRef.current;
-    const userHasFocus =
-      active instanceof HTMLElement && active !== document.body && pane.contains(active);
-    // Hold off while On now may still arrive above the rows, but never leave the
-    // screen unfocused for long — the grace timer releases the wait.
-    if (awaitingOnNow && !userHasFocus) return;
-    // Once On now fills, take over focus the app parked on a row below it.
-    if (userHasFocus && active !== parked) return;
+    if (active instanceof HTMLElement && active !== document.body && pane.contains(active)) return;
 
     const first = pane.querySelector<HTMLElement>(
       'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
     );
     if (!first || first === active) return;
     first.focus({ preventScroll: true });
-    parkedFocusRef.current = first;
-  }, [loading, error, featured, awaitingOnNow, rows.length, onNowStatus, mountedRows]);
+  }, [loading, error, featured, rows.length, mountedRows]);
 
   return (
     <section className="browse-pane browse-pane--home" ref={paneRef}>
@@ -445,16 +440,6 @@ export function HomeBrowseScreen({
         />
       ) : null}
 
-      {!loading && reserveOnNow && !showOnNow && onOpenLiveChannel ? <LiveTvOnNowSkeleton /> : null}
-
-      {!loading && showOnNow && onOpenLiveChannel ? (
-        <LiveTvOnNowRow
-          session={session}
-          onOpenChannel={onOpenLiveChannel}
-          onStatusChange={handleOnNowStatus}
-        />
-      ) : null}
-
       {!loading
         ? rows.map((section, sectionIndex) => {
             const landscape = usesLandscapeCards(section.section_type, section.items);
@@ -482,6 +467,24 @@ export function HomeBrowseScreen({
             );
           })
         : null}
+
+      {!loading && wantsOnNow ? (
+        onNowNear ? (
+          reserveOnNow && !showOnNow ? (
+            <LiveTvOnNowSkeleton />
+          ) : showOnNow ? (
+            <LiveTvOnNowRow session={session} onOpenChannel={onOpenLiveChannel!} />
+          ) : null
+        ) : (
+          <div
+            ref={onNowSlotRef}
+            data-on-now="1"
+            className="media-row media-row--poster media-row--deferred media-row--on-now-slot"
+            style={{ minHeight: reservedHeight("poster") }}
+            aria-hidden="true"
+          />
+        )
+      ) : null}
     </section>
   );
 }
