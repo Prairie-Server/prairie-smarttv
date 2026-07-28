@@ -5,10 +5,7 @@ import { fetchHomeSections, type HomeSection } from "../api/home";
 import type { LiveTvChannel } from "../api/livetv";
 import { HomeHero } from "../components/HomeHero";
 import { LandscapeCard } from "../components/LandscapeCard";
-import {
-  LiveTvOnNowRow,
-  LiveTvOnNowSkeleton,
-} from "../components/LiveTvOnNowRow";
+import { LiveTvOnNowRow, LiveTvOnNowSkeleton } from "../components/LiveTvOnNowRow";
 import { MediaRow, mediaRowMinHeight, type MediaRowVariant } from "../components/MediaRow";
 import { PosterCard } from "../components/PosterCard";
 import { catalogItemProgress, catalogItemSubtitle, usesLandscapeCards } from "../lib/browseCards";
