@@ -178,6 +178,7 @@ export function ItemDetailScreen({
         title={item.title}
         subtitle={item.year ? String(item.year) : item.type}
         posterUrl={item.poster_url}
+        posterAvifUrl={item.poster_avif_url}
         watched={Boolean(item.user_state?.played)}
         onSelect={selectSimilar(item.content_id)}
       />
@@ -497,7 +498,10 @@ export function ItemDetailScreen({
   const heroBackdropUrl = urlText(detail?.backdrop_url);
   const heroPosterUrl = urlText(detail?.poster_url);
   const heroLogoUrl = urlText(detail?.logo_url);
+  const heroBackdropAvif = urlText(detail?.backdrop_avif_url) || null;
+  const heroPosterAvif = urlText(detail?.poster_avif_url) || null;
   const heroSrc = heroBackdropUrl || heroPosterUrl;
+  const heroAvif = heroBackdropUrl ? heroBackdropAvif : heroPosterAvif;
   const visibleEpisodes = useMemo(
     () => episodes.slice(0, episodeMountCount),
     [episodes, episodeMountCount],
@@ -556,10 +560,10 @@ export function ItemDetailScreen({
           <ArtworkImage
             className="detail-hero__art"
             src={heroSrc}
+            avifSrc={heroAvif}
             alt=""
             widthHint={heroBackdropUrl ? BACKDROP_HERO_WIDTH : POSTER_WIDTH}
             loading="eager"
-            preferWebP
             decoding="async"
           />
         ) : (
@@ -585,13 +589,13 @@ export function ItemDetailScreen({
                 <div className="detail-hero__poster" aria-hidden="true">
                   <ArtworkImage
                     src={heroPosterUrl}
+                    avifSrc={heroPosterAvif}
                     alt=""
                     placeholderLabel={detail.title}
                     widthHint={POSTER_WIDTH}
                     width={220}
                     height={330}
                     loading="eager"
-                    preferWebP
                     decoding="async"
                   />
                 </div>
@@ -607,7 +611,6 @@ export function ItemDetailScreen({
                       width={352}
                       height={120}
                       loading="eager"
-                      preferWebP
                       decoding="async"
                     />
                   </div>

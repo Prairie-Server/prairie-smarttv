@@ -8,6 +8,7 @@ interface LandscapeCardProps {
   subtitle?: string | null;
   meta?: string | null;
   imageUrl?: string | null;
+  imageAvifUrl?: string | null;
   progress?: number | null;
   watched?: boolean;
   onSelect: () => void;
@@ -22,6 +23,7 @@ function LandscapeCardInner({
   subtitle,
   meta,
   imageUrl,
+  imageAvifUrl,
   progress,
   watched = false,
   onSelect,
@@ -51,6 +53,7 @@ function LandscapeCardInner({
         {src ? (
           <ArtworkImage
             src={src}
+            avifSrc={imageAvifUrl}
             alt=""
             placeholderLabel={title}
             widthHint={BACKDROP_CARD_WIDTH}

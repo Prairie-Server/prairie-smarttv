@@ -26,6 +26,7 @@ export function HomeHero({
   if (!item) return null;
 
   const backdrop = item.backdrop_url?.trim() || item.poster_url?.trim() || null;
+  const backdropAvif = item.backdrop_url?.trim() ? item.backdrop_avif_url : item.poster_avif_url;
   const subtitle = catalogItemSubtitle(item);
   const overview = item.overview?.trim();
 
@@ -35,6 +36,7 @@ export function HomeHero({
         <ArtworkImage
           className="home-hero__art"
           src={backdrop}
+          avifSrc={backdropAvif}
           alt=""
           widthHint={BACKDROP_HERO_WIDTH}
           loading="eager"

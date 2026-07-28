@@ -1,7 +1,9 @@
 /**
  * Artwork URL helpers mirroring prairie-server web/src/lib/artworkUrl.ts.
- * Canonical cache keys stay .webp; clients pick the best sibling immediately
- * using one-time decode capability detection (see imageFormats.ts).
+ *
+ * Canonical cache keys stay .webp. Format choice is decided up front from
+ * decode capability + URLs the API actually supplied — we never invent AVIF/PNG
+ * siblings and walk them on 404. That cascade is what made posters feel slow.
  *
  * Width variants live in the object key (`/original.`, `/w300.`, `/w500.`, …),
  * not query params. Path rewriting is skipped for SigV4-style signed URLs.
@@ -10,8 +12,7 @@
 import { getImageFormats, orderRasterCandidates } from "./imageFormats";
 
 /**
- * Width rungs must exist in the server ladder (internal/artworkkey.VariantWidths),
- * otherwise the request 404s and the card falls back to a slower candidate:
+ * Width rungs must exist in the server ladder (internal/artworkkey.VariantWidths):
  *   poster / still / profile -> w500, w300
  *   backdrop                 -> w1920, w1280, w300
  *   logo                     -> w500
@@ -72,6 +73,9 @@ function webPFormatSibling(objectPath: string | null | undefined, ext: ".avif" |
 /**
  * Returns the AVIF sibling for a canonical WebP object key or http(s) URL.
  * Query/fragment are preserved. Non-WebP / signed inputs return "".
+ *
+ * @deprecated Prefer API-provided `*_avif_url` fields. Inventing siblings leads
+ * to 404→retry cascades on TV.
  */
 export function webPAVIFSibling(objectPath: string | null | undefined): string {
   return webPFormatSibling(objectPath, ".avif");
@@ -80,6 +84,8 @@ export function webPAVIFSibling(objectPath: string | null | undefined): string {
 /**
  * Returns the PNG sibling for a canonical WebP object key or http(s) URL.
  * Query/fragment are preserved. Non-WebP / signed inputs return "".
+ *
+ * @deprecated Prefer API-provided format siblings. Inventing siblings is slow.
  */
 export function webPPNGSibling(objectPath: string | null | undefined): string {
   return webPFormatSibling(objectPath, ".png");
@@ -127,47 +133,58 @@ export function artworkSized(
   return artworkWidthVariant(trimmed, width) || trimmed;
 }
 
-/**
- * Ordered load candidates for a canonical artwork URL using the client's
- * detected raster preference (WebP/AVIF/PNG siblings when the input is WebP).
- *
- * Signed URLs return only the original — inventing AVIF/PNG siblings would
- * request an unsigned path and fail before the WebP fallback.
- */
-export function artworkCandidates(objectPath: string | null | undefined): string[] {
-  const trimmed = objectPath?.trim() ?? "";
-  if (!trimmed) return [];
-  if (isSignedArtworkURL(trimmed)) return [trimmed];
+export type ArtworkFormatSources = {
+  /** Pre-signed / API-provided AVIF sibling (only when the object exists). */
+  avif?: string | null;
+  /** Pre-signed / API-provided PNG sibling. */
+  png?: string | null;
+};
 
-  const avif = webPAVIFSibling(trimmed);
-  const png = webPPNGSibling(trimmed);
-  return orderRasterCandidates({ avif, webp: trimmed, png }, getImageFormats());
+/**
+ * The single best artwork URL for this client among URLs we know exist.
+ *
+ * Never invents AVIF/PNG siblings from a WebP path — that 404 cascade is what
+ * made Home/detail posters crawl. Without explicit siblings, the canonical
+ * WebP (or whatever the API returned) is the answer.
+ */
+export function artworkCandidates(
+  objectPath: string | null | undefined,
+  formats?: ArtworkFormatSources,
+): string[] {
+  const trimmed = objectPath?.trim() ?? "";
+  const avif = formats?.avif?.trim() ?? "";
+  const png = formats?.png?.trim() ?? "";
+  if (avif || png) {
+    const ordered = orderRasterCandidates({ avif, webp: trimmed, png }, getImageFormats());
+    const best = ordered[0] ?? trimmed;
+    return best ? [best] : [];
+  }
+  if (!trimmed) return [];
+  return [trimmed];
 }
 
 /**
- * Candidates for a width-sized request, with the unsized ladder appended.
- * A width rung the server never generated (or a variant pruned by GC) then
- * degrades to the canonical artwork instead of showing a permanent placeholder.
+ * Width-sized load list for one chosen format.
+ *
+ * At most two URLs: the sized variant, then the unsized original of the *same*
+ * format if a width rewrite applied. No AVIF→WebP→PNG walk.
  */
 export function artworkSizedCandidates(
   objectPath: string | null | undefined,
   width: number | null | undefined,
+  formats?: ArtworkFormatSources,
 ): string[] {
-  const trimmed = objectPath?.trim() ?? "";
-  if (!trimmed) return [];
-  const sized = artworkSized(trimmed, width);
-  if (sized === trimmed) return artworkCandidates(trimmed);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const url of [...artworkCandidates(sized), ...artworkCandidates(trimmed)]) {
-    if (seen.has(url)) continue;
-    seen.add(url);
-    out.push(url);
-  }
-  return out;
+  const preferred = artworkPreferred(objectPath, formats);
+  if (!preferred) return [];
+  const sized = artworkSized(preferred, width);
+  if (sized && sized !== preferred) return [sized, preferred];
+  return [preferred];
 }
 
 /** Best immediate artwork URL without trial-and-error format probing. */
-export function artworkPreferred(objectPath: string | null | undefined): string {
-  return artworkCandidates(objectPath)[0] ?? "";
+export function artworkPreferred(
+  objectPath: string | null | undefined,
+  formats?: ArtworkFormatSources,
+): string {
+  return artworkCandidates(objectPath, formats)[0] ?? "";
 }

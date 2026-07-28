@@ -144,6 +144,7 @@ export function SearchScreen({ session, onOpenItem }: SearchScreenProps) {
                 title={item.title}
                 subtitle={catalogItemSubtitle(item)}
                 posterUrl={item.poster_url}
+                posterAvifUrl={item.poster_avif_url}
                 watched={Boolean(item.user_state?.played)}
                 favorite={Boolean(item.user_state?.is_favorite)}
                 imageLoading={index < 4 ? "eager" : "lazy"}

@@ -7,6 +7,7 @@ interface PosterCardProps {
   title: string;
   subtitle?: string | null;
   posterUrl?: string | null;
+  posterAvifUrl?: string | null;
   progress?: number | null;
   watched?: boolean;
   favorite?: boolean;
@@ -24,6 +25,7 @@ function PosterCardInner({
   title,
   subtitle,
   posterUrl,
+  posterAvifUrl,
   progress,
   watched = false,
   favorite = false,
@@ -60,6 +62,7 @@ function PosterCardInner({
         {hasPosterUrl ? (
           <ArtworkImage
             src={normalizedPosterUrl}
+            avifSrc={posterAvifUrl}
             alt=""
             placeholderLabel={title}
             widthHint={POSTER_WIDTH}
