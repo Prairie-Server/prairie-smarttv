@@ -37,6 +37,7 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   );
 
   const liveSessionId = useRef<string | null>(null);
+  const playerRef = useRef<{ pause: () => void; destroy: () => void } | null>(null);
   const exitedRef = useRef(false);
   const handleExitRef = useRef<() => Promise<void>>(async () => undefined);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -121,10 +122,21 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   const handleExit = useCallback(async () => {
     if (exitedRef.current) return;
     exitedRef.current = true;
-    document.documentElement.classList.remove("player-active");
-    document.body.classList.remove("player-active");
     const sid = liveSessionId.current;
     liveSessionId.current = null;
+    try {
+      playerRef.current?.pause();
+    } catch {
+      /* ignore */
+    }
+    try {
+      playerRef.current?.destroy();
+    } catch {
+      /* ignore */
+    }
+    playerRef.current = null;
+    document.documentElement.classList.remove("player-active");
+    document.body.classList.remove("player-active");
     // Navigate first — never await network on a transparent player plane.
     onExit();
     if (sid) {
@@ -139,7 +151,15 @@ export function LiveTvPlayerScreen({ session, channel, onExit }: LiveTvPlayerScr
   return (
     <section className="screen player-screen">
       {streamUrl && !error ? (
-        <PlayerHost url={streamUrl} backend={backend} playing={playing} onError={setError} />
+        <PlayerHost
+          url={streamUrl}
+          backend={backend}
+          playing={playing}
+          onError={setError}
+          onReady={(player) => {
+            playerRef.current = player;
+          }}
+        />
       ) : null}
 
       <div className="player-chrome">
