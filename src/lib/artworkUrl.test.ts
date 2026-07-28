@@ -5,6 +5,7 @@ import {
   artworkSized,
   artworkSizedCandidates,
   artworkWidthVariant,
+  isPrairieSignedArtworkURL,
   isSignedArtworkURL,
   webPAVIFSibling,
   webPPNGSibling,
@@ -52,6 +53,24 @@ describe("isSignedArtworkURL", () => {
     expect(isSignedArtworkURL("https://x/?verify=token")).toBe(true);
     expect(isSignedArtworkURL("https://x/art.webp")).toBe(false);
   });
+
+  // Prairie signs the artwork revision, not the exact key, so picking another
+  // rung of the same image still validates. Treating it as unrewritable is what
+  // made every width constant in this file inert against a real server.
+  it("does not treat Prairie's own artwork signature as unrewritable", () => {
+    const signed = "/artwork/library/1/poster/w500.rev.webp?expires=123&sig=abc";
+    expect(isPrairieSignedArtworkURL(signed)).toBe(true);
+    expect(isSignedArtworkURL(signed)).toBe(false);
+  });
+
+  it("only claims URLs that carry the store's full shape", () => {
+    // sig= without expires=, and neither under /artwork/ — a third-party URL
+    // that merely happens to use the same param name must stay untouched.
+    expect(isPrairieSignedArtworkURL("https://cdn.example.com/art/w500.webp?sig=abc")).toBe(false);
+    expect(isSignedArtworkURL("https://cdn.example.com/art/w500.webp?sig=abc")).toBe(true);
+    expect(isPrairieSignedArtworkURL("/artwork/x/w500.rev.webp?expires=1")).toBe(false);
+    expect(isPrairieSignedArtworkURL("https://x/?X-Amz-Signature=1&expires=1&sig=a")).toBe(false);
+  });
 });
 
 describe("artworkWidthVariant", () => {
@@ -65,6 +84,19 @@ describe("artworkWidthVariant", () => {
     expect(artworkWidthVariant("https://cdn.example.com/art/original.rev.webp", 500)).toBe(
       "https://cdn.example.com/art/w500.rev.webp",
     );
+  });
+
+  // The signature has to travel with the rewritten URL or the request 403s.
+  it("rewrites a Prairie-signed URL and keeps its query intact", () => {
+    expect(
+      artworkWidthVariant("/artwork/library/1/poster/w500.rev.webp?expires=123&sig=abc", 200),
+    ).toBe("/artwork/library/1/poster/w200.rev.webp?expires=123&sig=abc");
+    expect(
+      artworkWidthVariant(
+        "https://tv.example.com/artwork/library/1/poster/w500.rev.webp?expires=123&sig=abc",
+        200,
+      ),
+    ).toBe("https://tv.example.com/artwork/library/1/poster/w200.rev.webp?expires=123&sig=abc");
   });
 
   it("returns empty for signed URLs, missing width segments, or bad input", () => {
