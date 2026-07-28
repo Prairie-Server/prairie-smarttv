@@ -16,9 +16,13 @@ import { getImageFormats, orderRasterCandidates } from "./imageFormats";
 
 /**
  * Width rungs must exist in the server ladder (internal/artworkkey.VariantWidths):
- *   poster / still / profile -> w500, w300, w200
- *   backdrop                 -> w1920, w1280, w300
- *   logo                     -> w500
+ *   poster / profile -> w500, w300, w200
+ *   still            -> w500, w300   (no w200: retired, nothing requested it)
+ *   backdrop         -> w1920, w1280, w300
+ *   logo             -> w500
+ *
+ * A width that is not in its type's ladder is not an error — the server serves
+ * the next-widest rung — but it wastes bytes, so keep these in step.
  *
  * Rungs are sized against the *rendered* CSS width, which on a TV is the design
  * width times the panel chrome scale — not the panel's pixel count. TV WebViews
