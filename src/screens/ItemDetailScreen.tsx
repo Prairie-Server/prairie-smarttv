@@ -53,13 +53,22 @@ import type { PrairieSession } from "../storage/session";
 const SIMILAR_LIMIT = 6;
 const SIMILAR_FETCH_BATCH = 2;
 /**
- * Only fetch once the row is genuinely being approached. Use px, not `%`:
- * IntersectionObserver percentage rootMargin is relative to the root's *width*,
- * so "10%" silently became a wider vertical trigger on 4K CSS-width panels.
+ * How far below the fold a section may be and still start loading. Kept small on
+ * purpose: the hero is ~70vh, so episodes, cast and recommendations all sit
+ * within roughly one screen. A generous margin marked them all "near" at once,
+ * and their art then released together the instant the hero settled — ~two dozen
+ * decodes on the main thread in one beat, which reads as the remote going dead.
+ * A tight margin loads only what is on (or right at the edge of) the screen; the
+ * rest waits until D-pad navigation actually approaches it (focusin re-checks
+ * visibility), so scrolling down pays for one rail at a time instead of all of
+ * them up front.
+ *
+ * Use px, not `%`: IntersectionObserver percentage rootMargin is relative to the
+ * root's *width*, so "10%" silently became a wider vertical trigger on 4K panels.
  */
-const SIMILAR_PREFETCH_MARGIN = "280px 0px";
-/** Episodes / cast sit below the fold; load their art as they are approached. */
-const SECTION_PREFETCH_MARGIN_PX = 240;
+const SIMILAR_PREFETCH_MARGIN = "96px 0px";
+/** Episodes / cast sit below the fold; load their art only as they are reached. */
+const SECTION_PREFETCH_MARGIN_PX = 96;
 /** And not before the hero backdrop has settled (episode/cast art must wait). */
 const SIMILAR_HERO_GRACE_MS = 150;
 /**
