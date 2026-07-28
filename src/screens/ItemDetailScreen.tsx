@@ -12,7 +12,12 @@ import {
 } from "../api/catalog";
 import { fetchSimilarItems } from "../api/recommendations";
 import { setFavorite, setWatched, setWatchlist } from "../api/userState";
-import { fetchWatchDetail, selectPlaybackFileId } from "../api/watch";
+import {
+  fetchWatchDetail,
+  selectPlaybackFileId,
+  watchDetailFromItemDetail,
+  type WatchDetail,
+} from "../api/watch";
 import { ArtworkImage } from "../components/ArtworkImage";
 import { FocusButton } from "../components/FocusButton";
 import { MediaRow } from "../components/MediaRow";
@@ -54,6 +59,8 @@ const SIMILAR_FETCH_BATCH = 2;
 const SIMILAR_PREFETCH_MARGIN = "10% 0px";
 /** And not before the hero's own requests and decodes have had a head start. */
 const SIMILAR_HERO_GRACE_MS = 900;
+/** Episode cards mounted initially; the rest expand on demand. */
+const EPISODE_PAGE_SIZE = 8;
 
 interface ItemDetailScreenProps {
   session: PrairieSession;
@@ -124,8 +131,10 @@ export function ItemDetailScreen({
   const [busyPlay, setBusyPlay] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [episodeMountCount, setEpisodeMountCount] = useState(EPISODE_PAGE_SIZE);
   const playButtonRef = useRef<HTMLButtonElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const watchCacheRef = useRef<Map<string, WatchDetail>>(new Map());
 
   const [similarNear, setSimilarNear] = useState(false);
   const [heroSettled, setHeroSettled] = useState(false);
@@ -193,10 +202,14 @@ export function ItemDetailScreen({
       setSimilar([]);
       setSimilarNear(false);
       setHeroSettled(false);
+      setEpisodeMountCount(EPISODE_PAGE_SIZE);
+      watchCacheRef.current.clear();
       try {
         const item = await fetchItemDetail(session, contentId);
         if (cancelled) return;
         setDetail(item);
+        const fromDetail = watchDetailFromItemDetail(item);
+        if (fromDetail) watchCacheRef.current.set(item.content_id, fromDetail);
         // Unblock the hero as soon as primary detail is ready — seasons and
         // recommendations must never gate Play / OK focus.
         setLoading(false);
@@ -284,6 +297,7 @@ export function ItemDetailScreen({
     if (seasonNumber == null || !detail) return;
     if (!isSeriesType(detail.type)) return;
     let cancelled = false;
+    setEpisodeMountCount(EPISODE_PAGE_SIZE);
     void (async () => {
       setEpisodesLoading(true);
       try {
@@ -302,6 +316,44 @@ export function ItemDetailScreen({
     };
   }, [session, contentId, seasonNumber, detail]);
 
+  // Prefetch watch metadata for the primary Play target so OK→player is local.
+  useEffect(() => {
+    if (!detail || isSeriesType(detail.type)) return;
+    if (watchCacheRef.current.has(detail.content_id)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const watch = await fetchWatchDetail(session, detail.content_id);
+        if (!cancelled) watchCacheRef.current.set(detail.content_id, watch);
+      } catch {
+        // Play will retry.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, detail]);
+
+  const nextUp = useMemo(() => pickNextUpEpisode(episodes), [episodes]);
+
+  // Prefetch watch for the series Play target once next-up is known.
+  useEffect(() => {
+    if (!nextUp) return;
+    if (watchCacheRef.current.has(nextUp.content_id)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const watch = await fetchWatchDetail(session, nextUp.content_id);
+        if (!cancelled) watchCacheRef.current.set(nextUp.content_id, watch);
+      } catch {
+        // Play will retry.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, nextUp]);
+
   // Back is the only control that exists before detail arrives, so park focus
   // there while loading — a bare OK press must never land on <body>.
   useEffect(() => {
@@ -316,23 +368,42 @@ export function ItemDetailScreen({
   }, [detail]);
 
   // Defensive: ensure Play receives focus once the hero is ready so OK cannot
-  // land on <body> before autoFocus paints.
+  // land on <body> before autoFocus paints. Re-run when series Play enables.
   useEffect(() => {
     if (!detail || loading) return;
     const node = playButtonRef.current;
-    if (!node) return;
+    if (!node || node.disabled) return;
     if (document.activeElement === node) return;
     const active = document.activeElement;
     // Keep the user's place if they already moved focus (including Back).
-    if (active instanceof HTMLElement && active !== document.body && active.tabIndex >= 0) return;
+    if (active instanceof HTMLElement && active !== document.body && active.tabIndex >= 0) {
+      // Still steal focus from Back once series Play becomes ready — that is
+      // the intended entry control, and Back was only a parking spot.
+      if (active !== backButtonRef.current) return;
+    }
     node.focus({ preventScroll: true });
-  }, [detail, loading]);
+  }, [detail, loading, nextUp]);
+
+  async function resolveWatchDetail(id: string): Promise<WatchDetail> {
+    const cached = watchCacheRef.current.get(id);
+    if (cached) return cached;
+    if (detail && detail.content_id === id) {
+      const fromDetail = watchDetailFromItemDetail(detail);
+      if (fromDetail) {
+        watchCacheRef.current.set(id, fromDetail);
+        return fromDetail;
+      }
+    }
+    const watch = await fetchWatchDetail(session, id);
+    watchCacheRef.current.set(id, watch);
+    return watch;
+  }
 
   async function playContent(id: string, title: string, startFromBeginning = false) {
     setBusyPlay(true);
     setError(null);
     try {
-      const watch = await fetchWatchDetail(session, id);
+      const watch = await resolveWatchDetail(id);
       const fileId = selectPlaybackFileId(watch);
       if (fileId == null) {
         throw new Error("No playable file for this title");
@@ -431,7 +502,10 @@ export function ItemDetailScreen({
   const heroPosterAvif = urlText(detail?.poster_avif_url) || null;
   const heroSrc = heroBackdropUrl || heroPosterUrl;
   const heroAvif = heroBackdropUrl ? heroBackdropAvif : heroPosterAvif;
-  const nextUp = useMemo(() => pickNextUpEpisode(episodes), [episodes]);
+  const visibleEpisodes = useMemo(
+    () => episodes.slice(0, episodeMountCount),
+    [episodes, episodeMountCount],
+  );
   const facts = detail
     ? isSeries
       ? seriesFacts(detail, seasons.length || detail.season_count)
@@ -477,6 +551,7 @@ export function ItemDetailScreen({
   const cast = detail?.cast ?? [];
   const crew = detail ? featuredCrew(detail) : [];
   const extras = detail?.extras ?? [];
+  const seriesPlayReady = Boolean(nextUp);
 
   return (
     <section className="screen detail-screen">
@@ -489,6 +564,7 @@ export function ItemDetailScreen({
             alt=""
             widthHint={heroBackdropUrl ? BACKDROP_HERO_WIDTH : POSTER_WIDTH}
             loading="eager"
+            decoding="async"
           />
         ) : (
           <div className="detail-hero__art detail-hero__art--empty" />
@@ -520,6 +596,7 @@ export function ItemDetailScreen({
                     width={220}
                     height={330}
                     loading="eager"
+                    decoding="async"
                   />
                 </div>
               ) : null}
@@ -533,6 +610,8 @@ export function ItemDetailScreen({
                       widthHint={LOGO_WIDTH}
                       width={352}
                       height={120}
+                      loading="eager"
+                      decoding="async"
                     />
                   </div>
                 ) : (
@@ -570,17 +649,20 @@ export function ItemDetailScreen({
                     >
                       {playLabel}
                     </FocusButton>
-                  ) : nextUp ? (
+                  ) : (
                     <FocusButton
                       ref={playButtonRef}
                       autoFocus
                       icon={<Play />}
-                      disabled={busyPlay}
-                      onClick={() => void playContent(nextUp.content_id, nextUp.title)}
+                      disabled={busyPlay || !seriesPlayReady}
+                      onClick={() => {
+                        if (!nextUp) return;
+                        void playContent(nextUp.content_id, nextUp.title);
+                      }}
                     >
                       {playLabel}
                     </FocusButton>
-                  ) : null}
+                  )}
                   {(!isSeries && movieResume) || (isSeries && episodeResume && nextUp) ? (
                     <FocusButton
                       variant="secondary"
@@ -682,7 +764,7 @@ export function ItemDetailScreen({
 
           <div className="episode-grid">
             {!episodesLoading
-              ? episodes.map((episode, index) => {
+              ? visibleEpisodes.map((episode, index) => {
                   const still = episodeStill(episode);
                   const progress = episodeProgressRatio(episode);
                   const runtime = formatRuntimeMinutes(episode.runtime);
@@ -705,8 +787,8 @@ export function ItemDetailScreen({
                             widthHint={STILL_WIDTH}
                             width={280}
                             height={158}
-                            loading={index < 3 ? "eager" : "lazy"}
-                            decoding={index < 3 ? "sync" : "async"}
+                            loading="lazy"
+                            decoding="async"
                           />
                         ) : (
                           <div className="episode-card__still-empty">
@@ -753,6 +835,20 @@ export function ItemDetailScreen({
                 })
               : null}
           </div>
+          {!episodesLoading && episodes.length > episodeMountCount ? (
+            <div className="row-actions" style={{ marginTop: "0.75rem" }}>
+              <FocusButton
+                variant="ghost"
+                onClick={() =>
+                  setEpisodeMountCount((count) =>
+                    Math.min(episodes.length, count + EPISODE_PAGE_SIZE),
+                  )
+                }
+              >
+                More episodes ({episodes.length - episodeMountCount} left)
+              </FocusButton>
+            </div>
+          ) : null}
 
           {seasons.length === 0 && !loading ? (
             <p className="muted">No seasons found for this series.</p>
@@ -763,7 +859,8 @@ export function ItemDetailScreen({
         </div>
       ) : null}
 
-      {cast.length > 0 || crew.length > 0 ? (
+      {/* Cast/crew photos compete with the hero for the decode queue — wait. */}
+      {heroSettled && (cast.length > 0 || crew.length > 0) ? (
         <div className="detail-body-section">
           {cast.length > 0 ? (
             <>
@@ -774,7 +871,7 @@ export function ItemDetailScreen({
                 </div>
               </div>
               <div className="cast-rail">
-                {cast.slice(0, 16).map((member, index) => (
+                {cast.slice(0, 12).map((member, index) => (
                   <div
                     key={`${member.person_id ?? member.name ?? index}-${member.character ?? ""}`}
                     className="cast-card"
