@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acquireImageSlot,
   imageLoadQueueDepth,
+  refreshImageLoadConcurrency,
   resetImageLoadQueueForTests,
 } from "./imageLoadQueue";
 
@@ -10,7 +11,8 @@ beforeEach(() => {
 });
 
 describe("imageLoadQueue", () => {
-  it("starts up to two loads and queues the rest", () => {
+  it("starts up to the tier cap and queues the rest", () => {
+    resetImageLoadQueueForTests("low");
     const started = Array.from({ length: 4 }, () => vi.fn());
     const releases = started.map((start) => acquireImageSlot(start));
 
@@ -25,6 +27,22 @@ describe("imageLoadQueue", () => {
     releases[1]?.();
     expect(started[3]).toHaveBeenCalled();
     expect(imageLoadQueueDepth()).toEqual({ active: 2, waiting: 0, priorityWaiting: 0 });
+  });
+
+  it("raises the cap on the high tier", () => {
+    resetImageLoadQueueForTests("high");
+    const started = Array.from({ length: 4 }, () => vi.fn());
+    started.map((start) => acquireImageSlot(start));
+    expect(started.filter((s) => s.mock.calls.length > 0)).toHaveLength(3);
+    expect(imageLoadQueueDepth().active).toBe(3);
+  });
+
+  it("refreshImageLoadConcurrency updates the live cap", () => {
+    resetImageLoadQueueForTests("low");
+    expect(refreshImageLoadConcurrency("high")).toBe(3);
+    const started = Array.from({ length: 4 }, () => vi.fn());
+    started.map((start) => acquireImageSlot(start));
+    expect(imageLoadQueueDepth().active).toBe(3);
   });
 
   it("starts priority loads ahead of lazy ones when a slot frees", () => {

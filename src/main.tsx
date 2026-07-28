@@ -44,8 +44,9 @@ async function boot() {
     throw new Error("Missing #root");
   }
 
-  // One boundary for every code-split route. Chunks come off local flash, so the
-  // fallback is a frame or two — never a spinner the viewer would notice.
+  // Route-level Suspense lives inside App so the shell/nav stays mounted while
+  // a lazy screen chunk loads. Keep a root boundary only as a safety net for
+  // anything that suspends outside those gates.
   const app = (
     <Suspense fallback={<div className="screen" aria-busy="true" />}>
       <App />
