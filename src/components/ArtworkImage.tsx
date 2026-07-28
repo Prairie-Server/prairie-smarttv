@@ -91,17 +91,14 @@ export function ArtworkImage({
   const current =
     candidates.length > 0 ? candidates[Math.min(effectiveFailedCount, candidates.length - 1)]! : "";
 
-  // Eager artwork is what the viewer is looking at, so it skips the queue.
+  // Eager artwork still uses the queue (uncapped parallel decode locks D-pad
+  // input on TV) but jumps the priority lane ahead of lazy posters.
   const eager = rest.loading === "eager";
-  const [slotGranted, setSlotGranted] = useState(eager);
+  const [slotGranted, setSlotGranted] = useState(false);
   useEffect(() => {
-    if (eager) {
-      setSlotGranted(true);
-      return;
-    }
     if (!current) return;
     setSlotGranted(false);
-    const release = acquireImageSlot(() => setSlotGranted(true));
+    const release = acquireImageSlot(() => setSlotGranted(true), { priority: eager });
     releaseSlotRef.current = release;
     return () => {
       release();

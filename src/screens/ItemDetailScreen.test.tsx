@@ -174,12 +174,37 @@ describe("ItemDetailScreen", () => {
     expect(container.querySelector(".detail-screen")).not.toBeNull();
   });
 
-  it("loads hero artwork eagerly and skips AVIF for the hero", async () => {
+  it("loads only the backdrop eagerly and keeps poster/logo off the critical path", async () => {
+    detailOverrides = {
+      logo_url: "/artwork/library/1/logo/original.rev.webp",
+      backdrop_avif_url: "/artwork/library/1/backdrop/original.rev.avif",
+      poster_avif_url: "/artwork/library/1/poster/original.rev.avif",
+    };
     await renderScreen();
     await settle();
     const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
     expect(hero?.getAttribute("loading")).toBe("eager");
     expect(hero?.getAttribute("src") ?? "").not.toMatch(/\.avif/i);
+    // Poster/logo wait for the backdrop so their decode cannot lock D-pad nav.
+    expect(container.querySelector(".detail-hero__poster img")).toBeNull();
+    expect(container.querySelector(".detail-hero__logo img")).toBeNull();
+    expect(container.textContent).toContain("Movie m1");
+  });
+
+  it("admits poster and logo after the backdrop loads", async () => {
+    detailOverrides = {
+      logo_url: "/artwork/library/1/logo/original.rev.webp",
+    };
+    await renderScreen();
+    await settle();
+    const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
+    expect(hero).not.toBeNull();
+    await act(async () => {
+      hero?.dispatchEvent(new Event("load"));
+    });
+    await settle();
+    expect(container.querySelector(".detail-hero__poster img")).not.toBeNull();
+    expect(container.querySelector(".detail-hero__logo img")).not.toBeNull();
   });
 
   it("plays from item-detail versions without a watch round-trip", async () => {
@@ -205,6 +230,10 @@ describe("ItemDetailScreen", () => {
     await settle(20);
     expect(container.querySelectorAll(".episode-card").length).toBe(8);
     expect(container.textContent).toContain("More episodes");
+    // Episode stills wait for the hero grace so they cannot contend with backdrop.
+    expect(container.querySelectorAll(".episode-card__still img").length).toBe(0);
+    await settle(950);
+    expect(container.querySelectorAll(".episode-card__still img").length).toBeGreaterThan(0);
   });
 
   it("defers cast photos until the hero grace period elapses", async () => {

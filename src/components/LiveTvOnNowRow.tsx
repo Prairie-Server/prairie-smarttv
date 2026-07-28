@@ -34,6 +34,27 @@ function formatUntil(iso: string): string {
   return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+/** Same-height placeholder used while the Live TV probe or guide is unresolved. */
+export function LiveTvOnNowSkeleton() {
+  return (
+    <MediaRow title="On now" variant="poster" className="media-row--on-now" skeleton>
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div
+          key={`on-now-skel-${index}`}
+          className="poster-card poster-card--skeleton"
+          aria-hidden="true"
+        >
+          <div className="poster-card__art" />
+          <div className="poster-card__meta">
+            <p className="poster-card__title">{"\u00a0"}</p>
+            <p className="poster-card__subtitle is-empty">{"\u00a0"}</p>
+          </div>
+        </div>
+      ))}
+    </MediaRow>
+  );
+}
+
 /**
  * Home-row teaser for currently airing Live TV programmes.
  * Hidden when the server has no enabled channels / guide slots.
@@ -102,23 +123,7 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
   // First load only: hold a same-height slot so filling it in place cannot
   // reflow Home. The 60s guide refresh keeps the real cards mounted.
   if (loading && cards.length === 0) {
-    return (
-      <MediaRow title="On now" variant="poster" className="media-row--on-now" skeleton>
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div
-            key={`on-now-skel-${index}`}
-            className="poster-card poster-card--skeleton"
-            aria-hidden="true"
-          >
-            <div className="poster-card__art" />
-            <div className="poster-card__meta">
-              <p className="poster-card__title">{"\u00a0"}</p>
-              <p className="poster-card__subtitle is-empty">{"\u00a0"}</p>
-            </div>
-          </div>
-        ))}
-      </MediaRow>
-    );
+    return <LiveTvOnNowSkeleton />;
   }
   if (cards.length === 0) return null;
 

@@ -39,6 +39,7 @@ import {
   switchTo,
   type ServerEntry,
 } from "./storage/serverRegistry";
+import { loadCachedLiveTvAvailable, saveCachedLiveTvAvailable } from "./lib/liveTvProbeCache";
 import {
   clearSession,
   loadSession,
@@ -70,7 +71,7 @@ type Route =
   | { name: "player"; launch: PlayerLaunch; back: Route };
 
 /** Let the first screen's own requests finish before probing Live TV. */
-const LIVE_TV_PROBE_DELAY_MS = 1200;
+const LIVE_TV_PROBE_DELAY_MS = 400;
 
 function shellTabFor(route: Route): ShellTab | null {
   switch (route.name) {
@@ -112,8 +113,14 @@ export function App() {
     return loadSession() ?? sessionFromActiveRegistry();
   });
   const [route, setRoute] = useState<Route>(() => initialRoute());
-  const [liveTvProbe, setLiveTvProbe] = useState(false);
-  const liveTvAvailable = session != null && liveTvProbe;
+  // null = pending (unknown); boolean = probed / cached. Seed from cache so
+  // Home can reserve On now on the first paint instead of inserting it late.
+  const [liveTvProbe, setLiveTvProbe] = useState<boolean | null>(() => {
+    const active = loadSession() ?? sessionFromActiveRegistry();
+    return active ? loadCachedLiveTvAvailable(active.serverUrl) : false;
+  });
+  const liveTvAvailable = session != null && liveTvProbe === true;
+  const reserveOnNow = session != null && liveTvProbe === null;
 
   // Keying the boundary on the route clears a stale error when the user
   // navigates away, so a crashed screen never sticks to the next one.
@@ -172,19 +179,31 @@ export function App() {
 
   useEffect(() => {
     if (!session) {
+      setLiveTvProbe(false);
       return;
+    }
+    const cached = loadCachedLiveTvAvailable(session.serverUrl);
+    if (cached != null) {
+      setLiveTvProbe(cached);
+    } else {
+      setLiveTvProbe(null);
     }
     let cancelled = false;
     // Runs after the first screen has had a chance to paint: this probe only
-    // decides whether a nav tab and the On now row appear, and competing with
-    // the Home request for the TV's connection pool delays what users see.
+    // decides whether a nav tab appears / On now stays reserved. Home already
+    // holds the slot when the result is unknown, so a short delay is enough.
     const handle = window.setTimeout(() => {
       void (async () => {
         try {
           const channels = await fetchLiveTvChannels(session);
-          if (!cancelled) setLiveTvProbe(channels.length > 0);
+          if (cancelled) return;
+          const available = channels.length > 0;
+          saveCachedLiveTvAvailable(session.serverUrl, available);
+          setLiveTvProbe(available);
         } catch {
-          if (!cancelled) setLiveTvProbe(false);
+          if (cancelled) return;
+          saveCachedLiveTvAvailable(session.serverUrl, false);
+          setLiveTvProbe(false);
         }
       })();
     }, LIVE_TV_PROBE_DELAY_MS);
@@ -388,6 +407,7 @@ export function App() {
         session={session}
         onOpenItem={openItem}
         showOnNow={liveTvAvailable}
+        reserveOnNow={reserveOnNow}
         onOpenLiveChannel={(channel) => setRoute({ name: "livetv-player", channel, back: route })}
       />
     );

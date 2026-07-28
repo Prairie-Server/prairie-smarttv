@@ -59,6 +59,8 @@ const SIMILAR_FETCH_BATCH = 2;
 const SIMILAR_PREFETCH_MARGIN = "10% 0px";
 /** And not before the hero's own requests and decodes have had a head start. */
 const SIMILAR_HERO_GRACE_MS = 900;
+/** Poster/logo wait for the backdrop before competing for decode slots. */
+const HERO_SECONDARY_FALLBACK_MS = 1200;
 /** Episode cards mounted initially; the rest expand on demand. */
 const EPISODE_PAGE_SIZE = 8;
 
@@ -138,6 +140,7 @@ export function ItemDetailScreen({
 
   const [similarNear, setSimilarNear] = useState(false);
   const [heroSettled, setHeroSettled] = useState(false);
+  const [heroBackdropReady, setHeroBackdropReady] = useState(false);
   const similarObserverRef = useRef<IntersectionObserver | null>(null);
   const similarSlotRef = useCallback((node: HTMLElement | null) => {
     if (!node) return;
@@ -167,6 +170,14 @@ export function ItemDetailScreen({
     const handle = window.setTimeout(() => setHeroSettled(true), SIMILAR_HERO_GRACE_MS);
     return () => window.clearTimeout(handle);
   }, [detail]);
+
+  // If the backdrop never fires onLoad (cached error, empty art), still admit
+  // poster/logo so the hero does not stay half-blank forever.
+  useEffect(() => {
+    if (!detail || heroBackdropReady) return;
+    const handle = window.setTimeout(() => setHeroBackdropReady(true), HERO_SECONDARY_FALLBACK_MS);
+    return () => window.clearTimeout(handle);
+  }, [detail, heroBackdropReady]);
 
   const similarWanted = similarNear && heroSettled;
 
@@ -202,6 +213,7 @@ export function ItemDetailScreen({
       setSimilar([]);
       setSimilarNear(false);
       setHeroSettled(false);
+      setHeroBackdropReady(false);
       setEpisodeMountCount(EPISODE_PAGE_SIZE);
       watchCacheRef.current.clear();
       try {
@@ -498,10 +510,10 @@ export function ItemDetailScreen({
   const heroBackdropUrl = urlText(detail?.backdrop_url);
   const heroPosterUrl = urlText(detail?.poster_url);
   const heroLogoUrl = urlText(detail?.logo_url);
-  const heroBackdropAvif = urlText(detail?.backdrop_avif_url) || null;
-  const heroPosterAvif = urlText(detail?.poster_avif_url) || null;
+  // Large hero surfaces stay on WebP — AVIF decode on TV is what locked D-pad
+  // navigation even after Play/poster paint improved.
   const heroSrc = heroBackdropUrl || heroPosterUrl;
-  const heroAvif = heroBackdropUrl ? heroBackdropAvif : heroPosterAvif;
+  const showHeroSecondary = heroBackdropReady || !heroBackdropUrl;
   const visibleEpisodes = useMemo(
     () => episodes.slice(0, episodeMountCount),
     [episodes, episodeMountCount],
@@ -560,11 +572,13 @@ export function ItemDetailScreen({
           <ArtworkImage
             className="detail-hero__art"
             src={heroSrc}
-            avifSrc={heroAvif}
             alt=""
             widthHint={heroBackdropUrl ? BACKDROP_HERO_WIDTH : POSTER_WIDTH}
             loading="eager"
             decoding="async"
+            fetchPriority="high"
+            onLoad={() => setHeroBackdropReady(true)}
+            onError={() => setHeroBackdropReady(true)}
           />
         ) : (
           <div className="detail-hero__art detail-hero__art--empty" />
@@ -587,32 +601,41 @@ export function ItemDetailScreen({
             <div className="detail-hero__body">
               {heroPosterUrl && heroBackdropUrl ? (
                 <div className="detail-hero__poster" aria-hidden="true">
-                  <ArtworkImage
-                    src={heroPosterUrl}
-                    avifSrc={heroPosterAvif}
-                    alt=""
-                    placeholderLabel={detail.title}
-                    widthHint={POSTER_WIDTH}
-                    width={220}
-                    height={330}
-                    loading="eager"
-                    decoding="async"
-                  />
+                  {showHeroSecondary ? (
+                    <ArtworkImage
+                      src={heroPosterUrl}
+                      alt=""
+                      placeholderLabel={detail.title}
+                      widthHint={POSTER_WIDTH}
+                      width={220}
+                      height={330}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="poster-card__placeholder" aria-hidden="true">
+                      {detail.title.slice(0, 1)}
+                    </div>
+                  )}
                 </div>
               ) : null}
               <div className="detail-hero__copy">
                 <p className="eyebrow">{sources.join(" · ") || typeLabel(detail.type)}</p>
                 {heroLogoUrl ? (
                   <div className="detail-hero__logo">
-                    <ArtworkImage
-                      src={heroLogoUrl}
-                      alt={detail.title}
-                      widthHint={LOGO_WIDTH}
-                      width={352}
-                      height={120}
-                      loading="eager"
-                      decoding="async"
-                    />
+                    {showHeroSecondary ? (
+                      <ArtworkImage
+                        src={heroLogoUrl}
+                        alt={detail.title}
+                        widthHint={LOGO_WIDTH}
+                        width={352}
+                        height={120}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <h1 className="browse-title">{detail.title}</h1>
+                    )}
                   </div>
                 ) : (
                   <h1 className="browse-title">{detail.title}</h1>
@@ -779,7 +802,7 @@ export function ItemDetailScreen({
                       onClick={() => void playContent(episode.content_id, episode.title)}
                     >
                       <div className="episode-card__still" aria-hidden="true">
-                        {still ? (
+                        {still && heroSettled ? (
                           <ArtworkImage
                             src={still}
                             alt=""
@@ -790,6 +813,10 @@ export function ItemDetailScreen({
                             loading="lazy"
                             decoding="async"
                           />
+                        ) : still ? (
+                          <div className="poster-card__placeholder" aria-hidden="true">
+                            {episode.title.slice(0, 1)}
+                          </div>
                         ) : (
                           <div className="episode-card__still-empty">
                             <Play size={28} />
