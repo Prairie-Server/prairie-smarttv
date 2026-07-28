@@ -1,6 +1,6 @@
 {
   "name": "prairie-smarttv",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "AGPL Prairie client for Samsung Tizen and LG webOS",
   "license": "AGPL-3.0-or-later",
