@@ -1,3 +1,4 @@
+import type { ItemDetail } from "./catalog";
 import { apiRequest } from "./client";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
@@ -70,6 +71,38 @@ export async function fetchWatchDetail(
   return {
     ...data,
     versions: data.versions ?? [],
+  };
+}
+
+/**
+ * Build a WatchDetail from item-detail payload when versions are already present.
+ * Avoids a second round-trip on Play for movies that just loaded their hero.
+ */
+export function watchDetailFromItemDetail(detail: ItemDetail): WatchDetail | null {
+  const versions = detail.versions ?? [];
+  if (versions.length === 0) return null;
+  return {
+    content_id: detail.content_id,
+    type: detail.type || "movie",
+    title: detail.title,
+    overview: detail.overview,
+    poster_url: detail.poster_url,
+    backdrop_url: detail.backdrop_url,
+    year: detail.year,
+    versions: versions.map((version) => ({
+      file_id: version.file_id,
+      resolution: version.resolution,
+      codec_video: version.codec_video,
+      codec_audio: version.codec_audio,
+      container: version.container,
+      duration: version.duration,
+      audio_tracks: version.audio_tracks,
+      subtitle_tracks: version.subtitle_tracks,
+    })),
+    user_data: detail.user_data ?? undefined,
+    series_id: detail.series_id,
+    season_number: detail.season_number,
+    episode_number: detail.episode_number,
   };
 }
 

@@ -25,6 +25,11 @@ export type ArtworkImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">
    * Matches prairie-server artworkkey ladders — not a query param.
    */
   widthHint?: number | null;
+  /**
+   * Skip AVIF candidates. Large hero backdrops often 404 on the AVIF sibling
+   * before WebP succeeds — that retry cascade delays the first meaningful paint.
+   */
+  preferWebP?: boolean;
 };
 
 /**
@@ -46,6 +51,7 @@ export function ArtworkImage({
   style,
   serverUrl: serverUrlProp,
   widthHint,
+  preferWebP = false,
   width,
   height,
   ...rest
@@ -55,10 +61,12 @@ export function ArtworkImage({
   const normalizedSrc = resolveArtworkUrl(src, serverUrl) || undefined;
   // Candidate lists cost a localStorage read + UA sniff per call; TV screens
   // mount dozens of cards, so keep it out of the per-render path.
-  const candidates = useMemo(
-    () => artworkSizedCandidates(normalizedSrc, widthHint),
-    [normalizedSrc, widthHint],
-  );
+  const candidates = useMemo(() => {
+    const list = artworkSizedCandidates(normalizedSrc, widthHint);
+    if (!preferWebP) return list;
+    const withoutAvif = list.filter((url) => !/\.avif(?:$|\?)/i.test(url));
+    return withoutAvif.length > 0 ? withoutAvif : list;
+  }, [normalizedSrc, widthHint, preferWebP]);
   const [failedCount, setFailedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const prevNormalizedSrc = useRef<string | undefined>(undefined);

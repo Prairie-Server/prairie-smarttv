@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ItemDetail } from "./catalog";
 import {
   fetchWatchDetail,
   formatAudioLabel,
   formatSubtitleLabel,
   selectFileVersion,
   selectPlaybackFileId,
+  watchDetailFromItemDetail,
   type WatchDetail,
 } from "./watch";
 import type { PrairieSession } from "../storage/session";
@@ -113,5 +115,27 @@ describe("watch helpers", () => {
     expect(formatSubtitleLabel({ language: "spa", forced: true })).toContain("Forced");
     expect(formatSubtitleLabel({ title: "English", hearing_impaired: true })).toContain("HI");
     expect(formatSubtitleLabel({})).toBe("Subtitle");
+  });
+});
+
+describe("watchDetailFromItemDetail", () => {
+  it("returns null without versions and maps versions when present", () => {
+    expect(
+      watchDetailFromItemDetail({
+        content_id: "m1",
+        type: "movie",
+        title: "Movie",
+      } as ItemDetail),
+    ).toBeNull();
+
+    const mapped = watchDetailFromItemDetail({
+      content_id: "m1",
+      type: "movie",
+      title: "Movie",
+      versions: [{ file_id: 9, resolution: "1080p" }],
+      user_data: { position_seconds: 120, duration_seconds: 6000 },
+    } as ItemDetail);
+    expect(mapped?.versions[0]?.file_id).toBe(9);
+    expect(mapped?.user_data?.position_seconds).toBe(120);
   });
 });

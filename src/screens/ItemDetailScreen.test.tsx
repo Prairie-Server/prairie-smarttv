@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemDetail } from "../api/catalog";
 import type { PrairieSession } from "../storage/session";
+import type { PlayerLaunch } from "./PlayerScreen";
 
 const session: PrairieSession = {
   serverUrl: "https://tv.example.com",
@@ -13,6 +14,14 @@ const session: PrairieSession = {
 
 let detailDelay = 0;
 let detailOverrides: Partial<ItemDetail> = {};
+let episodeCount = 0;
+let seasonsDelay = 0;
+const fetchWatchDetail = vi.fn(async (_session: unknown, id: string) => ({
+  content_id: id,
+  type: "movie",
+  title: `Watch ${id}`,
+  versions: [{ file_id: 99, resolution: "1080p" }],
+}));
 
 function movie(id: string): ItemDetail {
   return {
@@ -25,7 +34,7 @@ function movie(id: string): ItemDetail {
     overview: "An overview.",
     poster_url: "/artwork/library/1/poster/original.rev.webp",
     backdrop_url: "/artwork/library/1/backdrop/original.rev.webp",
-    cast: [{ name: "Someone", character: "Hero" }],
+    cast: [{ name: "Someone", character: "Hero", photo_url: "/artwork/p/photo.webp" }],
     crew: [{ name: "Director Person", job: "Director" }],
     versions: [{ file_id: 9, resolution: "1080p" }],
     user_state: { played: false, is_favorite: false, in_watchlist: false },
@@ -41,8 +50,28 @@ vi.mock("../api/catalog", async (importOriginal) => {
       if (detailDelay > 0) await new Promise((resolve) => setTimeout(resolve, detailDelay));
       return movie(id);
     }),
-    fetchSeasons: vi.fn(async () => []),
-    fetchEpisodes: vi.fn(async () => []),
+    fetchSeasons: vi.fn(async () => {
+      if (seasonsDelay > 0) await new Promise((resolve) => setTimeout(resolve, seasonsDelay));
+      if (episodeCount <= 0) return [];
+      return [{ season_number: 1, episode_count: episodeCount, title: "Season 1" }];
+    }),
+    fetchEpisodes: vi.fn(async () =>
+      Array.from({ length: episodeCount }, (_, i) => ({
+        content_id: `e${i + 1}`,
+        title: `Episode ${i + 1}`,
+        season_number: 1,
+        episode_number: i + 1,
+        still_url: `/artwork/still/${i + 1}.webp`,
+      })),
+    ),
+  };
+});
+
+vi.mock("../api/watch", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/watch")>();
+  return {
+    ...actual,
+    fetchWatchDetail: (session: unknown, id: string) => fetchWatchDetail(session, id),
   };
 });
 
@@ -59,8 +88,9 @@ vi.mock("../api/recommendations", () => ({
 let container: HTMLDivElement;
 let root: Root | null = null;
 const uncaught: unknown[] = [];
+let lastPlay: PlayerLaunch | null = null;
 
-async function renderScreen() {
+async function renderScreen(contentId = "m1") {
   const { ItemDetailScreen } = await import("./ItemDetailScreen");
   const { ServerUrlContext } = await import("../serverUrlContext");
   await act(async () => {
@@ -72,9 +102,11 @@ async function renderScreen() {
       <ServerUrlContext.Provider value={session.serverUrl}>
         <ItemDetailScreen
           session={session}
-          contentId="m1"
+          contentId={contentId}
           onBack={() => {}}
-          onPlay={() => {}}
+          onPlay={(launch) => {
+            lastPlay = launch;
+          }}
           onOpenItem={() => {}}
         />
       </ServerUrlContext.Provider>,
@@ -94,6 +126,10 @@ beforeEach(() => {
   uncaught.length = 0;
   detailDelay = 0;
   detailOverrides = {};
+  episodeCount = 0;
+  seasonsDelay = 0;
+  lastPlay = null;
+  fetchWatchDetail.mockClear();
 });
 
 afterEach(() => {
@@ -136,5 +172,46 @@ describe("ItemDetailScreen", () => {
     await settle();
     expect(uncaught).toEqual([]);
     expect(container.querySelector(".detail-screen")).not.toBeNull();
+  });
+
+  it("loads hero artwork eagerly and skips AVIF for the hero", async () => {
+    await renderScreen();
+    await settle();
+    const hero = container.querySelector<HTMLImageElement>(".detail-hero__art img");
+    expect(hero?.getAttribute("loading")).toBe("eager");
+    expect(hero?.getAttribute("src") ?? "").not.toMatch(/\.avif/i);
+  });
+
+  it("plays from item-detail versions without a watch round-trip", async () => {
+    await renderScreen();
+    await settle();
+    const play = container.querySelector<HTMLButtonElement>(".focus-btn--primary");
+    expect(play).not.toBeNull();
+    await act(async () => {
+      play?.click();
+    });
+    expect(lastPlay?.fileId).toBe(9);
+    expect(fetchWatchDetail).not.toHaveBeenCalled();
+  });
+
+  it("shows series Play immediately and only mounts a page of episodes", async () => {
+    detailOverrides = { type: "series", title: "Series s1", versions: [] };
+    episodeCount = 20;
+    await renderScreen("s1");
+    await settle();
+
+    // Play exists as soon as the hero is up — not gated on the episode list.
+    expect(container.querySelector(".focus-btn--primary")).not.toBeNull();
+    await settle(20);
+    expect(container.querySelectorAll(".episode-card").length).toBe(8);
+    expect(container.textContent).toContain("More episodes");
+  });
+
+  it("defers cast photos until the hero grace period elapses", async () => {
+    await renderScreen();
+    await settle();
+    expect(container.querySelector(".cast-rail")).toBeNull();
+    await settle(950);
+    expect(container.querySelector(".cast-rail")).not.toBeNull();
   });
 });
