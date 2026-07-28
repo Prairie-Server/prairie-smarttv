@@ -112,6 +112,25 @@ export function isPrairieSignedArtworkURL(objectPath: string): boolean {
   return withoutQuery.includes("/artwork/");
 }
 
+/**
+ * True for a signed `original` object, which must never be rewritten.
+ *
+ * The server signs sized rungs against the artwork *revision* but signs
+ * `original` against exactly itself (artworkstore.signatureScope), so holding a
+ * URL for a 200px card never hands over the full-resolution master. Rewriting an
+ * `original` therefore fails signature validation and the panel shows nothing.
+ *
+ * This is not hypothetical: it took out cast portraits in the browser, because
+ * one server call site presigned the raw original path. Any screen here that is
+ * handed an original — a library tile, Live TV channel art — would do the same,
+ * and on a television a 403 is just a blank card with no console to explain it.
+ */
+export function isSignedOriginalArtworkURL(objectPath: string): boolean {
+  if (!isPrairieSignedArtworkURL(objectPath)) return false;
+  const withoutQuery = objectPath.split("?")[0] ?? "";
+  return /\/original(?=\.)/.test(withoutQuery);
+}
+
 function webPFormatSibling(objectPath: string | null | undefined, ext: ".avif" | ".png"): string {
   const trimmed = objectPath?.trim() ?? "";
   if (!trimmed) return "";
@@ -166,7 +185,7 @@ function rewritePathWidthVariant(pathname: string, width: number): string {
 export function artworkWidthVariant(objectPath: string | null | undefined, width: number): string {
   const trimmed = objectPath?.trim() ?? "";
   if (!trimmed || !Number.isFinite(width) || width <= 0) return "";
-  if (isSignedArtworkURL(trimmed)) return "";
+  if (isSignedArtworkURL(trimmed) || isSignedOriginalArtworkURL(trimmed)) return "";
 
   if (trimmed.includes("://")) {
     try {
