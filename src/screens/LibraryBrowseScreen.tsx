@@ -5,7 +5,7 @@ import { fetchCatalog, type CatalogItem } from "../api/catalog";
 import { FocusButton } from "../components/FocusButton";
 import { PosterCard } from "../components/PosterCard";
 import { PosterGrid } from "../components/PosterGrid";
-import { useStableItemSelect } from "../hooks/useStableItemSelect";
+import { useStableItemOpen } from "../hooks/useStableItemOpen";
 import { useBackKey } from "../focus/useBackKey";
 import { catalogItemSubtitle, LIBRARY_SORT_OPTIONS } from "../lib/browseCards";
 import type { PrairieSession } from "../storage/session";
@@ -16,7 +16,7 @@ interface LibraryBrowseScreenProps {
   libraryName: string;
   libraryType?: string;
   onBack: () => void;
-  onOpenItem: (contentId: string) => void;
+  onOpenItem: (contentId: string, seed?: CatalogItem) => void;
 }
 
 export function LibraryBrowseScreen({
@@ -27,7 +27,7 @@ export function LibraryBrowseScreen({
   onBack,
   onOpenItem,
 }: LibraryBrowseScreenProps) {
-  const selectItem = useStableItemSelect(onOpenItem);
+  const selectItem = useStableItemOpen(onOpenItem);
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -184,7 +184,7 @@ export function LibraryBrowseScreen({
                 favorite={Boolean(item.user_state?.is_favorite)}
                 imageLoading={index < 4 ? "eager" : "lazy"}
                 autoFocus={index === 0}
-                onSelect={selectItem(item.content_id)}
+                onSelect={selectItem(item)}
               />
             ))}
         {loadingMore

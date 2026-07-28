@@ -27,7 +27,7 @@ import { columnCountForWidth } from "../components/PosterGrid";
 import { currentViewportWidth, designPx, viewportScaleFactor } from "../ui/viewportScale";
 import { useBackKey } from "../focus/useBackKey";
 import { useNearViewport } from "../hooks/useNearViewport";
-import { useStableItemSelect } from "../hooks/useStableItemSelect";
+import { useStableItemOpen } from "../hooks/useStableItemOpen";
 import {
   crewLine,
   episodeProgressRatio,
@@ -61,9 +61,19 @@ const SIMILAR_PREFETCH_MARGIN = "280px 0px";
 /** Episodes / cast sit below the fold; load their art as they are approached. */
 const SECTION_PREFETCH_MARGIN_PX = 240;
 /** And not before the hero backdrop has settled (episode/cast art must wait). */
-const SIMILAR_HERO_GRACE_MS = 400;
-/** Safety only: admit poster if the backdrop never fires onLoad/onError. */
-const HERO_SECONDARY_FALLBACK_MS = 8000;
+const SIMILAR_HERO_GRACE_MS = 150;
+/**
+ * Safety only: admit poster if the backdrop never fires onLoad/onError.
+ *
+ * This is a deadline, not a budget. It used to be 8s, which is what a stalled
+ * backdrop actually cost: every piece of below-the-fold art waits on
+ * `heroSettled`, so one socket that never reported back left the page visibly
+ * half-built for eight seconds. The artwork queue already caps concurrent
+ * decodes and puts the eager hero in its priority lane, so the ordering this
+ * protects is enforced there regardless — a short deadline gives up almost
+ * nothing and bounds the bad case to something the viewer reads as a beat.
+ */
+const HERO_SECONDARY_FALLBACK_MS = 1200;
 /** Episode cards mounted initially; the rest expand on demand. */
 const EPISODE_PAGE_SIZE = 8;
 /** Must track `.episode-grid` in styles.css — used for D-pad row jumps. */
@@ -73,9 +83,20 @@ const EPISODE_GRID_GAP = 14;
 interface ItemDetailScreenProps {
   session: PrairieSession;
   contentId: string;
+  /**
+   * The card the viewer selected, when the caller had one.
+   *
+   * Rails and grids already hold the title, artwork, year and watch state for
+   * every item they draw — the same fields the hero renders first. Passing that
+   * row through means the page paints immediately instead of showing "Loading…"
+   * for a whole round-trip; `fetchItemDetail` then fills in cast, versions and
+   * the rest. Optional: deep links and the recommendations rail have no card to
+   * hand over, and fall back to the blank-then-fetch path.
+   */
+  seed?: CatalogItem;
   onBack: () => void;
   onPlay: (launch: PlayerLaunch) => void;
-  onOpenItem: (contentId: string) => void;
+  onOpenItem: (contentId: string, seed?: CatalogItem) => void;
 }
 
 /** Artwork fields are strings by contract; tolerate anything else rather than throwing. */
@@ -213,18 +234,23 @@ function FactRow({ tokens }: { tokens: FactToken[] }) {
 export function ItemDetailScreen({
   session,
   contentId,
+  seed,
   onBack,
   onPlay,
   onOpenItem,
 }: ItemDetailScreenProps) {
-  const [detail, setDetail] = useState<ItemDetail | null>(null);
+  // A seed is a CatalogItem, and ItemDetail extends CatalogItem with optional
+  // fields only — so it renders as a legitimately sparse detail until the real
+  // payload lands. Only accept one that matches the id being shown.
+  const initialDetail = seed?.content_id === contentId ? (seed as ItemDetail) : null;
+  const [detail, setDetail] = useState<ItemDetail | null>(initialDetail);
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [similar, setSimilar] = useState<CatalogItem[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialDetail == null);
   const [busyPlay, setBusyPlay] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -303,11 +329,20 @@ export function ItemDetailScreen({
     return () => window.clearTimeout(handle);
   }, [detail, heroBackdropReady]);
 
-  const similarWanted = similarNear && heroSettled;
-  // People art needs the hero out of the way *and* the rail in reach.
+  /**
+   * Fetching recommendations is a network round-trip, not a decode, so it does
+   * not contend with the hero for the main thread — only proximity should gate
+   * it. It used to also wait on `heroSettled`, which put a JSON request behind
+   * an image load for no benefit and made the row the last thing on the page to
+   * appear. The *posters* it returns are still throttled, by the artwork queue
+   * that exists for exactly that.
+   */
+  const similarWanted = similarNear;
+  // People art is decode work, so it keeps both gates: hero out of the way, rail
+  // in reach.
   const showPeopleArt = heroSettled && castNear;
 
-  const selectSimilar = useStableItemSelect(onOpenItem);
+  const selectSimilar = useStableItemOpen(onOpenItem);
   const similarItemKey = useCallback((item: CatalogItem) => item.content_id, []);
   const renderSimilarItem = useCallback(
     (item: CatalogItem) => (
@@ -317,7 +352,7 @@ export function ItemDetailScreen({
         posterUrl={item.poster_url}
         posterAvifUrl={item.poster_avif_url}
         watched={Boolean(item.user_state?.played)}
-        onSelect={selectSimilar(item.content_id)}
+        onSelect={selectSimilar(item)}
       />
     ),
     [selectSimilar],
@@ -331,7 +366,9 @@ export function ItemDetailScreen({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setLoading(true);
+      // A seed already paints the hero; blanking it here would replace real
+      // content with "Loading…" for the duration of the request.
+      setLoading(initialDetail == null);
       setError(null);
       setSeasons([]);
       setEpisodes([]);
@@ -360,10 +397,25 @@ export function ItemDetailScreen({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialDetail derives from contentId
   }, [session, contentId]);
 
+  /**
+   * Series only: load seasons.
+   *
+   * This used to wait for `fetchItemDetail` purely to learn the item's type,
+   * which made seasons — and therefore episodes, which wait on seasons — three
+   * requests deep on a chain where only the last two are genuinely dependent.
+   * A seed already carries the type, so when it says "series" the seasons
+   * request goes out in the same tick as the detail request and the episode grid
+   * arrives a full round-trip sooner. Without a seed the type is still unknown
+   * until detail resolves, and the original ordering stands rather than firing a
+   * seasons request at every movie.
+   */
+  const seedIsSeries = initialDetail != null && isSeriesType(initialDetail.type);
+  const seasonsReady = seedIsSeries || (detail != null && isSeriesType(detail.type));
   useEffect(() => {
-    if (!detail || !isSeriesType(detail.type)) return;
+    if (!seasonsReady) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -381,7 +433,7 @@ export function ItemDetailScreen({
     return () => {
       cancelled = true;
     };
-  }, [session, contentId, detail]);
+  }, [session, contentId, seasonsReady]);
 
   // Recommendations only return ids, so each card costs a full item-detail
   // request. Opening a title used to fan out 12 of them (plus 12 poster decodes)

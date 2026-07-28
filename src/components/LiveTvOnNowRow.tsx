@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import type { LiveTvChannel } from "../api/livetv";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   channelDisplayLabel,
   currentProgramForChannel,
   fetchLiveTvChannels,
   fetchLiveTvGuide,
   programProgressFraction,
+  type LiveTvChannel,
+  type LiveTvProgram,
 } from "../api/livetv";
 import { useFocusRescue } from "../focus/useFocusRescue";
 import type { PrairieSession } from "../storage/session";
@@ -63,22 +64,28 @@ export function LiveTvOnNowSkeleton() {
 export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveTvOnNowRowProps) {
   const [loading, setLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [cards, setCards] = useState<OnNowCard[]>([]);
-  // The 60s guide refresh can drop the focused channel when its program ends;
-  // rescue focus to a neighbouring card so the remote does not go dead.
+  // The minute tick can drop the focused channel when its program ends; rescue
+  // focus to a neighbouring card so the remote does not go dead.
   const rowRef = useRef<HTMLDivElement>(null);
   useFocusRescue(rowRef);
-
-  const status: OnNowStatus = cards.length > 0 ? "ready" : loading ? "loading" : "empty";
-  useEffect(() => {
-    onStatusChange?.(status);
-  }, [status, onStatusChange]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
 
+  /**
+   * Fetch the line-up and the guide once per mount.
+   *
+   * The minute tick used to be a dependency of this effect, so every tick
+   * re-requested both — on a screen that is usually also decoding artwork, and
+   * for data that had not changed. The guide already covers a six-hour window,
+   * so a minute later the answer to "what is on now" is in the response we
+   * already hold; only the clock moved. Advancing the row is now pure
+   * recomputation (see below), and the network is touched once.
+   */
+  const [channels, setChannels] = useState<LiveTvChannel[]>([]);
+  const [programs, setPrograms] = useState<LiveTvProgram[]>([]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -87,35 +94,21 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
         const enabled = (await fetchLiveTvChannels(session)).filter((ch) => ch.enabled !== false);
         if (cancelled) return;
         const limited = enabled.slice(0, 24);
+        setChannels(limited);
         if (!limited.length) {
-          setCards([]);
+          setPrograms([]);
           return;
         }
-        const programs = await fetchLiveTvGuide(
+        const guide = await fetchLiveTvGuide(
           session,
           limited.map((ch) => ch.id),
         );
-        if (cancelled) return;
-        const now = Date.now();
-        const nextCards = limited
-          .map((channel) => {
-            const program = currentProgramForChannel(programs, channel.id, now);
-            if (!program) return null;
-            const poster = program.image_url?.trim() || "";
-            const logo = channel.logo_url?.trim() || "";
-            return {
-              channel,
-              title: program.title,
-              stop: program.stop,
-              imageUrl: poster || logo,
-              progress: programProgressFraction(program.start, program.stop, now),
-            };
-          })
-          .filter((row): row is OnNowCard => row != null)
-          .slice(0, 16);
-        setCards(nextCards);
+        if (!cancelled) setPrograms(guide);
       } catch {
-        if (!cancelled) setCards([]);
+        if (!cancelled) {
+          setChannels([]);
+          setPrograms([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -123,10 +116,36 @@ export function LiveTvOnNowRow({ session, onOpenChannel, onStatusChange }: LiveT
     return () => {
       cancelled = true;
     };
-  }, [session, nowMs]);
+  }, [session]);
+
+  /** Which programme is airing, recomputed against the minute tick. */
+  const cards = useMemo<OnNowCard[]>(() => {
+    if (!channels.length || !programs.length) return [];
+    return channels
+      .map((channel) => {
+        const program = currentProgramForChannel(programs, channel.id, nowMs);
+        if (!program) return null;
+        const poster = program.image_url?.trim() || "";
+        const logo = channel.logo_url?.trim() || "";
+        return {
+          channel,
+          title: program.title,
+          stop: program.stop,
+          imageUrl: poster || logo,
+          progress: programProgressFraction(program.start, program.stop, nowMs),
+        };
+      })
+      .filter((row): row is OnNowCard => row != null)
+      .slice(0, 16);
+  }, [channels, programs, nowMs]);
+
+  const status: OnNowStatus = cards.length > 0 ? "ready" : loading ? "loading" : "empty";
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
 
   // First load only: hold a same-height slot so filling it in place cannot
-  // reflow Home. The 60s guide refresh keeps the real cards mounted.
+  // reflow Home. The minute tick keeps the real cards mounted.
   if (loading && cards.length === 0) {
     return <LiveTvOnNowSkeleton />;
   }

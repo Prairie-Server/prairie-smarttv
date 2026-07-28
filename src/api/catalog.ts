@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { CACHE_TTL_MS, cachedRequest } from "./requestCache";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
 
@@ -69,15 +70,28 @@ function buildCatalogPath(query: CatalogQuery): string {
   return qs ? `/api/v1/catalog?${qs}` : "/api/v1/catalog";
 }
 
+/**
+ * Only the first page of a grid is worth caching.
+ *
+ * It is what Back from a title re-requests, and what tab-switching re-requests.
+ * Later pages are accumulated into component state that is discarded on unmount,
+ * so caching them would hold memory nothing reads. A caller that already carries
+ * a `snapshot` is mid-pagination and must reach the server for consistency.
+ */
+function isCacheableCatalogQuery(query: CatalogQuery): boolean {
+  return (query.offset ?? 0) === 0 && !query.snapshot;
+}
+
 export async function fetchCatalog(
   session: PrairieSession,
   query: CatalogQuery = {},
   fetchImpl?: typeof fetch,
 ): Promise<CatalogResponse> {
-  const data = await apiRequest<CatalogResponse>(
-    sessionClient(session, fetchImpl),
-    buildCatalogPath(query),
-  );
+  const options = sessionClient(session, fetchImpl);
+  const path = buildCatalogPath(query);
+  const data = isCacheableCatalogQuery(query)
+    ? await cachedRequest<CatalogResponse>(options, path, CACHE_TTL_MS.catalogPage)
+    : await apiRequest<CatalogResponse>(options, path);
   return {
     ...data,
     items: data.items ?? [],
@@ -172,9 +186,10 @@ export async function fetchItemDetail(
   contentId: string,
   fetchImpl?: typeof fetch,
 ): Promise<ItemDetail> {
-  return apiRequest<ItemDetail>(
+  return cachedRequest<ItemDetail>(
     sessionClient(session, fetchImpl),
     `/api/v1/catalog/items/${encodeURIComponent(contentId)}`,
+    CACHE_TTL_MS.itemDetail,
   );
 }
 
@@ -213,9 +228,10 @@ export async function fetchSeasons(
   seriesId: string,
   fetchImpl?: typeof fetch,
 ): Promise<SeasonSummary[]> {
-  const data = await apiRequest<{ seasons?: SeasonSummary[] } | SeasonSummary[]>(
+  const data = await cachedRequest<{ seasons?: SeasonSummary[] } | SeasonSummary[]>(
     sessionClient(session, fetchImpl),
     `/api/v1/catalog/series/${encodeURIComponent(seriesId)}/seasons`,
+    CACHE_TTL_MS.seasons,
   );
   if (Array.isArray(data)) return data;
   return data.seasons ?? [];
@@ -227,9 +243,10 @@ export async function fetchEpisodes(
   seasonNumber: number,
   fetchImpl?: typeof fetch,
 ): Promise<EpisodeSummary[]> {
-  const data = await apiRequest<{ episodes?: EpisodeSummary[] } | EpisodeSummary[]>(
+  const data = await cachedRequest<{ episodes?: EpisodeSummary[] } | EpisodeSummary[]>(
     sessionClient(session, fetchImpl),
     `/api/v1/catalog/series/${encodeURIComponent(seriesId)}/seasons/${seasonNumber}/episodes`,
+    CACHE_TTL_MS.episodes,
   );
   if (Array.isArray(data)) return data;
   return data.episodes ?? [];

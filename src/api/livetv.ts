@@ -1,6 +1,20 @@
 import { apiRequest, buildStreamUrl, isSameServerOrigin } from "./client";
+import { CACHE_TTL_MS, cachedRequest } from "./requestCache";
 import { sessionClient } from "./sessionClient";
 import type { PrairieSession } from "../storage/session";
+
+/**
+ * Guide windows are snapped to this grid before they reach the URL.
+ *
+ * The window used to be built from a raw `Date.now()`, so every caller produced
+ * a unique path and no two requests could ever share a response — including the
+ * three that fire within a second of each other on a Home paint (availability
+ * probe, On now rail, Live TV screen). Snapping makes the path stable for a
+ * minute at a time, which is what lets the request cache collapse them. A window
+ * that starts up to a minute in the past only adds programmes that just ended,
+ * and every consumer already filters against the real clock.
+ */
+const GUIDE_WINDOW_GRID_MS = 60_000;
 
 export interface LiveTvChannel {
   id: string;
@@ -115,9 +129,10 @@ export async function fetchLiveTvChannels(
   fetchImpl?: typeof fetch,
 ): Promise<LiveTvChannel[]> {
   try {
-    const data = await apiRequest<{ channels?: LiveTvChannel[] }>(
+    const data = await cachedRequest<{ channels?: LiveTvChannel[] }>(
       sessionClient(session, fetchImpl),
       "/api/v1/livetv/channels",
+      CACHE_TTL_MS.liveTvChannels,
     );
     return (data.channels ?? []).filter((ch) => ch.enabled !== false);
   } catch (err) {
@@ -142,13 +157,15 @@ export async function fetchLiveTvGuide(
   if (!channelIds.length) return [];
   const params = new URLSearchParams();
   params.set("channels", channelIds.join(","));
-  const now = Date.now();
-  // Align with web: guide window starts at now (overlap still returns in-progress shows).
+  // Align with web: guide window starts at now (overlap still returns in-progress
+  // shows), snapped to a minute so concurrent callers share one request.
+  const now = Math.floor(Date.now() / GUIDE_WINDOW_GRID_MS) * GUIDE_WINDOW_GRID_MS;
   params.set("start", new Date(now).toISOString());
   params.set("end", new Date(now + 6 * 60 * 60 * 1000).toISOString());
-  const data = await apiRequest<{ programs?: LiveTvProgram[] }>(
+  const data = await cachedRequest<{ programs?: LiveTvProgram[] }>(
     sessionClient(session, fetchImpl),
     `/api/v1/livetv/guide?${params.toString()}`,
+    CACHE_TTL_MS.liveTvGuide,
   );
   return data.programs ?? [];
 }
