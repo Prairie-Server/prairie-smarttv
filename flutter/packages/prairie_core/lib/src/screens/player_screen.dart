@@ -7,12 +7,15 @@ import 'package:prairie_core/prairie_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _progressIntervalMs = 10000;
+/// HLS remux/transcode sessions that stop advancing for this long after play
+/// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
+const _hlsStallTimeout = Duration(seconds: 20);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
 ///
-/// Audio track switching still isn't wired up — [VideoBackend] doesn't
-/// expose audio tracks yet, only text tracks.
+/// Audio track switching still isn't native — Prairie restarts the stream
+/// via PATCH `/playback/{id}/audio` (same as the TS client).
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key, required this.launch, required this.back});
 
@@ -32,17 +35,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _activeSessionId;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<String?>? _captionSub;
+  StreamSubscription<String>? _errorSub;
   Duration _position = Duration.zero;
+  Duration _lastProgressPosition = Duration.zero;
+  DateTime? _lastProgressAt;
   bool _loading = true;
   String? _error;
   bool _controlsVisible = true;
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
+  Timer? _stallTimer;
   bool _exiting = false;
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
   String? _caption;
   CancelToken? _prepareCancel;
+  bool _busyAudio = false;
 
   @override
   void initState() {
@@ -56,8 +64,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _prepareCancel?.cancel();
     _positionSub?.cancel();
     _captionSub?.cancel();
+    _errorSub?.cancel();
     _progressTimer?.cancel();
     _hideControlsTimer?.cancel();
+    _stallTimer?.cancel();
     // Widget teardown that bypasses [_exit] (route replace, error boundary)
     // must still stop the Prairie session and free the hardware decoder.
     final sessionId = _activeSessionId;
@@ -95,6 +105,172 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (version.fileId == fileId) return version.resolution;
     }
     return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
+  }
+
+  List<AudioTrackInfo> get _audioTracks {
+    final watch = widget.launch.watch;
+    final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
+    if (watch == null) return const [];
+    final version = selectFileVersion(watch, fileId);
+    return version?.audioTracks ?? const [];
+  }
+
+  Future<void> _chooseAudio(int index) async {
+    final current = _playbackSession;
+    final sessionId = _activeSessionId ?? current?.sessionId;
+    if (current == null || sessionId == null || _busyAudio || _exiting) return;
+    if (index == current.audioTrackIndex) return;
+
+    setState(() {
+      _busyAudio = true;
+      _error = null;
+      _loading = true;
+    });
+
+    final cancel = CancelToken();
+    _prepareCancel?.cancel();
+    _prepareCancel = cancel;
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final session = ref.read(sessionProvider)!;
+      final settings = await loadPlaybackSettings(SharedPreferencesAsync());
+      final deviceCaps = applyAv1AdvertiseOverrides(
+        ref.read(tvCapabilitiesProvider),
+        forceAv1: settings.forceAv1,
+        disableAv1: settings.disableAv1,
+      );
+
+      final position = _position.inMilliseconds / 1000.0;
+      final updated = await switchPlaybackAudio(client, session, sessionId, index, position);
+      if (!mounted || _exiting || cancel.isCancelled) return;
+
+      final nextSession = PlaybackSessionResponse(
+        sessionId: current.sessionId,
+        mediaFileId: current.mediaFileId,
+        playMethod: updated.playMethod.isNotEmpty ? updated.playMethod : current.playMethod,
+        position: position,
+        isPaused: current.isPaused,
+        streamUrl: updated.streamUrl.isNotEmpty ? updated.streamUrl : current.streamUrl,
+        audioTrackIndex: updated.audioTrackIndex,
+        durationSeconds: current.durationSeconds,
+        playbackInfo: updated.playbackInfo ?? current.playbackInfo,
+      );
+
+      final prepared = await preparePlayableSession(
+        client,
+        session,
+        nextSession,
+        position,
+        sourceResolution: _sourceResolutionForFile(widget.launch.watch, nextSession.mediaFileId),
+        maxResolution: deviceCaps.maxResolution,
+        cancelToken: cancel,
+      );
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        return;
+      }
+
+      _activeSessionId = prepared.session.sessionId;
+      await _positionSub?.cancel();
+      await _captionSub?.cancel();
+      await _errorSub?.cancel();
+      _stallTimer?.cancel();
+      final oldBackend = _backend;
+      _backend = null;
+      await oldBackend?.dispose();
+
+      final backend = ref.read(videoBackendFactoryProvider)();
+      backend.attach(prepared.streamUrl, maxResolution: deviceCaps.maxResolution);
+      setState(() {
+        _backend = backend;
+        _playbackSession = prepared.session;
+        _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
+        _selectedSubtitleTrackId = null;
+        _caption = null;
+      });
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await backend.dispose();
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        return;
+      }
+
+      await backend.initialize(
+        startPosition: prepared.playerStartSeconds > 0
+            ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
+            : null,
+      );
+      await backend.play();
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await backend.dispose();
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        return;
+      }
+
+      setState(() {
+        _loading = false;
+        _busyAudio = false;
+      });
+      _lastProgressPosition = _position;
+      _lastProgressAt = DateTime.now();
+      _positionSub = backend.positionStream.listen((pos) {
+        if (!mounted) return;
+        if (pos != _lastProgressPosition) {
+          _lastProgressPosition = pos;
+          _lastProgressAt = DateTime.now();
+        }
+        setState(() => _position = pos);
+      });
+      _captionSub = backend.captionStream.listen((text) {
+        if (mounted) setState(() => _caption = text);
+      });
+      _errorSub = backend.errorStream.listen((message) {
+        if (!mounted || _exiting || _error != null) return;
+        setState(() {
+          _error = message;
+          _loading = false;
+        });
+      });
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
+      unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
+      _showControls();
+    } catch (e) {
+      if (mounted && !_exiting) {
+        setState(() {
+          _error = e is ApiError ? e.message : 'Could not switch audio';
+          _loading = false;
+          _busyAudio = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _pickAudioTrack() async {
+    final tracks = _audioTracks;
+    if (tracks.isEmpty) return;
+    final currentIndex = _playbackSession?.audioTrackIndex ?? 0;
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: PrairieColors.bgElevated,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < tracks.length; i++)
+              ListTile(
+                title: Text(formatAudioLabel(tracks[i], i), style: const TextStyle(color: PrairieColors.ink)),
+                trailing: i == currentIndex ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                onTap: () => Navigator.of(context).pop<int>(i),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || choice == currentIndex) return;
+    await _chooseAudio(choice);
   }
 
   Future<void> _start() async {
@@ -206,13 +382,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       setState(() => _loading = false);
+      _lastProgressPosition = _position;
+      _lastProgressAt = DateTime.now();
       _positionSub = backend.positionStream.listen((position) {
-        if (mounted) setState(() => _position = position);
+        if (!mounted) return;
+        if (position != _lastProgressPosition) {
+          _lastProgressPosition = position;
+          _lastProgressAt = DateTime.now();
+        }
+        setState(() => _position = position);
       });
       _captionSub = backend.captionStream.listen((text) {
         if (mounted) setState(() => _caption = text);
       });
+      _errorSub = backend.errorStream.listen((message) {
+        if (!mounted || _exiting || _error != null) return;
+        setState(() {
+          _error = message;
+          _loading = false;
+        });
+      });
       _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
     } catch (e) {
       if (startedSessionId != null && _activeSessionId == startedSessionId) {
@@ -229,6 +423,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
       }
     }
+  }
+
+  void _checkHlsStall() {
+    if (!mounted || _exiting || _error != null || _loading) return;
+    final backend = _backend;
+    if (backend == null || !backend.isPlaying) return;
+    final lastAt = _lastProgressAt;
+    if (lastAt == null) return;
+    if (DateTime.now().difference(lastAt) < _hlsStallTimeout) return;
+    setState(() {
+      _error = 'Playback stalled — the stream stopped producing media.';
+      _loading = false;
+    });
+    _stallTimer?.cancel();
   }
 
   /// Mirrors `resolvePreferredSubtitleIndex`: auto-select a text track
@@ -305,6 +513,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _activeSessionId = null;
     _playbackSession = null;
     _progressTimer?.cancel();
+    _stallTimer?.cancel();
+    await _errorSub?.cancel();
+    _errorSub = null;
     if (sessionId != null) {
       await _reportProgress(paused: true);
       // Await stop so Back cannot race a new play against a still-open session
@@ -438,19 +649,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               IconButton(iconSize: 32, color: PrairieColors.ink, onPressed: _exit, icon: const Icon(Icons.close)),
-                              const SizedBox(width: 16),
-                              IconButton(iconSize: 32, color: PrairieColors.ink, onPressed: () => _seekBy(const Duration(seconds: -15)), icon: const Icon(Icons.replay_10)),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
+                              TextButton(
+                                onPressed: () => _seekBy(const Duration(seconds: -15)),
+                                child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                              ),
+                              const SizedBox(width: 8),
                               IconButton(
                                 iconSize: 48,
                                 color: PrairieColors.amber,
                                 onPressed: _togglePlayPause,
                                 icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
                               ),
-                              const SizedBox(width: 16),
-                              IconButton(iconSize: 32, color: PrairieColors.ink, onPressed: () => _seekBy(const Duration(seconds: 15)), icon: const Icon(Icons.forward_10)),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () => _seekBy(const Duration(seconds: 15)),
+                                child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                              ),
+                              if (_audioTracks.length > 1) ...[
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  iconSize: 28,
+                                  color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
+                                  onPressed: _busyAudio ? null : _pickAudioTrack,
+                                  icon: const Icon(Icons.audiotrack),
+                                  tooltip: 'Audio',
+                                ),
+                              ],
                               if (backend.subtitleTracks.isNotEmpty) ...[
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 8),
                                 IconButton(
                                   iconSize: 28,
                                   color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,

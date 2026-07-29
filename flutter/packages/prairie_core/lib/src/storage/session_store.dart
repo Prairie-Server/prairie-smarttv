@@ -2,6 +2,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/auth.dart';
+import 'durable_store.dart';
 
 /// Persists the active [PrairieSession]: identity in [SharedPreferencesAsync]
 /// (non-secret — server URL, username, profile), tokens in
@@ -13,13 +14,21 @@ import '../models/auth.dart';
 /// exit; a native Flutter app has no such WebView, so there's no reason not
 /// to use the platform keystore. Legacy sessionStorage migration has no
 /// Flutter equivalent and is dropped.
+///
+/// [clear] removes session identity + tokens but does **not** remove
+/// [DurableStore.lastServerUrlKey], the server registry, or playback settings
+/// — those must survive logout and app upgrades.
 class SessionStore {
-  SessionStore({SharedPreferencesAsync? prefs, FlutterSecureStorage? secureStorage})
+  SessionStore({SharedPreferencesAsync? prefs, FlutterSecureStorage? secureStorage, DurableStore? durable})
     : _prefs = prefs ?? SharedPreferencesAsync(),
-      _secure = secureStorage ?? const FlutterSecureStorage();
+      _secure = secureStorage ?? const FlutterSecureStorage(),
+      _durable = durable;
 
   final SharedPreferencesAsync _prefs;
   final FlutterSecureStorage _secure;
+  final DurableStore? _durable;
+
+  DurableStore get _d => _durable ?? DurableStore(prefs: _prefs);
 
   static const _serverUrlKey = 'prairie.session.serverUrl';
   static const _usernameKey = 'prairie.session.username';
@@ -52,7 +61,8 @@ class SessionStore {
   }
 
   Future<PrairieSession> save(PrairieSession session) async {
-    await _prefs.setString(_serverUrlKey, session.serverUrl);
+    final normalizedUrl = DurableStore.normalizeServerUrl(session.serverUrl);
+    await _prefs.setString(_serverUrlKey, normalizedUrl);
     await _prefs.setString(_usernameKey, session.username);
     await _prefs.setString(_profileIdKey, session.profileId);
     if (session.profileName != null) {
@@ -77,7 +87,10 @@ class SessionStore {
     } else {
       await _secure.delete(key: _profileTokenKey);
     }
-    return session;
+
+    // Keep last server URL even if the user later disconnects (pre-fill Connect).
+    await _d.saveLastServerUrl(normalizedUrl);
+    return session.copyWith(serverUrl: normalizedUrl);
   }
 
   /// Updates access/refresh tokens after a successful refresh without
@@ -88,6 +101,8 @@ class SessionStore {
     return save(current.copyWith(accessToken: accessToken, refreshToken: refreshToken));
   }
 
+  /// Clears the active session tokens. Does NOT remove lastServerUrl,
+  /// registry, or playback settings.
   Future<void> clear() async {
     await _prefs.remove(_serverUrlKey);
     await _prefs.remove(_usernameKey);

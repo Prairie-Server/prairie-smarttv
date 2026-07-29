@@ -1,16 +1,19 @@
-node_modules/
-dist/
-dist-tizen/
-dist-tizen-legacy/
-dist-tizen-legacy-web/
-dist-webos/
-artifacts/
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+flutter/artifacts/
+
+# IDE / OS
+.idea/
+.vscode/
 *.local
 .DS_Store
-coverage/
-.vite/
 *.log
 .env
 .env.*
 !.env.example
+
+# Coverage / misc
+coverage/
 artifacts/

@@ -37,9 +37,8 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
-    // Shown by default (rather than behind a "Show QR code" click) — it's
-    // the faster sign-in path on a remote with no comfortable keyboard.
-    _startQuickConnect();
+    // Quick Connect / QR is opt-in (matches ConnectScreen.tsx) — do not
+    // auto-start a device-login session on mount.
   }
 
   @override
@@ -154,11 +153,12 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           'device to create the first account, then return here to sign in.',
         );
       }
+      final identity = ref.read(clientIdentityProvider);
       final session = await startDeviceLogin(
         client,
         widget.serverUrl,
-        deviceName: 'Prairie Smart TV',
-        devicePlatform: 'tizen',
+        deviceName: identity.deviceName,
+        devicePlatform: identity.devicePlatform,
       );
       if (!mounted) return;
       setState(() => _quickConnect = _QuickConnectWaiting(session));
@@ -313,18 +313,22 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         ],
         Row(
           children: [
-            ElevatedButton.icon(
-              onPressed: _loading ? null : _submit,
-              icon: _loading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.login),
-              label: Text(_loading ? 'Signing in…' : 'Sign in'),
+            Flexible(
+              child: ElevatedButton.icon(
+                onPressed: _loading ? null : _submit,
+                icon: _loading
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.login),
+                label: Text(_loading ? 'Signing in…' : 'Sign in'),
+              ),
             ),
             const SizedBox(width: 12),
-            TextButton.icon(
-              onPressed: _loading ? null : () => ref.read(routeProvider.notifier).goServers(autoScan: false),
-              icon: const Icon(Icons.arrow_back, color: PrairieColors.muted),
-              label: const Text('Back to servers', style: TextStyle(color: PrairieColors.muted)),
+            Flexible(
+              child: TextButton.icon(
+                onPressed: _loading ? null : () => ref.read(routeProvider.notifier).goServers(autoScan: false),
+                icon: const Icon(Icons.arrow_back, color: PrairieColors.muted),
+                label: const Text('Back to servers', style: TextStyle(color: PrairieColors.muted)),
+              ),
             ),
           ],
         ),

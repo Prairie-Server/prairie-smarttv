@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
+import 'package:prairie_core/src/lib/detail_metadata.dart';
 
 /// Mirrors ItemDetailScreen.tsx. Viewport-based lazy-loading/hero-settle
 /// timing (IntersectionObserver, `heroSettled`/`heroBackdropReady` gating)
@@ -29,6 +30,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   bool _busyPlay = false;
   bool _busyAction = false;
   String? _error;
+  int? _selectedFileId;
 
   // Optimistic user-state overrides (ItemDetail/CatalogItem are immutable).
   bool? _favoriteOverride;
@@ -47,8 +49,6 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     _load();
   }
 
-  bool _isSeriesType(String? type) => const {'series', 'show', 'tv'}.contains(type?.toLowerCase());
-
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -57,6 +57,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _episodes = [];
       _seasonNumber = null;
       _similar = [];
+      _selectedFileId = null;
       _favoriteOverride = null;
       _watchlistOverride = null;
       _playedOverride = null;
@@ -69,9 +70,10 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       if (!mounted) return;
       setState(() {
         _detail = item;
+        _selectedFileId = preferredVersion(item)?.fileId;
         _loading = false;
       });
-      if (_isSeriesType(item.item.type)) {
+      if (isSeriesType(item.item.type)) {
         _loadSeasons();
       }
       _loadSimilar();
@@ -138,6 +140,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         versions: detail.versions
             .map((v) => FileVersion(fileId: v.fileId, resolution: v.resolution, codecVideo: v.codecVideo, codecAudio: v.codecAudio))
             .toList(),
+        userData: detail.userData,
         seriesId: detail.seriesId,
         seasonNumber: detail.item.seasonNumber,
         episodeNumber: detail.item.episodeNumber,
@@ -150,23 +153,18 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     return watch;
   }
 
-  /// Mirrors `resumePositionSeconds` from src/lib/detailMetadata.ts.
-  double? _resumePosition(double? position, double? duration) {
-    if (position == null || position <= 0) return null;
-    if (duration != null && duration > 0 && position / duration >= 0.95) return null;
-    return position;
-  }
-
-  Future<void> _play(String id, String title, {bool startFromBeginning = false}) async {
+  Future<void> _play(String id, String title, {bool startFromBeginning = false, int? preferredFileId}) async {
     setState(() {
       _busyPlay = true;
       _error = null;
     });
     try {
       final watch = await _resolveWatchDetail(id);
-      final fileId = selectPlaybackFileId(watch);
+      final fileId = selectPlaybackFileId(watch, preferredFileId: preferredFileId ?? (id == widget.contentId ? _selectedFileId : null));
       if (fileId == null) throw StateError('No playable file for this title');
-      final startPosition = startFromBeginning ? null : _resumePosition(watch.userData?.positionSeconds, watch.userData?.durationSeconds);
+      final startPosition = startFromBeginning
+          ? null
+          : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds);
       if (!mounted) return;
       ref.read(routeProvider.notifier).go(
         PlayerRoute(
@@ -229,10 +227,55 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     }
   }
 
+  String _playLabel({required bool isSeries, EpisodeSummary? nextUp}) {
+    if (_busyPlay) return 'Starting…';
+    final detail = _detail;
+    if (detail == null) return 'Play';
+    if (!isSeries) {
+      final movieResume = hasResumeProgress(
+        detail.userData?.positionSeconds,
+        detail.userData?.durationSeconds,
+        isInProgress: detail.userData?.isInProgress,
+      );
+      final seconds = resumePositionSeconds(detail.userData?.positionSeconds, detail.userData?.durationSeconds);
+      if (movieResume && seconds != null) return formatResumeLabel(seconds);
+      return 'Play';
+    }
+    if (nextUp == null) return 'Play';
+    final code = nextUp.seasonNumber != null && nextUp.episodeNumber != null
+        ? 'S${nextUp.seasonNumber} · E${nextUp.episodeNumber}'
+        : null;
+    final episodeResume = hasResumeProgress(
+      nextUp.userData?.positionSeconds,
+      nextUp.userData?.durationSeconds,
+      isInProgress: nextUp.userData?.isInProgress,
+    );
+    if (episodeResume) return code != null ? 'Resume $code' : 'Resume';
+    return code != null ? 'Play $code' : 'Play';
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider)!;
     final detail = _detail;
+    final isSeries = detail != null && isSeriesType(detail.item.type);
+    final nextUp = isSeries ? pickNextUpEpisode(_episodes) : null;
+    final movieResume = detail != null &&
+        !isSeries &&
+        hasResumeProgress(
+          detail.userData?.positionSeconds,
+          detail.userData?.durationSeconds,
+          isInProgress: detail.userData?.isInProgress,
+        );
+    final episodeResume = nextUp != null &&
+        hasResumeProgress(
+          nextUp.userData?.positionSeconds,
+          nextUp.userData?.durationSeconds,
+          isInProgress: nextUp.userData?.isInProgress,
+        );
+    final showStartOver = movieResume || (isSeries && episodeResume);
+    final playLabel = _playLabel(isSeries: isSeries, nextUp: nextUp);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -259,14 +302,47 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   isFavorite: _isFavorite,
                   inWatchlist: _inWatchlist,
                   played: _played,
-                  onPlay: () => _play(widget.contentId, detail.item.title),
-                  onStartOver: () => _play(widget.contentId, detail.item.title, startFromBeginning: true),
+                  playLabel: playLabel,
+                  showStartOver: showStartOver,
+                  playEnabled: !isSeries || nextUp != null,
+                  seasonCount: _seasons.length,
+                  onPlay: () {
+                    if (isSeries) {
+                      if (nextUp == null) return;
+                      _play(nextUp.contentId, nextUp.title);
+                    } else {
+                      _play(widget.contentId, detail.item.title);
+                    }
+                  },
+                  onStartOver: () {
+                    if (isSeries && nextUp != null) {
+                      _play(nextUp.contentId, nextUp.title, startFromBeginning: true);
+                    } else {
+                      _play(widget.contentId, detail.item.title, startFromBeginning: true);
+                    }
+                  },
                   onToggleFavorite: _toggleFavorite,
                   onToggleWatchlist: _toggleWatchlist,
                   onToggleWatched: _toggleWatched,
                 ),
-                const SizedBox(height: 24),
-                if (_isSeriesType(detail.item.type) && _seasons.isNotEmpty) ...[
+                if (!isSeries && detail.versions.length > 1) ...[
+                  const SizedBox(height: 24),
+                  const Text('Version', style: TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final version in detail.versions)
+                        ChoiceChip(
+                          label: Text(_versionLabel(version)),
+                          selected: _selectedFileId == version.fileId,
+                          onSelected: (_) => setState(() => _selectedFileId = version.fileId),
+                        ),
+                    ],
+                  ),
+                ],
+                if (isSeries && _seasons.isNotEmpty) ...[
                   const SizedBox(height: 32),
                   Wrap(
                     spacing: 8,
@@ -293,6 +369,33 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                         return _EpisodeCard(episode: episode, serverUrl: session.serverUrl, onTap: () => _play(episode.contentId, episode.title));
                       },
                     ),
+                ],
+                if (detail.extras.isNotEmpty) ...[
+                  const SizedBox(height: 32),
+                  const Text('Bonus Content', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+                  const SizedBox(height: 4),
+                  const Text('Extras', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      for (final extra in detail.extras)
+                        OutlinedButton.icon(
+                          onPressed: _busyPlay ? null : () => _play(extra.contentId, extra.title ?? 'Extra'),
+                          icon: const Icon(Icons.play_arrow),
+                          label: Text(extra.title?.isNotEmpty == true ? extra.title! : extra.kind),
+                        ),
+                    ],
+                  ),
+                ],
+                if (_hasDetailsSection(detail)) ...[
+                  const SizedBox(height: 32),
+                  const Text('Details', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+                  const SizedBox(height: 4),
+                  const Text('Info', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  _DetailsTable(detail: detail, isSeries: isSeries),
                 ],
                 if (detail.cast.isNotEmpty) ...[
                   const SizedBox(height: 32),
@@ -340,6 +443,24 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       ),
     );
   }
+
+  bool _hasDetailsSection(ItemDetail detail) {
+    return (detail.item.genres?.isNotEmpty ?? false) ||
+        detail.studios.isNotEmpty ||
+        detail.networks.isNotEmpty ||
+        detail.releaseDate != null ||
+        detail.firstAirDate != null ||
+        detail.showStatus != null;
+  }
+
+  String _versionLabel(ItemVersion version) {
+    final bits = <String>[];
+    if (version.resolution != null && version.resolution!.isNotEmpty) bits.add(version.resolution!);
+    if (version.codecVideo != null && version.codecVideo!.isNotEmpty) bits.add(version.codecVideo!);
+    if (version.hdr == true) bits.add('HDR');
+    if (version.container != null && version.container!.isNotEmpty) bits.add(version.container!);
+    return bits.isEmpty ? 'File ${version.fileId}' : bits.join(' · ');
+  }
 }
 
 /// Mirrors `.detail-hero`: backdrop art fills the section, and everything —
@@ -355,6 +476,10 @@ class _Hero extends StatelessWidget {
     required this.isFavorite,
     required this.inWatchlist,
     required this.played,
+    required this.playLabel,
+    required this.showStartOver,
+    required this.playEnabled,
+    required this.seasonCount,
     required this.onPlay,
     required this.onStartOver,
     required this.onToggleFavorite,
@@ -369,6 +494,10 @@ class _Hero extends StatelessWidget {
   final bool isFavorite;
   final bool inWatchlist;
   final bool played;
+  final String playLabel;
+  final bool showStartOver;
+  final bool playEnabled;
+  final int seasonCount;
   final VoidCallback onPlay;
   final VoidCallback onStartOver;
   final VoidCallback onToggleFavorite;
@@ -379,6 +508,14 @@ class _Hero extends StatelessWidget {
   Widget build(BuildContext context) {
     final backdrop = detail.item.backdropUrl;
     final poster = detail.item.posterUrl;
+    final isSeries = isSeriesType(detail.item.type);
+    final facts = isSeries ? seriesFactTokens(detail, seasonCount: seasonCount) : movieFactTokens(detail);
+    final directed = crewLine(detail);
+    final starring = starringText(detail);
+    final sources = [
+      typeLabel(detail.item.type),
+      ...?detail.item.genres?.take(2),
+    ];
     // Mirrors `.detail-hero { min-height: min(70vh, 640px) }` — TV viewports
     // are essentially always tall enough to hit the 640px cap.
     final heroHeight = (MediaQuery.sizeOf(context).height * 0.7).clamp(0, 640).toDouble();
@@ -388,16 +525,13 @@ class _Hero extends StatelessWidget {
         height: heroHeight,
         child: Stack(
           children: [
-            Positioned.fill(
-              child: DecoratedBox(decoration: const BoxDecoration(color: PrairieColors.bgElevated)),
+            const Positioned.fill(
+              child: DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated)),
             ),
             if (backdrop != null)
               Positioned.fill(
                 child: Image.network(resolveAssetUrl(serverUrl, backdrop), fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
               ),
-            // Mirrors `.detail-hero__shade`: a left-to-right gradient (dark
-            // where the copy sits, fading out toward the right so the
-            // backdrop art stays visible), not a bottom-up scrim.
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -414,8 +548,6 @@ class _Hero extends StatelessWidget {
                 ),
               ),
             ),
-            // Mirrors `.detail-hero__content { align-content: end }` —
-            // content is anchored to the bottom of the hero, not centered.
             Align(
               alignment: Alignment.bottomLeft,
               child: Padding(
@@ -450,6 +582,11 @@ class _Hero extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            Text(
+                              sources.join(' · '),
+                              style: const TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 6),
                             if (detail.item.logoUrl != null)
                               Image.network(
                                 resolveAssetUrl(serverUrl, detail.item.logoUrl!),
@@ -466,15 +603,34 @@ class _Hero extends StatelessWidget {
                               Text(detail.tagline!, style: const TextStyle(color: PrairieColors.amber, fontStyle: FontStyle.italic)),
                             ],
                             const SizedBox(height: 6),
-                            Text(
-                              [
-                                if (detail.item.year != null) '${detail.item.year}',
-                                if (detail.item.runtime != null) '${detail.item.runtime} min',
-                                if (detail.item.ratingImdb != null) '★ ${detail.item.ratingImdb!.toStringAsFixed(1)}',
-                                if (detail.item.contentRating != null) detail.item.contentRating!,
-                              ].join(' · '),
-                              style: const TextStyle(color: PrairieColors.muted),
+                            Wrap(
+                              spacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (detail.item.contentRating != null)
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: PrairieColors.ink.withValues(alpha: 0.35)),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      child: Text(detail.item.contentRating!, style: const TextStyle(color: PrairieColors.ink, fontSize: 12)),
+                                    ),
+                                  ),
+                                Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
+                              ],
                             ),
+                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                [
+                                  if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
+                                  if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
+                                ].join(' · '),
+                                style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                              ),
+                            ],
                             if (detail.item.overview != null) ...[
                               const SizedBox(height: 12),
                               Text(
@@ -484,6 +640,14 @@ class _Hero extends StatelessWidget {
                                 style: const TextStyle(color: PrairieColors.muted, height: 1.4),
                               ),
                             ],
+                            if (directed != null) ...[
+                              const SizedBox(height: 8),
+                              Text(directed, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                            ],
+                            if (starring != null) ...[
+                              const SizedBox(height: 4),
+                              Text(starring, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                            ],
                             const SizedBox(height: 16),
                             Wrap(
                               spacing: 12,
@@ -491,15 +655,16 @@ class _Hero extends StatelessWidget {
                               children: [
                                 ElevatedButton.icon(
                                   autofocus: true,
-                                  onPressed: busyPlay ? null : onPlay,
+                                  onPressed: (busyPlay || !playEnabled) ? null : onPlay,
                                   icon: const Icon(Icons.play_arrow),
-                                  label: Text(busyPlay ? 'Loading…' : 'Play'),
+                                  label: Text(playLabel),
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed: busyPlay ? null : onStartOver,
-                                  icon: const Icon(Icons.replay),
-                                  label: const Text('Start over'),
-                                ),
+                                if (showStartOver)
+                                  OutlinedButton.icon(
+                                    onPressed: busyPlay ? null : onStartOver,
+                                    icon: const Icon(Icons.replay),
+                                    label: const Text('Start Over'),
+                                  ),
                                 IconButton(
                                   onPressed: busyAction ? null : onToggleFavorite,
                                   icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: PrairieColors.amber),
@@ -528,6 +693,43 @@ class _Hero extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DetailsTable extends StatelessWidget {
+  const _DetailsTable({required this.detail, required this.isSeries});
+
+  final ItemDetail detail;
+  final bool isSeries;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <(String, String)>[];
+    if (detail.item.genres?.isNotEmpty ?? false) {
+      rows.add(('Genres', detail.item.genres!.join(', ')));
+    }
+    if (detail.studios.isNotEmpty) rows.add(('Studios', detail.studios.join(', ')));
+    if (detail.networks.isNotEmpty) rows.add(('Networks', detail.networks.join(', ')));
+    final aired = formatAirDate(detail.releaseDate ?? detail.firstAirDate);
+    if (aired != null) rows.add((isSeries ? 'First Aired' : 'Released', aired));
+    if (detail.showStatus != null && detail.showStatus!.isNotEmpty) {
+      rows.add(('Status', detail.showStatus!));
+    }
+    return Column(
+      children: [
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 120, child: Text(row.$1, style: const TextStyle(color: PrairieColors.muted, fontSize: 13))),
+                Expanded(child: Text(row.$2, style: const TextStyle(color: PrairieColors.ink, fontSize: 14))),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

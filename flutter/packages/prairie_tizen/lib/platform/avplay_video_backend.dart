@@ -14,9 +14,11 @@ class AvplayVideoBackend implements VideoBackend {
   VideoPlayerController? _controller;
   final _positionController = StreamController<Duration>.broadcast();
   final _captionController = StreamController<String?>.broadcast();
+  final _errorController = StreamController<String>.broadcast();
   Timer? _positionTimer;
   List<SubtitleTrackChoice> _subtitleTracks = [];
   String? _lastCaptionText;
+  String? _lastError;
   bool _initialized = false;
 
   static bool _isHls(String url) {
@@ -76,8 +78,20 @@ class AvplayVideoBackend implements VideoBackend {
   }
 
   void _onControllerUpdate() {
-    final captions = _controller?.value.captions;
-    final text = captions?.textCaptions?.isNotEmpty == true ? captions!.textCaptions!.first.text : null;
+    final controller = _controller;
+    if (controller == null) return;
+
+    if (controller.value.hasError) {
+      final message = (controller.value.errorDescription ?? 'Playback failed').trim();
+      if (message.isNotEmpty && message != _lastError) {
+        _lastError = message;
+        if (!_errorController.isClosed) _errorController.add(message);
+      }
+    }
+
+    final captions = controller.value.captions;
+    final textCaptions = captions.textCaptions;
+    final text = textCaptions != null && textCaptions.isNotEmpty ? textCaptions.first.text : null;
     if (text != _lastCaptionText) {
       _lastCaptionText = text;
       _captionController.add(text);
@@ -126,6 +140,9 @@ class AvplayVideoBackend implements VideoBackend {
   Stream<Duration> get positionStream => _positionController.stream;
 
   @override
+  Stream<String> get errorStream => _errorController.stream;
+
+  @override
   Duration? get duration {
     final range = _controller?.value.duration;
     if (range == null) return null;
@@ -158,5 +175,6 @@ class AvplayVideoBackend implements VideoBackend {
     }
     if (!_positionController.isClosed) await _positionController.close();
     if (!_captionController.isClosed) await _captionController.close();
+    if (!_errorController.isClosed) await _errorController.close();
   }
 }

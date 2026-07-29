@@ -9,11 +9,8 @@ const _guideRowHeight = 72.0;
 const _guideChannelColumnWidth = 180.0;
 const _guideWindowHours = 6;
 
-/// Mirrors LiveTvScreen.tsx's Channels/Guide/Recordings tabs. "Channels" is
-/// a fast list showing what's currently airing per channel; "Guide" is a
-/// real time-axis EPG grid (channels down the left, a scrollable timeline
-/// across the top, program blocks positioned/sized by their actual start
-/// and duration) rather than just each channel's current program.
+/// Mirrors LiveTvScreen.tsx's Channels/Guide/Recordings tabs, including
+/// Record now / Record next scheduling from the guide.
 class LiveTvScreen extends ConsumerStatefulWidget {
   const LiveTvScreen({super.key});
 
@@ -27,6 +24,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   List<LiveTvRecording> _recordings = [];
   bool _loading = true;
   String? _error;
+  String? _status;
+  String? _recordingBusyId;
+  String? _cancelBusyId;
   _LiveTvTab _tab = _LiveTvTab.guide;
   late DateTime _windowStart;
 
@@ -46,7 +46,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider)!;
       final channels = await fetchLiveTvChannels(client, session);
-      final programs = channels.isEmpty ? <LiveTvProgram>[] : await fetchLiveTvGuide(client, session, channels.map((c) => c.id).toList());
+      final programs = channels.isEmpty
+          ? <LiveTvProgram>[]
+          : await fetchLiveTvGuide(client, session, channels.map((c) => c.id).toList());
       if (!mounted) return;
       setState(() {
         _channels = channels;
@@ -74,6 +76,116 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     ref.read(routeProvider.notifier).go(LiveTvPlayerRoute(channel: channel, back: const LiveTvRoute()));
   }
 
+  Future<void> _record(LiveTvProgram program) async {
+    final programId = program.id.trim();
+    if (programId.isEmpty || _recordingBusyId != null) return;
+    if (!program.stop.isAfter(DateTime.now())) {
+      setState(() => _status = 'Program already ended');
+      return;
+    }
+    setState(() {
+      _recordingBusyId = programId;
+      _status = null;
+      _error = null;
+    });
+    try {
+      await scheduleLiveTvRecording(ref.read(apiClientProvider), ref.read(sessionProvider)!, programId);
+      if (!mounted) return;
+      setState(() => _status = 'Recording scheduled');
+      await _loadRecordings();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e is ApiError ? e.message : 'Could not schedule recording');
+      }
+    } finally {
+      if (mounted) setState(() => _recordingBusyId = null);
+    }
+  }
+
+  Future<void> _cancelRecording(LiveTvRecording recording) async {
+    final id = recording.id.trim();
+    if (id.isEmpty || _cancelBusyId != null) return;
+    setState(() {
+      _cancelBusyId = id;
+      _status = null;
+      _error = null;
+    });
+    try {
+      await cancelLiveTvRecording(ref.read(apiClientProvider), ref.read(sessionProvider)!, id);
+      if (!mounted) return;
+      setState(() {
+        _recordings = _recordings.where((r) => r.id != id).toList();
+        _status = 'Recording cancelled';
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e is ApiError ? e.message : 'Could not cancel recording');
+      }
+    } finally {
+      if (mounted) setState(() => _cancelBusyId = null);
+    }
+  }
+
+  Future<void> _showProgramActions(LiveTvChannel channel, LiveTvProgram program) async {
+    final now = DateTime.now();
+    final canRecord = program.id.trim().isNotEmpty && program.stop.isAfter(now);
+    final isNow = !program.start.isAfter(now) && program.stop.isAfter(now);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: PrairieColors.bgElevated,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(program.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+              const SizedBox(height: 4),
+              Text(
+                '${channelDisplayLabel(channel)} · ${_formatClock(program.start)} – ${_formatClock(program.stop)}',
+                style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _tune(channel);
+                },
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Watch'),
+              ),
+              if (canRecord) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _recordingBusyId != null
+                      ? null
+                      : () {
+                          Navigator.of(context).pop();
+                          _record(program);
+                        },
+                  icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger),
+                  label: Text(
+                    _recordingBusyId == program.id
+                        ? 'Scheduling…'
+                        : (isNow ? 'Record now' : 'Record'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatClock(DateTime dt) {
+    final local = dt.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
   @override
   Widget build(BuildContext context) {
     final index = indexProgramsByChannel(_programs);
@@ -90,40 +202,68 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                 ButtonSegment(value: _LiveTvTab.recordings, label: Text('Recordings')),
               ],
               selected: {_tab},
-              onSelectionChanged: (s) => setState(() => _tab = s.first),
+              onSelectionChanged: (s) {
+                final next = s.first;
+                setState(() => _tab = next);
+                if (next == _LiveTvTab.recordings) _loadRecordings();
+              },
             ),
           ),
-          if (_error != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: Text(_error!, style: const TextStyle(color: PrairieColors.danger))),
+          if (_status != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(_status!, style: const TextStyle(color: PrairieColors.amber)),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
+            ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
                 : switch (_tab) {
-                    _LiveTvTab.channels => _ChannelsList(channels: _channels, index: index, onTune: _tune),
-                    _LiveTvTab.guide => _GuideGrid(channels: _channels, index: index, windowStart: _windowStart, onTune: _tune),
-                    _LiveTvTab.recordings => _RecordingsList(recordings: _recordings, onCancel: _cancelRecording),
+                    _LiveTvTab.channels => _ChannelsList(
+                      channels: _channels,
+                      index: index,
+                      recordingBusyId: _recordingBusyId,
+                      onTune: _tune,
+                      onRecord: _record,
+                    ),
+                    _LiveTvTab.guide => _GuideGrid(
+                      channels: _channels,
+                      index: index,
+                      windowStart: _windowStart,
+                      onTune: _tune,
+                      onProgramTap: _showProgramActions,
+                    ),
+                    _LiveTvTab.recordings => _RecordingsList(
+                      recordings: _recordings,
+                      cancelBusyId: _cancelBusyId,
+                      onCancel: _cancelRecording,
+                    ),
                   },
           ),
         ],
       ),
     );
   }
-
-  Future<void> _cancelRecording(LiveTvRecording recording) async {
-    try {
-      await cancelLiveTvRecording(ref.read(apiClientProvider), ref.read(sessionProvider)!, recording.id);
-      _loadRecordings();
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Could not cancel recording');
-    }
-  }
 }
 
 class _ChannelsList extends StatelessWidget {
-  const _ChannelsList({required this.channels, required this.index, required this.onTune});
+  const _ChannelsList({
+    required this.channels,
+    required this.index,
+    required this.recordingBusyId,
+    required this.onTune,
+    required this.onRecord,
+  });
 
   final List<LiveTvChannel> channels;
   final Map<String, List<LiveTvProgram>> index;
+  final String? recordingBusyId;
   final void Function(LiveTvChannel) onTune;
+  final void Function(LiveTvProgram) onRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +275,7 @@ class _ChannelsList extends StatelessWidget {
       itemBuilder: (context, i) {
         final channel = channels[i];
         final current = currentProgramInIndex(index, channel.id);
+        final next = nextProgramInIndex(index, channel.id);
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: PrairieColors.bgElevated,
@@ -142,7 +283,34 @@ class _ChannelsList extends StatelessWidget {
           ),
           title: Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink)),
           subtitle: Text(current?.title ?? 'No guide data', style: const TextStyle(color: PrairieColors.muted)),
-          trailing: const Icon(Icons.play_circle_outline, color: PrairieColors.amber),
+          trailing: Wrap(
+            spacing: 4,
+            children: [
+              IconButton(
+                tooltip: 'Watch',
+                icon: const Icon(Icons.play_circle_outline, color: PrairieColors.amber),
+                onPressed: () => onTune(channel),
+              ),
+              if (current?.id.trim().isNotEmpty == true)
+                IconButton(
+                  tooltip: 'Record now',
+                  icon: Icon(
+                    Icons.fiber_manual_record,
+                    color: recordingBusyId == current!.id ? PrairieColors.muted : PrairieColors.danger,
+                  ),
+                  onPressed: recordingBusyId != null ? null : () => onRecord(current),
+                ),
+              if (next?.id.trim().isNotEmpty == true)
+                IconButton(
+                  tooltip: 'Record next',
+                  icon: Icon(
+                    Icons.fiber_smart_record,
+                    color: recordingBusyId == next!.id ? PrairieColors.muted : PrairieColors.danger,
+                  ),
+                  onPressed: recordingBusyId != null ? null : () => onRecord(next),
+                ),
+            ],
+          ),
           onTap: () => onTune(channel),
         );
       },
@@ -150,18 +318,20 @@ class _ChannelsList extends StatelessWidget {
   }
 }
 
-/// A real time-axis EPG: channel labels stay in a fixed left column, and
-/// the ruler + every channel's program row live in one shared horizontally
-/// scrolling region (so they can only ever scroll together — no
-/// controller-syncing needed) with each program block positioned/sized
-/// from its actual start/stop time, not just current+next.
 class _GuideGrid extends StatelessWidget {
-  const _GuideGrid({required this.channels, required this.index, required this.windowStart, required this.onTune});
+  const _GuideGrid({
+    required this.channels,
+    required this.index,
+    required this.windowStart,
+    required this.onTune,
+    required this.onProgramTap,
+  });
 
   final List<LiveTvChannel> channels;
   final Map<String, List<LiveTvProgram>> index;
   final DateTime windowStart;
   final void Function(LiveTvChannel) onTune;
+  final void Function(LiveTvChannel, LiveTvProgram) onProgramTap;
 
   double _xFor(DateTime time) => time.difference(windowStart).inMinutes * _minutesPerPixel;
 
@@ -249,7 +419,7 @@ class _GuideGrid extends StatelessWidget {
                                 child: _ProgramBlock(
                                   program: program,
                                   isNow: !program.start.isAfter(DateTime.now()) && program.stop.isAfter(DateTime.now()),
-                                  onTap: () => onTune(channel),
+                                  onTap: () => onProgramTap(channel, program),
                                 ),
                               ),
                             Positioned(left: nowX, top: 0, bottom: 0, child: Container(width: 2, color: PrairieColors.amber)),
@@ -305,9 +475,14 @@ class _ProgramBlock extends StatelessWidget {
 }
 
 class _RecordingsList extends StatelessWidget {
-  const _RecordingsList({required this.recordings, required this.onCancel});
+  const _RecordingsList({
+    required this.recordings,
+    required this.cancelBusyId,
+    required this.onCancel,
+  });
 
   final List<LiveTvRecording> recordings;
+  final String? cancelBusyId;
   final void Function(LiveTvRecording) onCancel;
 
   @override
@@ -315,19 +490,51 @@ class _RecordingsList extends StatelessWidget {
     if (recordings.isEmpty) {
       return const Center(child: Text('No recordings scheduled', style: TextStyle(color: PrairieColors.muted)));
     }
-    return ListView.builder(
-      itemCount: recordings.length,
-      itemBuilder: (context, i) {
-        final recording = recordings[i];
-        final status = recording.status.trim().toLowerCase();
-        final canCancel = status == 'scheduled' || status == 'recording';
-        return ListTile(
-          leading: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger),
-          title: Text(recording.title, style: const TextStyle(color: PrairieColors.ink)),
-          subtitle: Text(recording.status, style: const TextStyle(color: PrairieColors.muted)),
-          trailing: canCancel ? IconButton(icon: const Icon(Icons.close, color: PrairieColors.muted), onPressed: () => onCancel(recording)) : null,
-        );
-      },
+
+    final active = <LiveTvRecording>[];
+    final history = <LiveTvRecording>[];
+    for (final recording in recordings) {
+      final status = recording.status.trim().toLowerCase();
+      if (status == 'scheduled' || status == 'recording' || status == 'in_progress') {
+        active.add(recording);
+      } else {
+        history.add(recording);
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      children: [
+        if (active.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text('Scheduled', style: TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600)),
+          ),
+          for (final recording in active) _recordingTile(recording, canCancel: true),
+        ],
+        if (history.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text('History', style: TextStyle(color: PrairieColors.muted, fontWeight: FontWeight.w600)),
+          ),
+          for (final recording in history) _recordingTile(recording, canCancel: false),
+        ],
+      ],
+    );
+  }
+
+  Widget _recordingTile(LiveTvRecording recording, {required bool canCancel}) {
+    final busy = cancelBusyId == recording.id;
+    return ListTile(
+      leading: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger),
+      title: Text(recording.title, style: const TextStyle(color: PrairieColors.ink)),
+      subtitle: Text(recording.status, style: const TextStyle(color: PrairieColors.muted)),
+      trailing: canCancel
+          ? IconButton(
+              icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
+              onPressed: busy ? null : () => onCancel(recording),
+            )
+          : null,
     );
   }
 }

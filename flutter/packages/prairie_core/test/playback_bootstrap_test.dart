@@ -49,6 +49,45 @@ void main() {
     });
   });
 
+  group('buildWebosCapabilities', () {
+    test('includes av1 for webOS 6+ with native player', () {
+      final caps = buildWebosCapabilities(
+        webosVersion: 6.0,
+        screenWidth: 3840,
+        screenHeight: 2160,
+        nativePlayerAvailable: true,
+        hdr10: true,
+        uhd: true,
+      );
+      expect(caps.codecsVideo, contains('av1'));
+      expect(caps.codecsVideo, contains('hevc'));
+      expect(caps.maxResolution, '2160p');
+      expect(caps.hdr, isTrue);
+      expect(caps.containers, contains('mkv'));
+    });
+
+    test('omits av1 below webOS 6', () {
+      final caps = buildWebosCapabilities(
+        webosVersion: 5.0,
+        screenWidth: 1920,
+        screenHeight: 1080,
+        nativePlayerAvailable: true,
+      );
+      expect(caps.codecsVideo, isNot(contains('av1')));
+      expect(caps.codecsVideo, contains('hevc'));
+    });
+
+    test('uhd flag forces 2160p when screen probe is small', () {
+      final caps = buildWebosCapabilities(
+        webosVersion: 7.0,
+        screenWidth: 1920,
+        screenHeight: 1080,
+        uhd: true,
+      );
+      expect(caps.maxResolution, '2160p');
+    });
+  });
+
   group('applyAv1AdvertiseOverrides', () {
     test('force adds av1', () {
       final caps = applyAv1AdvertiseOverrides(TvPlaybackCapabilities.defaults, forceAv1: true);

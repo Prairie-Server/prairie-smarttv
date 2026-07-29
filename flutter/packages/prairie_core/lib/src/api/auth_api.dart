@@ -88,6 +88,47 @@ Future<List<Profile>> listProfiles(ApiClient client, String serverUrl, String ac
   return profiles?.map((p) => Profile.fromJson(p as Map<String, dynamic>)).toList() ?? [];
 }
 
+/// Mirrors `VerifyPinResponse` from src/api/auth.ts.
+class VerifyPinResponse {
+  const VerifyPinResponse({required this.valid, this.profileToken, this.expiresAt});
+
+  final bool valid;
+  final String? profileToken;
+  final String? expiresAt;
+
+  factory VerifyPinResponse.fromJson(Map<String, dynamic> json) => VerifyPinResponse(
+    valid: json['valid'] as bool? ?? false,
+    profileToken: json['profile_token'] as String?,
+    expiresAt: json['expires_at'] as String?,
+  );
+}
+
+/// Mirrors `verifyProfilePin` from src/api/auth.ts.
+Future<VerifyPinResponse> verifyProfilePin(
+  ApiClient client,
+  String serverUrl,
+  String accessToken,
+  String profileId,
+  String pin,
+) async {
+  final json = await client.request<Map<String, dynamic>>(
+    ApiClientOptions(serverUrl: serverUrl, accessToken: accessToken),
+    '/api/v1/profiles/${Uri.encodeComponent(profileId)}/verify-pin',
+    method: 'POST',
+    body: {'pin': pin},
+  );
+  return VerifyPinResponse.fromJson(json);
+}
+
+/// Mirrors `pickDefaultProfile` from src/api/auth.ts.
+Profile? pickDefaultProfile(List<Profile> profiles) {
+  if (profiles.isEmpty) return null;
+  for (final p in profiles) {
+    if (p.isPrimary) return p;
+  }
+  return profiles.first;
+}
+
 /// Mirrors `SetupStatusResponse` + `fetchSetupStatus` from src/api/auth.ts.
 class SetupStatusResponse {
   const SetupStatusResponse({required this.needsSetup});

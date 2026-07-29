@@ -1,157 +1,144 @@
 # Prairie SmartTV — Flutter rewrite
 
-Flutter rewrite of the Tizen and webOS TV apps, replacing the TypeScript/React app in `../src`.
-See `C:\Users\jonah\.claude\plans\should-we-consider-rewriting-abstract-lampson.md` for the full
-rationale and plan. The TS app keeps shipping until this reaches cutover criteria — see the plan's
-Migration/Rollout section.
+Flutter rewrite of the Tizen and webOS TV apps. This is the only Smart TV client
+tree — the former TypeScript/React app under `src/` has been removed.
 
 ## Layout
 
 ```
-flutter/packages/
-  prairie_core/    # shared Dart package: routing, models, performance-tier logic,
-                    # VideoBackend interface. No native/platform code.
-  prairie_tizen/    # Tizen app shell (flutter-tizen). Depends on prairie_core via a
-                    # path dependency. Owns the AVPlay video backend and other
-                    # Tizen-native platform code under lib/platform/.
-  prairie_webos/    # (not yet started — see "webOS" below)
+flutter/
+  packages/
+    prairie_core/    # shared Dart: routing, models, performance-tier, VideoBackend
+    prairie_tizen/   # Samsung Tizen app (flutter-tizen) + AVPlay backend
+    prairie_webos/   # LG webOS app (flutter-webos) + video_player_drm backend
+  scripts/
+    stamp-tizen-api-version.sh   # stamp api-version for Store variants
+    build-tizen.sh               # build one Tizen TPK variant
+    build-webos.sh               # build webOS .ipk
+    validate-package-layout.sh   # CI-friendly layout/manifest checks (no SDKs)
+  artifacts/                     # local build outputs (gitignored)
 ```
 
-This split exists so each platform app only bundles the native code it actually needs, rather
-than one binary carrying both Tizen and webOS native bridges.
+Each platform app only bundles the native plugins it needs.
 
 ## One-time environment setup
 
 ### Flutter SDK
 
-```
-git clone https://github.com/flutter/flutter.git -b stable C:\src\flutter
-```
-
-Add `C:\src\flutter\bin` to `PATH`.
-
-### flutter-tizen
-
-```
-git clone https://github.com/flutter-tizen/flutter-tizen.git C:\src\flutter-tizen
+```bash
+git clone https://github.com/flutter/flutter.git -b stable ~/flutter
+export PATH="$HOME/flutter/bin:$PATH"
 ```
 
-Add `C:\src\flutter-tizen\bin` to `PATH` (before or after the Flutter SDK path doesn't matter —
-`flutter-tizen` wraps the Flutter SDK, it doesn't replace it). First run downloads its own pinned
-Flutter engine — this is normal and separate from the `C:\src\flutter` checkout above.
+### flutter-tizen (Samsung)
 
-### Tizen Studio
+```bash
+git clone https://github.com/flutter-tizen/flutter-tizen.git ~/flutter-tizen
+export PATH="$HOME/flutter-tizen/bin:$PATH"
+```
 
-Do **not** rely on the Tizen VS Code extension's bundled SDK (`~/.tizen-extension-platform`) —
-it's a stripped-down install with no real package repository and can't have missing packages
-installed into it. Install the real Tizen Studio CLI instead:
+Install **Tizen Studio** (real CLI install, not the VS Code extension SDK), TV Extensions
+for **6.0 and 10.0**, and a Samsung distributor certificate. Then `flutter-tizen doctor -v`
+until the toolchain check passes. Details: https://github.com/flutter-tizen/flutter-tizen
 
-1. Download the CLI installer from `https://download.tizen.org/sdk/Installer/tizen-studio_<version>/web-cli_Tizen_Studio_<version>_windows-64.exe` (check that URL for the current version — `tizen-studio_6.1` was current as of this writing).
-2. Run it (requires admin elevation for the default `C:\tizen-studio` install path). Accept the license, use the default install path.
-3. Set `TIZEN_SDK` to the install path so `flutter-tizen` uses it instead of any stray extension install:
-   ```powershell
-   [Environment]::SetEnvironmentVariable("TIZEN_SDK", "C:\tizen-studio", "User")
-   ```
-4. Run `C:\tizen-studio\package-manager\package-manager.exe` (admin) → **Extension SDK** tab → install
-   **TV Extensions** (both 6.0 and 10.0 — see "Which Tizen platform version" below) and
-   **Samsung Certificate Extension**.
-5. Run `flutter-tizen doctor -v`. It will tell you the exact missing package command(s) to run, e.g.:
-   ```
-   C:\tizen-studio\package-manager\package-manager-cli.exe install IOT-Headed-6.0-NativeAppDevelopment-CLI
-   ```
-   Run whatever it asks for (also requires elevation) and re-run doctor until the Tizen toolchain
-   check passes. (`package-manager-cli.exe` needs elevation for every invocation since it's
-   installed under `C:\tizen-studio`, an admin-owned path — do the whole loop from one elevated
-   terminal to avoid repeated UAC prompts.)
+#### Which Tizen api-version? (three Store TPKs)
 
-#### Which Tizen platform version?
+`video_player_avplay` packages **api-version-specific** native libraries. One TPK does **not**
+span all Tizen OS versions. Ship three variants:
 
-Install **both** 6.0 and 10.0 platform packages: develop against 10.0 (current, required for
-eventual Samsung Seller Office / App Store submission) while keeping the shipped app compatible
-down to 6.0 (2021+ TV models — our supported floor, matching `flutter-tizen`'s own minimum).
+| `api-version` in `tizen-manifest.xml` | Covers Tizen OS |
+| --- | --- |
+| `6.0` | 6.0 only |
+| `6.5` | 6.5–9.0 |
+| `10.0` | 10.0 only |
 
-#### GCC toolchain note
+The checked-in manifest defaults to **6.5** for day-to-day development. Stamp before release:
 
-Samsung requires GCC 14.2.0-built binaries for 2026-model TVs specifically (GCC 9.2.0 covers
-2021–2025 models) — this is a normal **multi-variant Store submission pattern** (ship separate
-binaries per OS-version tier), not unique to Flutter. `flutter-tizen`'s own Dart/Flutter engine
-build uses LLVM, not GCC — GCC only matters for native C/C++ plugin code. `flutter-tizen`
-currently only supports GCC 9.2 ([upstream issue closed as "not planned"](https://github.com/flutter-tizen/flutter-tizen/issues/653)),
-so **a 2026-TV-specific Store variant isn't buildable through this toolchain yet**. This covers
-our 2021–2025 install base fine; it's a tracked, known gap for the newest hardware.
+```bash
+./flutter/scripts/stamp-tizen-api-version.sh 6.0
+./flutter/scripts/build-tizen.sh 6.0
+./flutter/scripts/build-tizen.sh 6.5 --package-version 1.0.1
+./flutter/scripts/build-tizen.sh 10.0 --package-version 1.0.2 --obfuscate
+```
 
-### Signing certificate (required for install/run, and for Apps2Samsung)
+See upstream:
+https://github.com/flutter-tizen/plugins/blob/master/packages/video_player_avplay/README.md
 
-flutter-tizen needs an active Tizen security profile with a Samsung distributor certificate
-(not just a plain Tizen one — Samsung devices specifically require the Samsung distributor cert,
-which is also what makes Apps2Samsung sideload installs work).
+#### GCC / 2026 TV note
 
-1. Open `C:\tizen-studio\tools\certificate-manager` (no elevation needed — it writes to your user
-   profile).
-2. Create a new profile: Author certificate (any name/password), then add a **Samsung**
-   certificate (this requires logging into your Samsung Developer account) as the distributor cert.
-3. When prompted for a device list (DUID), get it from a real Samsung TV connected via `sdb`:
-   ```
-   C:\tizen-studio\tools\sdb.exe connect <tv-ip>
-   ```
-   Certificate Manager can auto-detect the DUID of a connected device rather than requiring manual
-   entry — if the on-TV Developer Mode menu doesn't show the DUID directly (varies by model/year),
-   connecting via `sdb` first and letting Certificate Manager pick it up is the more reliable path.
-   Note `sdb shell` may be non-functional for arbitrary commands if `intershell_support` is
-   disabled on the TV (check `sdb capability`) — this doesn't block Certificate Manager's own
-   device detection, just ad-hoc shell commands.
-4. Set the profile active:
-   ```
-   C:\tizen-studio\tools\ide\bin\tizen.bat security-profiles set-active -n <profile-name>
-   ```
-   (Certificate Manager also does this when you create/select a profile.)
+Samsung wants GCC 14.2 for some 2026 models; `flutter-tizen` still targets GCC 9.2 for native
+plugin code ([upstream #653](https://github.com/flutter-tizen/flutter-tizen/issues/653)).
+2021–2025 panels are fine; newest hardware is a known gap.
+
+### flutter-webos (LG)
+
+`flutter-webos` is **Linux-only** (use WSL2 Ubuntu on Windows).
+
+1. Install from https://github.com/lg-flutter-webos/flutter-webos and run `flutter-webos doctor`.
+2. Install the webOS NDK and point `WEBOS_FLUTTER_NDK_ENV` at its `environment-setup-*` script.
+3. Use **Node 14.15.1–16.20.2** for `@webos-tools/cli` (`ares`) via `nvm` — do not let a Windows
+   PATH Node shadow the Linux one inside WSL.
+4. Build:
+
+```bash
+./flutter/scripts/build-webos.sh --obfuscate
+```
+
+`appinfo.json` must keep `"transparent": true` so the hardware video plane shows through Flutter,
+plus ACGs required by plugins (`systemconfig.query`, `securitykey.operation`).
 
 ## Running tests
 
-```
-cd flutter/packages/prairie_core   # or prairie_tizen
+```bash
+cd flutter/packages/prairie_core
 flutter analyze
 flutter test
+
+# Platform packages (Dart analyze only without TV SDKs):
+cd ../prairie_tizen && flutter pub get && flutter analyze
+cd ../prairie_webos && flutter pub get && flutter analyze
+
+# Manifest / variant layout (no SDKs required):
+bash flutter/scripts/validate-package-layout.sh
 ```
 
-No coverage gate is wired into CI yet — see the plan's CI/Packaging section for the intended
-`flutter test --coverage` + lcov threshold setup, to be added alongside the first real CI workflow.
+## Building & deploying
 
-## Building & deploying to a real Tizen TV
+### Tizen TV
 
-1. Put the TV in Developer Mode (Apps screen → button sequence **1 2 3 4 5** → enable Developer
-   mode → set Host PC IP → reboot the TV if prompted) and note its IP address.
-2. Connect:
-   ```
-   C:\tizen-studio\tools\sdb.exe connect <tv-ip>
-   ```
-3. Build, install, and run:
-   ```
-   cd flutter/packages/prairie_tizen
-   flutter-tizen build tpk --device-profile tv
-   flutter-tizen -d <tv-ip>:26101 install
-   flutter-tizen -d <tv-ip>:26101 run --release
-   ```
-   (`flutter-tizen run` without `--release` gives hot reload during active development — prefer
-   that day-to-day; use `--release` to validate what an actual signed release build behaves like.)
+1. Developer Mode on the TV → set Host PC IP → reboot if prompted.
+2. `sdb connect <tv-ip>`
+3. `cd flutter/packages/prairie_tizen && flutter-tizen build tpk --device-profile tv`
+4. `flutter-tizen -d <tv-ip>:26101 install && flutter-tizen -d <tv-ip>:26101 run --release`
 
-The signed `.tpk` lands at `build/tizen/tpk/org.prairieserver.prairie_tizen-<version>.tpk`. This
-is the same file format and certificate chain Apps2Samsung expects for sideload distribution —
-see the plan's cutover criteria for validating that distribution path end-to-end before relying
-on it for real users.
+Or use `./flutter/scripts/build-tizen.sh <api-version>` which stamps the manifest first.
 
-## webOS
+### webOS TV / emulator
 
-Not started yet in this package layout (`prairie_webos/` doesn't exist). Setup notes so far:
+Use the webOS emulator if no physical LG TV is available. After `flutter-webos build`, package
+with `ares-package` / install with `ares-install` as usual for native Flutter webOS apps.
 
-- `flutter-webos` (official LG SDK) only runs on Linux — use WSL2 Ubuntu on Windows.
-- Requires Node 14.15.1–16.20.2 specifically for the `@webos-tools/cli` (`ares`) — use `nvm`,
-  don't touch system Node. **Gotcha**: WSL inherits Windows' PATH by default, which can shadow the
-  nvm-installed `node`/`ares` — make sure nvm's bin directory wins, and be careful with
-  `.bashrc` edits from a non-interactive shell: variable expansion inside a `cat >> ~/.bashrc <<
-  "EOF"` heredoc can silently bake in a stale absolute `PATH` snapshot instead of staying dynamic.
-  Verify what actually landed in `.bashrc` after any scripted edit.
-- Needs the webOS NDK (`webos-ndk-flutter-starfish-x86_64-*.sh` installer) and `WEBOS_FLUTTER_NDK_ENV`
-  pointed at its `environment-setup-*` script.
-- **We don't own an LG TV** — testing/development will need the webOS TV emulator once this
-  resumes.
+## Package size notes
+
+- **`uses-material-design: true`** is required while `prairie_core` uses `Icons.*`. Flutter
+  tree-shakes Material Icons to used glyphs in release builds; replacing icons with a custom
+  subset font later would shrink further.
+- **`path_provider_tizen` / `path_provider_webos`** are omitted — unused by prairie_core.
+- **Obfuscation**: pass `--obfuscate` to `build-tizen.sh` / `build-webos.sh` (forwards
+  `--obfuscate --split-debug-info=...`). Keep the split debug info for crash symbolication.
+- **Font subsetting**: `prairie_core` ships Sora + Fraunces as full TTFs. For smaller packages,
+  subset to Latin + needed glyphs with `pyftsubset` / fontTools before release cutover, or switch
+  to variable fonts with a unicode-range subset. Not automated in CI yet.
+
+## CI limitations
+
+GitHub `ubuntu-latest` runners do **not** include flutter-tizen or flutter-webos/NDK. Workflows:
+
+| Workflow | Always | When SDKs present |
+| --- | --- | --- |
+| `unit-tests.yml` | analyze + test `prairie_core`; Dart analyze platform pkgs; layout validation | — |
+| `release-packages.yml` | same verify gate; matrix for 4 artifacts | real `.tpk` / `.ipk` via build scripts |
+
+Missing SDKs produce skip markers under `flutter/artifacts/*.SKIPPED.txt` instead of failing the
+release job (unless `fail_without_sdk` is set on workflow_dispatch). Prefer a self-hosted runner
+with the TV toolchains for Store binaries.

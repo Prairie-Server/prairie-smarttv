@@ -41,6 +41,10 @@ abstract class VideoBackend {
   /// reporting to the Prairie server. Mirrors the polling in PlayerScreen.
   Stream<Duration> get positionStream;
 
+  /// Native / pipeline failures after [initialize] (dead HLS, decoder error).
+  /// Without this, a server encode that dies mid-play leaves the UI buffering.
+  Stream<String> get errorStream;
+
   Duration? get duration;
   bool get isPlaying;
   bool get isInitialized;

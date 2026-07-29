@@ -10,3 +10,4 @@
 **/ios/Pods/
 **/tizen/.dart_tool/
 **/tizen/tizen-manifest.xml.orig
+flutter/artifacts/
