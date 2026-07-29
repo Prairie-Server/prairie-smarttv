@@ -252,6 +252,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Image.asset('packages/prairie_core/assets/images/prairie-mark.png', width: 64, height: 64),
+                  const SizedBox(height: 16),
                   Text(
                     'SERVERS',
                     style: TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600, letterSpacing: 2),
