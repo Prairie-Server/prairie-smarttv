@@ -2,6 +2,31 @@ import '../models/auth.dart';
 import 'api_client.dart';
 import 'playback_types.dart';
 
+/// Mirrors `playback_info` from src/player/types.ts.
+class PlaybackInfo {
+  const PlaybackInfo({
+    this.streamType,
+    this.canSeekAnywhere,
+    this.transcodeAudio,
+    this.videoCodec,
+    this.audioCodec,
+  });
+
+  final String? streamType;
+  final bool? canSeekAnywhere;
+  final bool? transcodeAudio;
+  final String? videoCodec;
+  final String? audioCodec;
+
+  factory PlaybackInfo.fromJson(Map<String, dynamic> json) => PlaybackInfo(
+    streamType: json['stream_type'] as String?,
+    canSeekAnywhere: json['can_seek_anywhere'] as bool?,
+    transcodeAudio: json['transcode_audio'] as bool?,
+    videoCodec: json['video_codec'] as String?,
+    audioCodec: json['audio_codec'] as String?,
+  );
+}
+
 /// Mirrors `PlaybackSessionResponse` from src/player/types.ts.
 class PlaybackSessionResponse {
   const PlaybackSessionResponse({
@@ -13,6 +38,7 @@ class PlaybackSessionResponse {
     required this.streamUrl,
     required this.audioTrackIndex,
     this.durationSeconds,
+    this.playbackInfo,
   });
 
   final String sessionId;
@@ -23,16 +49,20 @@ class PlaybackSessionResponse {
   final String streamUrl;
   final int audioTrackIndex;
   final double? durationSeconds;
+  final PlaybackInfo? playbackInfo;
 
   factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) => PlaybackSessionResponse(
     sessionId: json['session_id'] as String,
     mediaFileId: json['media_file_id'] as int,
     playMethod: json['play_method'] as String,
     position: (json['position'] as num).toDouble(),
-    isPaused: json['is_paused'] as bool,
+    isPaused: json['is_paused'] as bool? ?? false,
     streamUrl: json['stream_url'] as String,
-    audioTrackIndex: json['audio_track_index'] as int,
+    audioTrackIndex: json['audio_track_index'] as int? ?? 0,
     durationSeconds: (json['duration_seconds'] as num?)?.toDouble(),
+    playbackInfo: json['playback_info'] is Map<String, dynamic>
+        ? PlaybackInfo.fromJson(json['playback_info'] as Map<String, dynamic>)
+        : null,
   );
 }
 
