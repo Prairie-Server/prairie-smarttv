@@ -1,0 +1,333 @@
+import 'package:flutter/material.dart' hide Route;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prairie_core/prairie_core.dart';
+
+enum _LiveTvTab { channels, guide, recordings }
+
+const _minutesPerPixel = 2.0; // 1 minute of program = 2px wide in the guide.
+const _guideRowHeight = 72.0;
+const _guideChannelColumnWidth = 180.0;
+const _guideWindowHours = 6;
+
+/// Mirrors LiveTvScreen.tsx's Channels/Guide/Recordings tabs. "Channels" is
+/// a fast list showing what's currently airing per channel; "Guide" is a
+/// real time-axis EPG grid (channels down the left, a scrollable timeline
+/// across the top, program blocks positioned/sized by their actual start
+/// and duration) rather than just each channel's current program.
+class LiveTvScreen extends ConsumerStatefulWidget {
+  const LiveTvScreen({super.key});
+
+  @override
+  ConsumerState<LiveTvScreen> createState() => _LiveTvScreenState();
+}
+
+class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
+  List<LiveTvChannel> _channels = [];
+  List<LiveTvProgram> _programs = [];
+  List<LiveTvRecording> _recordings = [];
+  bool _loading = true;
+  String? _error;
+  _LiveTvTab _tab = _LiveTvTab.guide;
+  late DateTime _windowStart;
+
+  @override
+  void initState() {
+    super.initState();
+    _windowStart = DateTime.now();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final client = ref.read(apiClientProvider);
+      final session = ref.read(sessionProvider)!;
+      final channels = await fetchLiveTvChannels(client, session);
+      final programs = channels.isEmpty ? <LiveTvProgram>[] : await fetchLiveTvGuide(client, session, channels.map((c) => c.id).toList());
+      if (!mounted) return;
+      setState(() {
+        _channels = channels;
+        _programs = programs;
+        _windowStart = DateTime.now();
+      });
+      _loadRecordings();
+    } catch (e) {
+      if (mounted) setState(() => _error = e is ApiError ? e.message : 'Could not load Live TV');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadRecordings() async {
+    try {
+      final recordings = await fetchLiveTvRecordings(ref.read(apiClientProvider), ref.read(sessionProvider)!);
+      if (mounted) setState(() => _recordings = recordings);
+    } catch (_) {
+      // Recordings are optional — an absent endpoint must not fail the screen.
+    }
+  }
+
+  void _tune(LiveTvChannel channel) {
+    ref.read(routeProvider.notifier).go(LiveTvPlayerRoute(channel: channel, back: const LiveTvRoute()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final index = indexProgramsByChannel(_programs);
+    return ShellScaffold(
+      active: ShellTab.livetv,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            child: SegmentedButton<_LiveTvTab>(
+              segments: const [
+                ButtonSegment(value: _LiveTvTab.channels, label: Text('Channels')),
+                ButtonSegment(value: _LiveTvTab.guide, label: Text('Guide')),
+                ButtonSegment(value: _LiveTvTab.recordings, label: Text('Recordings')),
+              ],
+              selected: {_tab},
+              onSelectionChanged: (s) => setState(() => _tab = s.first),
+            ),
+          ),
+          if (_error != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: Text(_error!, style: const TextStyle(color: PrairieColors.danger))),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+                : switch (_tab) {
+                    _LiveTvTab.channels => _ChannelsList(channels: _channels, index: index, onTune: _tune),
+                    _LiveTvTab.guide => _GuideGrid(channels: _channels, index: index, windowStart: _windowStart, onTune: _tune),
+                    _LiveTvTab.recordings => _RecordingsList(recordings: _recordings, onCancel: _cancelRecording),
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelRecording(LiveTvRecording recording) async {
+    try {
+      await cancelLiveTvRecording(ref.read(apiClientProvider), ref.read(sessionProvider)!, recording.id);
+      _loadRecordings();
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not cancel recording');
+    }
+  }
+}
+
+class _ChannelsList extends StatelessWidget {
+  const _ChannelsList({required this.channels, required this.index, required this.onTune});
+
+  final List<LiveTvChannel> channels;
+  final Map<String, List<LiveTvProgram>> index;
+  final void Function(LiveTvChannel) onTune;
+
+  @override
+  Widget build(BuildContext context) {
+    if (channels.isEmpty) {
+      return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
+    }
+    return ListView.builder(
+      itemCount: channels.length,
+      itemBuilder: (context, i) {
+        final channel = channels[i];
+        final current = currentProgramInIndex(index, channel.id);
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: PrairieColors.bgElevated,
+            child: Text(channel.numberOverride ?? channel.number, style: const TextStyle(color: PrairieColors.amber, fontSize: 12)),
+          ),
+          title: Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink)),
+          subtitle: Text(current?.title ?? 'No guide data', style: const TextStyle(color: PrairieColors.muted)),
+          trailing: const Icon(Icons.play_circle_outline, color: PrairieColors.amber),
+          onTap: () => onTune(channel),
+        );
+      },
+    );
+  }
+}
+
+/// A real time-axis EPG: channel labels stay in a fixed left column, and
+/// the ruler + every channel's program row live in one shared horizontally
+/// scrolling region (so they can only ever scroll together — no
+/// controller-syncing needed) with each program block positioned/sized
+/// from its actual start/stop time, not just current+next.
+class _GuideGrid extends StatelessWidget {
+  const _GuideGrid({required this.channels, required this.index, required this.windowStart, required this.onTune});
+
+  final List<LiveTvChannel> channels;
+  final Map<String, List<LiveTvProgram>> index;
+  final DateTime windowStart;
+  final void Function(LiveTvChannel) onTune;
+
+  double _xFor(DateTime time) => time.difference(windowStart).inMinutes * _minutesPerPixel;
+
+  @override
+  Widget build(BuildContext context) {
+    if (channels.isEmpty) {
+      return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
+    }
+    final windowWidth = _guideWindowHours * 60 * _minutesPerPixel;
+    final nowX = _xFor(DateTime.now());
+
+    return SingleChildScrollView(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: _guideChannelColumnWidth,
+            child: Column(
+              children: [
+                const SizedBox(height: 28),
+                const Divider(height: 1, color: PrairieColors.bgSoft),
+                for (final channel in channels)
+                  InkWell(
+                    onTap: () => onTune(channel),
+                    child: SizedBox(
+                      height: _guideRowHeight,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 14,
+                              backgroundColor: PrairieColors.bgElevated,
+                              child: Text(channel.numberOverride ?? channel.number, style: const TextStyle(color: PrairieColors.amber, fontSize: 10)),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                channelDisplayLabel(channel),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: PrairieColors.ink, fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: windowWidth,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 28,
+                      child: Stack(
+                        children: [
+                          for (var h = 0; h <= _guideWindowHours; h++)
+                            Positioned(
+                              left: h * 60 * _minutesPerPixel,
+                              top: 0,
+                              child: Text(_formatHour(windowStart.add(Duration(hours: h))), style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: PrairieColors.bgSoft),
+                    for (final channel in channels)
+                      SizedBox(
+                        height: _guideRowHeight,
+                        child: Stack(
+                          children: [
+                            for (final program in index[channel.id] ?? const <LiveTvProgram>[])
+                              Positioned(
+                                left: _xFor(program.start).clamp(0, windowWidth),
+                                width: (_xFor(program.stop) - _xFor(program.start)).clamp(24, windowWidth),
+                                top: 4,
+                                bottom: 4,
+                                child: _ProgramBlock(
+                                  program: program,
+                                  isNow: !program.start.isAfter(DateTime.now()) && program.stop.isAfter(DateTime.now()),
+                                  onTap: () => onTune(channel),
+                                ),
+                              ),
+                            Positioned(left: nowX, top: 0, bottom: 0, child: Container(width: 2, color: PrairieColors.amber)),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatHour(DateTime dt) {
+    final local = dt.toLocal();
+    final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12 $suffix';
+  }
+}
+
+class _ProgramBlock extends StatelessWidget {
+  const _ProgramBlock({required this.program, required this.isNow, required this.onTap});
+
+  final LiveTvProgram program;
+  final bool isNow;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: isNow ? PrairieColors.amber.withValues(alpha: 0.22) : PrairieColors.bgElevated,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isNow ? PrairieColors.amber.withValues(alpha: 0.6) : PrairieColors.ink.withValues(alpha: 0.08)),
+        ),
+        child: Text(
+          program.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: isNow ? PrairieColors.amber : PrairieColors.ink, fontSize: 12, fontWeight: isNow ? FontWeight.w600 : FontWeight.normal),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordingsList extends StatelessWidget {
+  const _RecordingsList({required this.recordings, required this.onCancel});
+
+  final List<LiveTvRecording> recordings;
+  final void Function(LiveTvRecording) onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    if (recordings.isEmpty) {
+      return const Center(child: Text('No recordings scheduled', style: TextStyle(color: PrairieColors.muted)));
+    }
+    return ListView.builder(
+      itemCount: recordings.length,
+      itemBuilder: (context, i) {
+        final recording = recordings[i];
+        final status = recording.status.trim().toLowerCase();
+        final canCancel = status == 'scheduled' || status == 'recording';
+        return ListTile(
+          leading: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger),
+          title: Text(recording.title, style: const TextStyle(color: PrairieColors.ink)),
+          subtitle: Text(recording.status, style: const TextStyle(color: PrairieColors.muted)),
+          trailing: canCancel ? IconButton(icon: const Icon(Icons.close, color: PrairieColors.muted), onPressed: () => onCancel(recording)) : null,
+        );
+      },
+    );
+  }
+}

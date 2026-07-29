@@ -1,0 +1,168 @@
+/// Mirrors `AudioTrackInfo` from src/api/watch.ts.
+class AudioTrackInfo {
+  const AudioTrackInfo({this.title, this.embeddedTitle, this.language, this.codec, this.channels, this.isDefault});
+  final String? title;
+  final String? embeddedTitle;
+  final String? language;
+  final String? codec;
+  final int? channels;
+  final bool? isDefault;
+
+  factory AudioTrackInfo.fromJson(Map<String, dynamic> json) => AudioTrackInfo(
+    title: json['title'] as String?,
+    embeddedTitle: json['embedded_title'] as String?,
+    language: json['language'] as String?,
+    codec: json['codec'] as String?,
+    channels: json['channels'] as int?,
+    isDefault: json['default'] as bool?,
+  );
+}
+
+/// Mirrors `SubtitleTrackInfo` from src/api/watch.ts.
+class SubtitleTrackInfo {
+  const SubtitleTrackInfo({
+    this.index,
+    this.language,
+    this.codec,
+    this.title,
+    this.forced,
+    this.isDefault,
+    this.hearingImpaired,
+    this.external,
+  });
+
+  final int? index;
+  final String? language;
+  final String? codec;
+  final String? title;
+  final bool? forced;
+  final bool? isDefault;
+  final bool? hearingImpaired;
+  final bool? external;
+
+  factory SubtitleTrackInfo.fromJson(Map<String, dynamic> json) => SubtitleTrackInfo(
+    index: json['index'] as int?,
+    language: json['language'] as String?,
+    codec: json['codec'] as String?,
+    title: json['title'] as String?,
+    forced: json['forced'] as bool?,
+    isDefault: json['default'] as bool?,
+    hearingImpaired: json['hearing_impaired'] as bool?,
+    external: json['external'] as bool?,
+  );
+}
+
+/// Mirrors `FileVersion` from src/api/watch.ts.
+class FileVersion {
+  const FileVersion({
+    required this.fileId,
+    this.resolution,
+    this.codecVideo,
+    this.codecAudio,
+    this.container,
+    this.duration,
+    this.audioTracks = const [],
+    this.subtitleTracks = const [],
+  });
+
+  final int fileId;
+  final String? resolution;
+  final String? codecVideo;
+  final String? codecAudio;
+  final String? container;
+  final int? duration;
+  final List<AudioTrackInfo> audioTracks;
+  final List<SubtitleTrackInfo> subtitleTracks;
+
+  factory FileVersion.fromJson(Map<String, dynamic> json) => FileVersion(
+    fileId: json['file_id'] as int,
+    resolution: json['resolution'] as String?,
+    codecVideo: json['codec_video'] as String?,
+    codecAudio: json['codec_audio'] as String?,
+    container: json['container'] as String?,
+    duration: json['duration'] as int?,
+    audioTracks: (json['audio_tracks'] as List<dynamic>? ?? []).map((j) => AudioTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
+    subtitleTracks: (json['subtitle_tracks'] as List<dynamic>? ?? []).map((j) => SubtitleTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
+  );
+}
+
+/// Mirrors `WatchUserData` from src/api/watch.ts.
+class WatchUserData {
+  const WatchUserData({this.played, this.isInProgress, this.positionSeconds, this.durationSeconds, this.lastFileId});
+  final bool? played;
+  final bool? isInProgress;
+  final double? positionSeconds;
+  final double? durationSeconds;
+  final int? lastFileId;
+
+  factory WatchUserData.fromJson(Map<String, dynamic> json) => WatchUserData(
+    played: json['played'] as bool?,
+    isInProgress: json['is_in_progress'] as bool?,
+    positionSeconds: (json['position_seconds'] as num?)?.toDouble(),
+    durationSeconds: (json['duration_seconds'] as num?)?.toDouble(),
+    lastFileId: json['last_file_id'] as int?,
+  );
+}
+
+/// Mirrors `WatchDetail` from src/api/watch.ts.
+class WatchDetail {
+  const WatchDetail({
+    required this.contentId,
+    required this.type,
+    required this.title,
+    this.overview,
+    this.posterUrl,
+    this.backdropUrl,
+    this.year,
+    this.versions = const [],
+    this.userData,
+    this.seriesId,
+    this.seasonNumber,
+    this.episodeNumber,
+  });
+
+  final String contentId;
+  final String type;
+  final String title;
+  final String? overview;
+  final String? posterUrl;
+  final String? backdropUrl;
+  final int? year;
+  final List<FileVersion> versions;
+  final WatchUserData? userData;
+  final String? seriesId;
+  final int? seasonNumber;
+  final int? episodeNumber;
+
+  factory WatchDetail.fromJson(Map<String, dynamic> json) => WatchDetail(
+    contentId: json['content_id'] as String,
+    type: json['type'] as String,
+    title: json['title'] as String,
+    overview: json['overview'] as String?,
+    posterUrl: json['poster_url'] as String?,
+    backdropUrl: json['backdrop_url'] as String?,
+    year: json['year'] as int?,
+    versions: (json['versions'] as List<dynamic>? ?? []).map((j) => FileVersion.fromJson(j as Map<String, dynamic>)).toList(),
+    userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
+    seriesId: json['series_id'] as String?,
+    seasonNumber: json['season_number'] as int?,
+    episodeNumber: json['episode_number'] as int?,
+  );
+}
+
+/// Mirrors `PlayerLaunch` from src/screens/PlayerScreen.tsx.
+class PlayerLaunch {
+  const PlayerLaunch({
+    required this.fileId,
+    this.title,
+    this.contentId,
+    this.startPositionSeconds,
+    this.watch,
+  });
+
+  final int fileId;
+  final String? title;
+  final String? contentId;
+  final double? startPositionSeconds;
+  final WatchDetail? watch;
+}
