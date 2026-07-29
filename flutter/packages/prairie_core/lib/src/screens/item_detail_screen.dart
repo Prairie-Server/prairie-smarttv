@@ -540,18 +540,17 @@ class _Hero extends StatelessWidget {
       typeLabel(detail.item.type),
       ...?detail.item.genres?.take(2),
     ];
-    // Mirrors `.detail-hero { min-height: min(70vh, 640px) }` — TV viewports
-    // are essentially always tall enough to hit the 640px cap.
-    final heroHeight = (MediaQuery.sizeOf(context).height * 0.7).clamp(0, 640).toDouble();
-    return SizedBox(
-      height: heroHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated)),
-          if (backdrop != null)
-            Image.network(resolveAssetUrl(serverUrl, backdrop), fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
-          DecoratedBox(
+    // Size the hero to its content so ListView doesn't scroll through a tall
+    // empty region past the Play row. Backdrop fills via Positioned.
+    return Stack(
+      children: [
+        const Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated))),
+        if (backdrop != null)
+          Positioned.fill(
+            child: Image.network(resolveAssetUrl(serverUrl, backdrop), fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+          ),
+        Positioned.fill(
+          child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
@@ -565,166 +564,167 @@ class _Hero extends StatelessWidget {
               ),
             ),
           ),
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextButton.icon(
-                    onPressed: onBack,
-                    style: TextButton.styleFrom(
-                      foregroundColor: PrairieColors.ink,
-                      backgroundColor: const Color(0x590A0C10),
-                      padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
-                      shape: const StadiumBorder(),
-                    ),
-                    icon: const Icon(Icons.arrow_back, size: 18),
-                    label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
+        ),
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton.icon(
+                  onPressed: onBack,
+                  style: TextButton.styleFrom(
+                    foregroundColor: PrairieColors.ink,
+                    backgroundColor: const Color(0x590A0C10),
+                    padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                    shape: const StadiumBorder(),
                   ),
-                  const Spacer(),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1024),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (poster != null && backdrop != null) ...[
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 40, offset: const Offset(0, 18))],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: Image.network(
-                                resolveAssetUrl(serverUrl, poster),
-                                width: 160,
-                                height: 240,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const SizedBox(width: 160, height: 240, child: PosterFallback()),
-                              ),
-                            ),
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 20),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1024),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (poster != null && backdrop != null) ...[
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 40, offset: const Offset(0, 18))],
                           ),
-                          const SizedBox(width: 20),
-                        ],
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                sources.join(' · '),
-                                style: const TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 6),
-                              if (detail.item.logoUrl != null)
-                                Image.network(
-                                  resolveAssetUrl(serverUrl, detail.item.logoUrl!),
-                                  height: 64,
-                                  fit: BoxFit.contain,
-                                  alignment: Alignment.bottomLeft,
-                                  errorBuilder: (_, _, _) =>
-                                      Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
-                                )
-                              else
-                                Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
-                              if (detail.tagline != null) ...[
-                                const SizedBox(height: 4),
-                                Text(detail.tagline!, style: const TextStyle(color: PrairieColors.amber, fontStyle: FontStyle.italic)),
-                              ],
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  if (detail.item.contentRating != null)
-                                    DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        border: Border.all(color: PrairieColors.ink.withValues(alpha: 0.35)),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        child: Text(detail.item.contentRating!, style: const TextStyle(color: PrairieColors.ink, fontSize: 12)),
-                                      ),
-                                    ),
-                                  Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
-                                ],
-                              ),
-                              if (detail.ratingRtCritic != null || detail.ratingRtAudience != null) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  [
-                                    if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
-                                    if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
-                                  ].join(' · '),
-                                  style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                                ),
-                              ],
-                              if (detail.item.overview != null) ...[
-                                const SizedBox(height: 12),
-                                Text(
-                                  detail.item.overview!,
-                                  maxLines: 4,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: PrairieColors.muted, height: 1.4),
-                                ),
-                              ],
-                              if (directed != null) ...[
-                                const SizedBox(height: 8),
-                                Text(directed, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
-                              ],
-                              if (starring != null) ...[
-                                const SizedBox(height: 4),
-                                Text(starring, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
-                              ],
-                              const SizedBox(height: 16),
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 8,
-                                children: [
-                                  ElevatedButton.icon(
-                                    autofocus: true,
-                                    onPressed: (busyPlay || !playEnabled) ? null : onPlay,
-                                    icon: const Icon(Icons.play_arrow),
-                                    label: Text(playLabel),
-                                  ),
-                                  if (showStartOver)
-                                    OutlinedButton.icon(
-                                      onPressed: busyPlay ? null : onStartOver,
-                                      icon: const Icon(Icons.replay),
-                                      label: const Text('Start Over'),
-                                    ),
-                                  IconButton(
-                                    onPressed: busyAction ? null : onToggleFavorite,
-                                    icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: PrairieColors.amber),
-                                    tooltip: 'Favorite',
-                                  ),
-                                  IconButton(
-                                    onPressed: busyAction ? null : onToggleWatchlist,
-                                    icon: Icon(inWatchlist ? Icons.bookmark : Icons.bookmark_border, color: PrairieColors.amber),
-                                    tooltip: 'Watchlist',
-                                  ),
-                                  IconButton(
-                                    onPressed: busyAction ? null : onToggleWatched,
-                                    icon: Icon(played ? Icons.check_circle : Icons.check_circle_outline, color: PrairieColors.amber),
-                                    tooltip: 'Watched',
-                                  ),
-                                ],
-                              ),
-                            ],
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(
+                              resolveAssetUrl(serverUrl, poster),
+                              width: 160,
+                              height: 240,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => const SizedBox(width: 160, height: 240, child: PosterFallback()),
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 20),
                       ],
-                    ),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              sources.join(' · '),
+                              style: const TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 6),
+                            if (detail.item.logoUrl != null)
+                              Image.network(
+                                resolveAssetUrl(serverUrl, detail.item.logoUrl!),
+                                height: 64,
+                                fit: BoxFit.contain,
+                                alignment: Alignment.bottomLeft,
+                                errorBuilder: (_, _, _) =>
+                                    Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
+                              )
+                            else
+                              Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
+                            if (detail.tagline != null) ...[
+                              const SizedBox(height: 4),
+                              Text(detail.tagline!, style: const TextStyle(color: PrairieColors.amber, fontStyle: FontStyle.italic)),
+                            ],
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (detail.item.contentRating != null)
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: PrairieColors.ink.withValues(alpha: 0.35)),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      child: Text(detail.item.contentRating!, style: const TextStyle(color: PrairieColors.ink, fontSize: 12)),
+                                    ),
+                                  ),
+                                Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
+                              ],
+                            ),
+                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                [
+                                  if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
+                                  if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
+                                ].join(' · '),
+                                style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                              ),
+                            ],
+                            if (detail.item.overview != null) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                detail.item.overview!,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: PrairieColors.muted, height: 1.4),
+                              ),
+                            ],
+                            if (directed != null) ...[
+                              const SizedBox(height: 8),
+                              Text(directed, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                            ],
+                            if (starring != null) ...[
+                              const SizedBox(height: 4),
+                              Text(starring, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                            ],
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 8,
+                              children: [
+                                ElevatedButton.icon(
+                                  autofocus: true,
+                                  onPressed: (busyPlay || !playEnabled) ? null : onPlay,
+                                  icon: const Icon(Icons.play_arrow),
+                                  label: Text(playLabel),
+                                ),
+                                if (showStartOver)
+                                  OutlinedButton.icon(
+                                    onPressed: busyPlay ? null : onStartOver,
+                                    icon: const Icon(Icons.replay),
+                                    label: const Text('Start Over'),
+                                  ),
+                                IconButton(
+                                  onPressed: busyAction ? null : onToggleFavorite,
+                                  icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: PrairieColors.amber),
+                                  tooltip: 'Favorite',
+                                ),
+                                IconButton(
+                                  onPressed: busyAction ? null : onToggleWatchlist,
+                                  icon: Icon(inWatchlist ? Icons.bookmark : Icons.bookmark_border, color: PrairieColors.amber),
+                                  tooltip: 'Watchlist',
+                                ),
+                                IconButton(
+                                  onPressed: busyAction ? null : onToggleWatched,
+                                  icon: Icon(played ? Icons.check_circle : Icons.check_circle_outline, color: PrairieColors.amber),
+                                  tooltip: 'Watched',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

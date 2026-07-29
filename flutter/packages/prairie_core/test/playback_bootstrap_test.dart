@@ -38,12 +38,34 @@ void main() {
       expect(caps.containers, contains('mkv'));
     });
 
+    test('treats logical 1080p Flutter surface as UHD on modern Tizen', () {
+      final caps = buildTizenCapabilities(
+        tizenVersion: 6.5,
+        screenWidth: 1920,
+        screenHeight: 1080,
+        avplayAvailable: true,
+      );
+      expect(caps.maxResolution, '2160p');
+    });
+
+    test('uhd:false keeps screen probe when explicitly disabled', () {
+      final caps = buildTizenCapabilities(
+        tizenVersion: 6.5,
+        screenWidth: 1920,
+        screenHeight: 1080,
+        avplayAvailable: true,
+        uhd: false,
+      );
+      expect(caps.maxResolution, '1080p');
+    });
+
     test('omits av1 below 5.5', () {
       final caps = buildTizenCapabilities(
         tizenVersion: 5.0,
         screenWidth: 1920,
         screenHeight: 1080,
         avplayAvailable: true,
+        uhd: false,
       );
       expect(caps.codecsVideo, isNot(contains('av1')));
     });
@@ -107,6 +129,18 @@ void main() {
       expect(needsHlsBootstrap('remux'), isTrue);
       expect(needsHlsBootstrap('TRANSCODE'), isTrue);
       expect(needsHlsBootstrap(null), isFalse);
+    });
+  });
+
+  group('effectiveHlsPlayMethod', () {
+    test('upgrades AV1 remux to transcode for Smart TV', () {
+      expect(effectiveHlsPlayMethod('remux', videoCodec: 'av1'), 'transcode');
+      expect(effectiveHlsPlayMethod('remux', videoCodec: 'AV01'), 'transcode');
+    });
+
+    test('keeps remux for non-AV1 and keeps transcode as-is', () {
+      expect(effectiveHlsPlayMethod('remux', videoCodec: 'hevc'), 'remux');
+      expect(effectiveHlsPlayMethod('transcode', videoCodec: 'av1'), 'transcode');
     });
   });
 

@@ -10,6 +10,9 @@ const _progressIntervalMs = 10000;
 /// HLS remux/transcode sessions that stop advancing for this long after play
 /// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
 const _hlsStallTimeout = Duration(seconds: 20);
+/// PlusPlayer/webOS initialize must not hang forever when the HLS ladder is
+/// unplayable (e.g. AV1 fMP4 remux) while the server encode clock keeps moving.
+const _initializeTimeout = Duration(seconds: 25);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
@@ -45,6 +48,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
+  /// When the stream was attached; stall detection runs during prepare too.
+  DateTime? _streamAttachedAt;
   bool _exiting = false;
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
@@ -107,6 +112,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
   }
 
+  String? _sourceVideoCodecForFile(WatchDetail? detail, int fileId) {
+    if (detail == null) return null;
+    for (final version in detail.versions) {
+      if (version.fileId == fileId) return version.codecVideo;
+    }
+    return detail.versions.isNotEmpty ? detail.versions.first.codecVideo : null;
+  }
+
   List<AudioTrackInfo> get _audioTracks {
     final watch = widget.launch.watch;
     final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
@@ -163,6 +176,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         nextSession,
         position,
         sourceResolution: _sourceResolutionForFile(widget.launch.watch, nextSession.mediaFileId),
+        sourceVideoCodec: _sourceVideoCodecForFile(widget.launch.watch, nextSession.mediaFileId),
         maxResolution: deviceCaps.maxResolution,
         cancelToken: cancel,
       );
@@ -189,6 +203,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _selectedSubtitleTrackId = null;
         _caption = null;
       });
+      _streamAttachedAt = DateTime.now();
+      _lastProgressAt = _streamAttachedAt;
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || _exiting || cancel.isCancelled) {
         await backend.dispose();
@@ -196,7 +216,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      await backend.initialize(
+      await _initializeBackend(
+        backend,
         startPosition: prepared.playerStartSeconds > 0
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
@@ -232,9 +253,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _loading = false;
         });
       });
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
       _showControls();
     } catch (e) {
@@ -331,6 +349,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           started,
           seekAt,
           sourceResolution: _sourceResolutionForFile(widget.launch.watch, started.mediaFileId),
+          sourceVideoCodec: _sourceVideoCodecForFile(widget.launch.watch, started.mediaFileId),
           maxResolution: deviceCaps.maxResolution,
           cancelToken: cancel,
         );
@@ -358,6 +377,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _subtitleAppearance = settings.subtitleAppearance;
         _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
       });
+      _streamAttachedAt = DateTime.now();
+      _lastProgressAt = _streamAttachedAt;
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       await WidgetsBinding.instance.endOfFrame;
 
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -367,7 +392,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      await backend.initialize(
+      await _initializeBackend(
+        backend,
         startPosition: prepared.playerStartSeconds > 0
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
@@ -403,10 +429,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
       });
       _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
     } catch (e) {
       if (startedSessionId != null && _activeSessionId == startedSessionId) {
@@ -426,17 +448,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _checkHlsStall() {
-    if (!mounted || _exiting || _error != null || _loading) return;
+    if (!mounted || _exiting || _error != null) return;
     final backend = _backend;
-    if (backend == null || !backend.isPlaying) return;
-    final lastAt = _lastProgressAt;
+    if (backend == null) return;
+    // Prefer last media progress; fall back to attach time so hung initialize
+    // (while `_loading`) still fails closed instead of spinning forever.
+    final lastAt = _lastProgressAt ?? _streamAttachedAt;
     if (lastAt == null) return;
     if (DateTime.now().difference(lastAt) < _hlsStallTimeout) return;
     setState(() {
-      _error = 'Playback stalled — the stream stopped producing media.';
+      _error = _loading
+          ? 'Playback failed to start — the stream never became ready.'
+          : 'Playback stalled — the stream stopped producing media.';
       _loading = false;
     });
     _stallTimer?.cancel();
+  }
+
+  Future<void> _initializeBackend(VideoBackend backend, {Duration? startPosition}) async {
+    try {
+      await backend.initialize(startPosition: startPosition).timeout(_initializeTimeout);
+    } on TimeoutException {
+      throw StateError('Player initialize timed out after ${_initializeTimeout.inSeconds}s');
+    }
   }
 
   /// Mirrors `resolvePreferredSubtitleIndex`: auto-select a text track
