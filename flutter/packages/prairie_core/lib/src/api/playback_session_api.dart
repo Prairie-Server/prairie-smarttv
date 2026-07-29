@@ -129,3 +129,59 @@ Future<void> stopPlaybackSession(ApiClient client, PrairieSession session, Strin
     rethrow;
   }
 }
+
+/// Mirrors `AudioSwitchResponse` from src/player/types.ts.
+class AudioSwitchResponse {
+  const AudioSwitchResponse({
+    required this.audioTrackIndex,
+    required this.playMethod,
+    required this.streamUrl,
+    this.switchMode,
+    this.playerStartSeconds,
+    this.streamOriginSeconds,
+    this.canSeekAnywhere,
+    this.playbackInfo,
+  });
+
+  final int audioTrackIndex;
+  final String playMethod;
+  final String streamUrl;
+  final String? switchMode;
+  final double? playerStartSeconds;
+  final double? streamOriginSeconds;
+  final bool? canSeekAnywhere;
+  final PlaybackInfo? playbackInfo;
+
+  factory AudioSwitchResponse.fromJson(Map<String, dynamic> json) => AudioSwitchResponse(
+    audioTrackIndex: json['audio_track_index'] as int? ?? 0,
+    playMethod: json['play_method'] as String? ?? '',
+    streamUrl: json['stream_url'] as String? ?? '',
+    switchMode: json['switch_mode'] as String?,
+    playerStartSeconds: (json['player_start_seconds'] as num?)?.toDouble(),
+    streamOriginSeconds: (json['stream_origin_seconds'] as num?)?.toDouble(),
+    canSeekAnywhere: json['can_seek_anywhere'] as bool?,
+    playbackInfo: json['playback_info'] is Map<String, dynamic>
+        ? PlaybackInfo.fromJson(json['playback_info'] as Map<String, dynamic>)
+        : null,
+  );
+}
+
+/// Mirrors `switchPlaybackAudio` — PATCH `/playback/{id}/audio`.
+Future<AudioSwitchResponse> switchPlaybackAudio(
+  ApiClient client,
+  PrairieSession session,
+  String playbackSessionId,
+  int audioTrackIndex,
+  double position,
+) async {
+  final json = await client.request<Map<String, dynamic>>(
+    _sessionOptions(session),
+    '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}/audio',
+    method: 'PATCH',
+    body: {
+      'audio_track_index': audioTrackIndex,
+      'position': position < 0 ? 0 : position,
+    },
+  );
+  return AudioSwitchResponse.fromJson(json);
+}

@@ -1,7 +1,7 @@
 # Prairie SmartTV — Flutter rewrite
 
-Flutter rewrite of the Tizen and webOS TV apps, replacing the TypeScript/React app in `../src`.
-The TS app keeps shipping until this reaches cutover criteria.
+Flutter rewrite of the Tizen and webOS TV apps. This is the only Smart TV client
+tree — the former TypeScript/React app under `src/` has been removed.
 
 ## Layout
 
