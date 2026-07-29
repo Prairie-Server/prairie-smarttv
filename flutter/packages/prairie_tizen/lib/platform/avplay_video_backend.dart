@@ -24,7 +24,8 @@ class AvplayVideoBackend implements VideoBackend {
   final ApiClient? beaconClient;
   final String? Function()? beaconServerUrl;
 
-  void _beacon(String event) {
+  @override
+  void reportDiagnostic(String event) {
     final client = beaconClient;
     final serverUrl = beaconServerUrl?.call();
     if (client == null || serverUrl == null || serverUrl.isEmpty) return;
@@ -91,7 +92,7 @@ class AvplayVideoBackend implements VideoBackend {
     debugPrint(
       'prairie.avplay: attach url=${_redactQuery(url)} hls=$hls fixedMaxResolution=$fixed queryParams=$queryParams',
     );
-    _beacon('attach:hls=$hls:params=$queryParams');
+    reportDiagnostic('attach:hls=$hls:params=$queryParams');
     _controller = controller;
     controller.addListener(_onControllerUpdate);
   }
@@ -131,12 +132,12 @@ class AvplayVideoBackend implements VideoBackend {
     if (value.isBuffering != _lastBuffering) {
       _lastBuffering = value.isBuffering;
       debugPrint('prairie.avplay: isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}');
-      _beacon('buf=${value.isBuffering}:pos=${value.position.inMilliseconds}');
+      reportDiagnostic('buf=${value.isBuffering}:pos=${value.position.inMilliseconds}');
     }
     if (value.isInitialized != _lastIsInitialized) {
       _lastIsInitialized = value.isInitialized;
       debugPrint('prairie.avplay: isInitialized=${value.isInitialized} duration=${value.duration}');
-      _beacon('init=${value.isInitialized}:dur=${value.duration.end.inMilliseconds}');
+      reportDiagnostic('init=${value.isInitialized}:dur=${value.duration.end.inMilliseconds}');
     }
 
     if (value.hasError) {
@@ -144,7 +145,7 @@ class AvplayVideoBackend implements VideoBackend {
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
         debugPrint('prairie.avplay: hasError message=$message');
-        _beacon('err=$message');
+        reportDiagnostic('err=$message');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }

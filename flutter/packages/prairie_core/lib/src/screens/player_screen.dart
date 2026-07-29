@@ -14,14 +14,12 @@ const _hlsStallTimeout = Duration(seconds: 20);
 /// becomes playable while the server encode clock keeps moving.
 ///
 /// AVPlay's own `INITIAL_BUFFER_DURATION` (set on the HLS streaming property)
-/// means initialize() doesn't resolve until several segments are on disk —
-/// for a full encode (not remux) of high-resolution source, ffmpeg can run
-/// slower than real time, and a slow server/network delays every segment
-/// fetch on top of that. Transcode gets the same 90s budget as
-/// [transcodeStartupTimeout] (the upstream HLS-readiness wait) so this
-/// timeout isn't the tighter one in the chain.
-const _initializeTimeout = Duration(seconds: 25);
-const _initializeTimeoutTranscode = Duration(seconds: 90);
+/// means initialize() doesn't resolve until several segments are on disk, and
+/// a slow server/network delays every segment fetch behind that buffer fill —
+/// remux is not exempt from this, so there's no per-play-method split here.
+/// Matches [transcodeStartupTimeout] (the upstream HLS-readiness wait) so
+/// this timeout isn't the tighter one in the chain.
+const _initializeTimeout = Duration(seconds: 90);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
@@ -474,16 +472,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _initializeBackend(VideoBackend backend, {Duration? startPosition, String? playMethod}) async {
-    final timeout = playMethod?.trim().toLowerCase() == 'transcode' ? _initializeTimeoutTranscode : _initializeTimeout;
+    final timeout = _initializeTimeout;
     final startedAt = DateTime.now();
+    backend.reportDiagnostic('init:start:method=$playMethod:budget=${timeout.inSeconds}');
     try {
       await backend.initialize(startPosition: startPosition).timeout(timeout);
+      final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
       debugPrint(
-        'prairie.player_screen: Player initialize succeeded in '
-        '${DateTime.now().difference(startedAt).inMilliseconds}ms (playMethod=$playMethod, budget=${timeout.inSeconds}s)',
+        'prairie.player_screen: Player initialize succeeded in ${elapsedMs}ms (playMethod=$playMethod, budget=${timeout.inSeconds}s)',
       );
+      backend.reportDiagnostic('init:done:${elapsedMs}ms');
     } on TimeoutException {
       debugPrint('prairie.player_screen: Player initialize timed out after ${timeout.inSeconds}s (playMethod=$playMethod)');
+      backend.reportDiagnostic('init:TIMEOUT:${timeout.inSeconds}s');
       throw StateError('Player initialize timed out after ${timeout.inSeconds}s');
     }
   }

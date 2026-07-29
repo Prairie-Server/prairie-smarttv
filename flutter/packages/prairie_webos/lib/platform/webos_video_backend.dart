@@ -10,6 +10,35 @@ import 'package:video_player_drm/video_player.dart';
 /// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
 /// underlying plugin but not yet wired up here — same gap as Tizen AVPlay.
 class WebosVideoBackend implements VideoBackend {
+  /// Diagnostics-only: rides a `dbg=` param on a request the server already
+  /// logs (see Tizen's `AvplayVideoBackend`, where this pattern started —
+  /// same shape here so a support report from either platform ships the same
+  /// way). Fire-and-forget; never let a beacon failure affect playback. Both
+  /// are null unless the user opted into `PlaybackSettings.enableDiagnosticsBeacon`.
+  WebosVideoBackend({this.beaconClient, this.beaconServerUrl});
+
+  final ApiClient? beaconClient;
+  final String? Function()? beaconServerUrl;
+
+  @override
+  void reportDiagnostic(String event) {
+    final client = beaconClient;
+    final serverUrl = beaconServerUrl?.call();
+    if (client == null || serverUrl == null || serverUrl.isEmpty) return;
+    unawaited(_sendBeacon(client, serverUrl, event));
+  }
+
+  static Future<void> _sendBeacon(ApiClient client, String serverUrl, String event) async {
+    try {
+      await client.dio.get<void>(
+        '$serverUrl/api/v1/settings/effective',
+        queryParameters: {'keys': 'playback.auto_skip_intro', 'dbg': event},
+      );
+    } catch (_) {
+      // Diagnostics must never affect playback.
+    }
+  }
+
   VideoPlayerController? _controller;
   final _positionController = StreamController<Duration>.broadcast();
   final _captionController = StreamController<String?>.broadcast();
@@ -19,10 +48,20 @@ class WebosVideoBackend implements VideoBackend {
   String? _lastCaptionText;
   String? _lastError;
   bool _initialized = false;
+  bool? _lastBuffering;
+  bool? _lastIsInitialized;
 
   static bool _isHls(String url) {
     final path = url.split('?').first.toLowerCase();
     return path.endsWith('.m3u8') || path.contains('/hls') || path.contains('master.m3u8');
+  }
+
+  /// Redacts query-param values (session tokens) before a URL hits the log.
+  static String _redactQuery(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.query.isEmpty) return url;
+    final redacted = {for (final key in uri.queryParameters.keys) key: '<redacted>'};
+    return uri.replace(queryParameters: redacted).toString();
   }
 
   @override
@@ -34,6 +73,9 @@ class WebosVideoBackend implements VideoBackend {
       Uri.parse(url),
       formatHint: hls ? VideoFormat.hls : null,
     );
+    final queryParams = Uri.tryParse(url)?.queryParameters.keys.join(',');
+    debugPrint('prairie.webos: attach url=${_redactQuery(url)} hls=$hls queryParams=$queryParams');
+    reportDiagnostic('attach:hls=$hls:params=$queryParams');
     _controller = controller;
     controller.addListener(_onControllerUpdate);
   }
@@ -77,11 +119,25 @@ class WebosVideoBackend implements VideoBackend {
   void _onControllerUpdate() {
     final controller = _controller;
     if (controller == null) return;
+    final value = controller.value;
+
+    if (value.isBuffering != _lastBuffering) {
+      _lastBuffering = value.isBuffering;
+      debugPrint('prairie.webos: isBuffering=${value.isBuffering} position=${value.position}');
+      reportDiagnostic('buf=${value.isBuffering}:pos=${value.position.inMilliseconds}');
+    }
+    if (value.isInitialized != _lastIsInitialized) {
+      _lastIsInitialized = value.isInitialized;
+      debugPrint('prairie.webos: isInitialized=${value.isInitialized} duration=${value.duration}');
+      reportDiagnostic('init=${value.isInitialized}:dur=${value.duration.inMilliseconds}');
+    }
 
     if (controller.value.hasError) {
       final message = (controller.value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
+        debugPrint('prairie.webos: hasError message=$message');
+        reportDiagnostic('err=$message');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }

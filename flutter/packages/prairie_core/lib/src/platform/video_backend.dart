@@ -53,6 +53,15 @@ abstract class VideoBackend {
   /// for the in-player "stats for nerds" overlay, not used by playback logic.
   bool get isBuffering;
 
+  /// Diagnostics-only, fire-and-forget report of a player-state event string
+  /// (e.g. `'init:start:…'`). No-op unless the platform backend has a
+  /// diagnostics channel wired up and the user opted into it — see Tizen's
+  /// `AvplayVideoBackend` beacon, the only reachable logging on that TV.
+  /// Exists on the interface so callers in `prairie_core` (which never sees
+  /// the concrete backend type) can still instrument lifecycle moments the
+  /// backend itself doesn't observe, like [initialize]'s own call site.
+  void reportDiagnostic(String event);
+
   /// Text tracks the native player found in the current stream. Empty
   /// until after [initialize] resolves; may also be empty if the file has no
   /// embedded subtitles.
