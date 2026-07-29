@@ -104,6 +104,9 @@ class WebosVideoBackend implements VideoBackend {
   bool get isInitialized => _initialized;
 
   @override
+  bool get isBuffering => _controller?.value.isBuffering ?? false;
+
+  @override
   List<SubtitleTrackChoice> get subtitleTracks => _subtitleTracks;
 
   @override

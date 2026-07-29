@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 /// Thrown when the HLS playlist never becomes playable before the deadline.
 /// Mirrors `TranscodeStartupTimeoutError`.
@@ -25,20 +25,44 @@ class HlsProbeAuthError implements Exception {
   String toString() => '$message (HTTP $statusCode)';
 }
 
+/// Resolves [reference] relative to [playlistUrl], carrying the playlist's
+/// own query (session auth) forward when the reference doesn't have one of
+/// its own — relative HLS URIs never repeat the parent's query string.
+String? _resolveHlsReference(String playlistUrl, String reference) {
+  try {
+    final base = Uri.parse(playlistUrl);
+    final resolved = base.resolve(reference);
+    if (resolved.query.isEmpty && base.query.isNotEmpty) {
+      return resolved.replace(query: base.query).toString();
+    }
+    return resolved.toString();
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Resolve the first media segment URI from an m3u8 body relative to [playlistUrl].
 String? firstMediaSegmentUrl(String playlistUrl, String body) {
   for (final rawLine in body.split('\n')) {
     final line = rawLine.trim();
     if (line.isEmpty || line.startsWith('#')) continue;
-    try {
-      final base = Uri.parse(playlistUrl);
-      final resolved = base.resolve(line);
-      if (resolved.query.isEmpty && base.query.isNotEmpty) {
-        return resolved.replace(query: base.query).toString();
-      }
-      return resolved.toString();
-    } catch (_) {
-      return null;
+    return _resolveHlsReference(playlistUrl, line);
+  }
+  return null;
+}
+
+/// Resolve the fMP4 init segment (`#EXT-X-MAP:URI="…"`) relative to
+/// [playlistUrl], if the playlist declares one. Media segments in an fMP4
+/// playlist are unplayable without it — a readiness probe that only checks
+/// the first `#EXTINF` segment reports "ready" without confirming the init
+/// segment is actually fetchable.
+String? initSegmentUrl(String playlistUrl, String body) {
+  final mapLine = RegExp(r'#EXT-X-MAP:.*URI="([^"]+)"');
+  for (final rawLine in body.split('\n')) {
+    final line = rawLine.trim();
+    final match = mapLine.firstMatch(line);
+    if (match != null) {
+      return _resolveHlsReference(playlistUrl, match.group(1)!);
     }
   }
   return null;
@@ -88,11 +112,17 @@ Future<bool> waitForHlsManifest(
     if (body != null && body.contains('#EXTM3U')) {
       if (!requireSegment) return true;
       if (body.contains('#EXTINF')) {
-        final segmentUrl = firstMediaSegmentUrl(url, body);
-        if (segmentUrl != null) {
-          final ready = await _segmentReady(client, segmentUrl, cancelToken);
-          if (cancelToken?.isCancelled == true) return false;
-          if (ready) return true;
+        final initUrl = initSegmentUrl(url, body);
+        final initReady = initUrl == null || await _segmentReady(client, initUrl, cancelToken);
+        if (cancelToken?.isCancelled == true) return false;
+
+        if (initReady) {
+          final segmentUrl = firstMediaSegmentUrl(url, body);
+          if (segmentUrl != null) {
+            final ready = await _segmentReady(client, segmentUrl, cancelToken);
+            if (cancelToken?.isCancelled == true) return false;
+            if (ready) return true;
+          }
         }
       }
     }
@@ -132,7 +162,7 @@ Future<String?> _fetchText(Dio dio, String url, CancelToken? cancelToken) async 
   if (status == 401 || status == 403) throw HlsProbeAuthError(status!);
   if (status == null || status >= 400) {
     if (status == 404) {
-      developer.log('HLS playlist not found yet (404): $url', name: 'prairie.hls_probe');
+      debugPrint('prairie.hls_probe: HLS playlist not found yet (404): $url');
     }
     return null;
   }

@@ -253,6 +253,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         label: 'Audio / display',
         hint: '${_codecListLabel(caps.codecsAudio)} · Max ${caps.maxResolution} · HDR ${caps.hdr ? 'Yes' : 'No'}',
       ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: 'Diagnostics beacon',
+        hint: 'Sends player state to the server request log during playback. Extra network traffic — leave off unless debugging.',
+        value: _settings.enableDiagnosticsBeacon,
+        onChanged: (v) => _updateSettings((s) => s.copyWith(enableDiagnosticsBeacon: v)),
+      ),
     ];
   }
 

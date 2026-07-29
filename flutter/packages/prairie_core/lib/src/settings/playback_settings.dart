@@ -16,6 +16,7 @@ class PlaybackSettings {
     this.disableAv1 = false,
     this.subtitleAppearance = const SubtitleAppearance(),
     this.preferredSubtitleLanguage = '',
+    this.enableDiagnosticsBeacon = false,
   });
 
   final bool forceDirectPlay;
@@ -24,6 +25,10 @@ class PlaybackSettings {
   final bool disableAv1;
   final SubtitleAppearance subtitleAppearance;
   final String preferredSubtitleLanguage;
+  /// Off by default — sends player-state beacons (see `AvplayVideoBackend`)
+  /// on every playback session, which is extra network traffic in normal use
+  /// and only useful while actively diagnosing a TV playback issue.
+  final bool enableDiagnosticsBeacon;
 
   PlaybackSettings copyWith({
     bool? forceDirectPlay,
@@ -32,6 +37,7 @@ class PlaybackSettings {
     bool? disableAv1,
     SubtitleAppearance? subtitleAppearance,
     String? preferredSubtitleLanguage,
+    bool? enableDiagnosticsBeacon,
   }) {
     var next = PlaybackSettings(
       forceDirectPlay: forceDirectPlay ?? this.forceDirectPlay,
@@ -40,6 +46,7 @@ class PlaybackSettings {
       disableAv1: disableAv1 ?? this.disableAv1,
       subtitleAppearance: subtitleAppearance ?? this.subtitleAppearance,
       preferredSubtitleLanguage: preferredSubtitleLanguage ?? this.preferredSubtitleLanguage,
+      enableDiagnosticsBeacon: enableDiagnosticsBeacon ?? this.enableDiagnosticsBeacon,
     );
     // Direct wins when both are somehow set; disable wins over force av1.
     if (next.forceDirectPlay && next.forceTranscode) next = next.copyWithRaw(forceTranscode: false);
@@ -54,6 +61,7 @@ class PlaybackSettings {
     disableAv1: disableAv1,
     subtitleAppearance: subtitleAppearance,
     preferredSubtitleLanguage: preferredSubtitleLanguage,
+    enableDiagnosticsBeacon: enableDiagnosticsBeacon,
   );
 
   Map<String, dynamic> toJson() => {
@@ -63,6 +71,7 @@ class PlaybackSettings {
     'disableAv1': disableAv1,
     'subtitleAppearance': subtitleAppearance.toJson(),
     'preferredSubtitleLanguage': preferredSubtitleLanguage,
+    'enableDiagnosticsBeacon': enableDiagnosticsBeacon,
   };
 
   factory PlaybackSettings.fromJson(Map<String, dynamic>? json) {
@@ -74,6 +83,7 @@ class PlaybackSettings {
       disableAv1: json['disableAv1'] == true,
       subtitleAppearance: SubtitleAppearance.fromJson(json['subtitleAppearance'] as Map<String, dynamic>?),
       preferredSubtitleLanguage: (json['preferredSubtitleLanguage'] as String?)?.trim().toLowerCase() ?? '',
+      enableDiagnosticsBeacon: json['enableDiagnosticsBeacon'] == true,
     );
   }
 }

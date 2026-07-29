@@ -177,6 +177,22 @@ void main() {
     });
   });
 
+  group('initSegmentUrl', () {
+    test('resolves the fMP4 init segment URI and carries query auth', () {
+      expect(
+        initSegmentUrl(
+          'https://x/a.m3u8?token=1',
+          '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:10.427,\nseg_00000.m4s\n',
+        ),
+        'https://x/init.mp4?token=1',
+      );
+    });
+
+    test('returns null when the playlist has no #EXT-X-MAP (mpegts)', () {
+      expect(initSegmentUrl('https://x/a.m3u8', '#EXTM3U\n#EXTINF:1,\nseg.ts\n'), isNull);
+    });
+  });
+
   group('resolveTargetResolution', () {
     test('never upscales past panel max', () {
       expect(resolveTargetResolution('2160p', '1080p'), '1080p');

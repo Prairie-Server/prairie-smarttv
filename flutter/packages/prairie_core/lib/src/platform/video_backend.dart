@@ -49,6 +49,10 @@ abstract class VideoBackend {
   bool get isPlaying;
   bool get isInitialized;
 
+  /// Whether the native player is currently stalled waiting on data — surfaced
+  /// for the in-player "stats for nerds" overlay, not used by playback logic.
+  bool get isBuffering;
+
   /// Text tracks the native player found in the current stream. Empty
   /// until after [initialize] resolves; may also be empty if the file has no
   /// embedded subtitles.
@@ -79,4 +83,8 @@ abstract class VideoBackend {
 /// apps override [videoBackendFactoryProvider] with their real
 /// implementation (see prairie_tizen's `AvplayVideoBackend`) — `prairie_core`
 /// only knows the interface, never the concrete native bridge.
-typedef VideoBackendFactory = VideoBackend Function();
+///
+/// [enableDiagnostics] mirrors `PlaybackSettings.enableDiagnosticsBeacon` at
+/// the moment playback starts — platforms with a diagnostics beacon (Tizen)
+/// use it to skip wiring one up at all when the user hasn't opted in.
+typedef VideoBackendFactory = VideoBackend Function({bool enableDiagnostics});

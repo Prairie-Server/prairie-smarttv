@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Route;
@@ -55,6 +54,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _loading = true;
   String? _error;
   bool _controlsVisible = true;
+  bool _showStats = false;
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
@@ -195,7 +195,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _backend = null;
       await oldBackend?.dispose();
 
-      final backend = ref.read(videoBackendFactoryProvider)();
+      final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
       backend.attach(prepared.streamUrl, maxResolution: deviceCaps.maxResolution);
       setState(() {
         _backend = backend;
@@ -367,7 +367,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       _activeSessionId = prepared.session.sessionId;
-      final backend = ref.read(videoBackendFactoryProvider)();
+      final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
       backend.attach(prepared.streamUrl, maxResolution: deviceCaps.maxResolution);
       // Mount the hole-punch surface BEFORE initialize — PlusPlayer prepares
       // against the display rect; awaiting init with no VideoPlayer in the
@@ -478,16 +478,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final startedAt = DateTime.now();
     try {
       await backend.initialize(startPosition: startPosition).timeout(timeout);
-      developer.log(
-        'Player initialize succeeded in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
-        '(playMethod=$playMethod, budget=${timeout.inSeconds}s)',
-        name: 'prairie.player_screen',
+      debugPrint(
+        'prairie.player_screen: Player initialize succeeded in '
+        '${DateTime.now().difference(startedAt).inMilliseconds}ms (playMethod=$playMethod, budget=${timeout.inSeconds}s)',
       );
     } on TimeoutException {
-      developer.log(
-        'Player initialize timed out after ${timeout.inSeconds}s (playMethod=$playMethod)',
-        name: 'prairie.player_screen',
-      );
+      debugPrint('prairie.player_screen: Player initialize timed out after ${timeout.inSeconds}s (playMethod=$playMethod)');
       throw StateError('Player initialize timed out after ${timeout.inSeconds}s');
     }
   }
@@ -625,6 +621,44 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return bits.join(' · ');
   }
 
+  /// "Stats for nerds" — read directly off the backend each build (piggybacks
+  /// on the once-a-second rebuild [_positionSub] already drives) rather than
+  /// wiring up dedicated diagnostics streams for a debug-only overlay.
+  Widget _buildStatsOverlay(VideoBackend backend) {
+    final lines = [
+      'session: ${_playbackSession?.sessionId ?? '—'}',
+      'playMethod: ${_playbackSession?.playMethod ?? '—'}',
+      'isInitialized: ${backend.isInitialized}',
+      'isPlaying: ${backend.isPlaying}',
+      'isBuffering: ${backend.isBuffering}',
+      'position: ${_formatDuration(_position)} / ${_formatDuration(backend.duration ?? Duration.zero)}',
+      if (_error != null) 'error: $_error',
+    ];
+    return Positioned(
+      top: 24,
+      left: 24,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final line in lines)
+                  Text(line, style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final backend = _backend;
@@ -641,6 +675,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             fit: StackFit.expand,
             children: [
               if (backend != null) backend.buildSurface(),
+              if (_showStats && backend != null) _buildStatsOverlay(backend),
               if (_caption != null && _caption!.isNotEmpty)
                 Align(
                   alignment: Alignment(0, 1 - 2 * subtitleAppearanceBottomFraction(_subtitleAppearance)),
@@ -793,6 +828,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                     tooltip: 'Subtitles',
                                   ),
                                 ],
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  iconSize: 28,
+                                  color: _showStats ? PrairieColors.amber : PrairieColors.ink,
+                                  onPressed: () => setState(() => _showStats = !_showStats),
+                                  icon: const Icon(Icons.query_stats),
+                                  tooltip: 'Stats for nerds',
+                                ),
                               ],
                             ),
                           ],

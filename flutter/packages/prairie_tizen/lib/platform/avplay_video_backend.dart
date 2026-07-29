@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:flutter/widgets.dart';
 import 'package:prairie_core/prairie_core.dart';
@@ -12,6 +11,37 @@ import 'package:video_player_avplay/video_player_platform_interface.dart';
 /// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
 /// underlying plugin but not yet wired up here.
 class AvplayVideoBackend implements VideoBackend {
+  /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
+  /// needs a VM service that a release build doesn't attach, and `debugPrint`
+  /// needs an `sdb dlog` session at the TV). The server already logs full
+  /// request query strings, so state changes ride a `dbg=` param on a request
+  /// it already receives — read back from the server's own request log,
+  /// timestamped and correlated with the playback session. Never let a
+  /// beacon failure affect playback: every call is fire-and-forget. Both are
+  /// null unless the user opted into `PlaybackSettings.enableDiagnosticsBeacon`.
+  AvplayVideoBackend({this.beaconClient, this.beaconServerUrl});
+
+  final ApiClient? beaconClient;
+  final String? Function()? beaconServerUrl;
+
+  void _beacon(String event) {
+    final client = beaconClient;
+    final serverUrl = beaconServerUrl?.call();
+    if (client == null || serverUrl == null || serverUrl.isEmpty) return;
+    unawaited(_sendBeacon(client, serverUrl, event));
+  }
+
+  static Future<void> _sendBeacon(ApiClient client, String serverUrl, String event) async {
+    try {
+      await client.dio.get<void>(
+        '$serverUrl/api/v1/settings/effective',
+        queryParameters: {'keys': 'playback.auto_skip_intro', 'dbg': event},
+      );
+    } catch (_) {
+      // Diagnostics must never affect playback.
+    }
+  }
+
   VideoPlayerController? _controller;
   final _positionController = StreamController<Duration>.broadcast();
   final _captionController = StreamController<String?>.broadcast();
@@ -57,10 +87,11 @@ class AvplayVideoBackend implements VideoBackend {
             }
           : {StreamingPropertyType.userAgent: 'PrairieTizenClient'},
     );
-    developer.log(
-      'attach url=${_redactQuery(url)} hls=$hls fixedMaxResolution=$fixed queryParams=${Uri.tryParse(url)?.queryParameters.keys.toList()}',
-      name: 'prairie.avplay',
+    final queryParams = Uri.tryParse(url)?.queryParameters.keys.join(',');
+    debugPrint(
+      'prairie.avplay: attach url=${_redactQuery(url)} hls=$hls fixedMaxResolution=$fixed queryParams=$queryParams',
     );
+    _beacon('attach:hls=$hls:params=$queryParams');
     _controller = controller;
     controller.addListener(_onControllerUpdate);
   }
@@ -99,21 +130,21 @@ class AvplayVideoBackend implements VideoBackend {
 
     if (value.isBuffering != _lastBuffering) {
       _lastBuffering = value.isBuffering;
-      developer.log(
-        'isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}',
-        name: 'prairie.avplay',
-      );
+      debugPrint('prairie.avplay: isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}');
+      _beacon('buf=${value.isBuffering}:pos=${value.position.inMilliseconds}');
     }
     if (value.isInitialized != _lastIsInitialized) {
       _lastIsInitialized = value.isInitialized;
-      developer.log('isInitialized=${value.isInitialized} duration=${value.duration}', name: 'prairie.avplay');
+      debugPrint('prairie.avplay: isInitialized=${value.isInitialized} duration=${value.duration}');
+      _beacon('init=${value.isInitialized}:dur=${value.duration.end.inMilliseconds}');
     }
 
     if (value.hasError) {
       final message = (value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
-        developer.log('hasError message=$message', name: 'prairie.avplay');
+        debugPrint('prairie.avplay: hasError message=$message');
+        _beacon('err=$message');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }
@@ -129,6 +160,9 @@ class AvplayVideoBackend implements VideoBackend {
 
   @override
   bool get isInitialized => _initialized;
+
+  @override
+  bool get isBuffering => _controller?.value.isBuffering ?? false;
 
   @override
   List<SubtitleTrackChoice> get subtitleTracks => _subtitleTracks;

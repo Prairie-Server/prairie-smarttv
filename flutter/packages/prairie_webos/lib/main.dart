@@ -29,7 +29,7 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
-        videoBackendFactoryProvider.overrideWithValue(() => WebosVideoBackend()),
+        videoBackendFactoryProvider.overrideWithValue(({bool enableDiagnostics = false}) => WebosVideoBackend()),
         tvCapabilitiesProvider.overrideWithValue(caps),
         clientIdentityProvider.overrideWithValue(
           ClientIdentity.smartTv(platformLabel: 'webOS', devicePlatform: 'webos'),
