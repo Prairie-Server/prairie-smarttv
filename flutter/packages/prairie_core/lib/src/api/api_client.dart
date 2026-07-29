@@ -124,7 +124,7 @@ String buildStreamUrl(String serverUrl, String streamPath, String? token, [Strin
   if (!isSameServerOrigin(serverUrl, base)) return base;
 
   final params = <String, String>{};
-  if (token != null) params['token'] = token;
+  if (token != null && token.isNotEmpty) params['token'] = token;
   if (profileId != null) params['profile_id'] = profileId;
   if (params.isEmpty) return base;
 

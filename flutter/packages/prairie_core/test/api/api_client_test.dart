@@ -42,6 +42,10 @@ void main() {
     test('returns the base URL untouched when there is nothing to append', () {
       expect(buildStreamUrl('https://prairie.example', '/stream', null), 'https://prairie.example/stream');
     });
+
+    test('does not emit an empty token= param when the access token is empty', () {
+      expect(buildStreamUrl('https://prairie.example', '/stream', ''), 'https://prairie.example/stream');
+    });
   });
 
   group('isAuthLoginPath', () {

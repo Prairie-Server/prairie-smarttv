@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 
@@ -10,6 +11,18 @@ class TranscodeStartupTimeoutError implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Thrown when the readiness probe gets a 401/403 back. Unlike a 404/5xx,
+/// this can never resolve by waiting longer, so it must not be swallowed
+/// into the same "not ready yet" bucket that drives the poll/backoff loop.
+class HlsProbeAuthError implements Exception {
+  HlsProbeAuthError(this.statusCode, [this.message = 'Not authorized to fetch HLS playlist']);
+  final int statusCode;
+  final String message;
+
+  @override
+  String toString() => '$message (HTTP $statusCode)';
 }
 
 /// Resolve the first media segment URI from an m3u8 body relative to [playlistUrl].
@@ -94,9 +107,14 @@ Future<bool> waitForHlsManifest(
   return false;
 }
 
+/// Fetches [url] for the readiness poll. Returns the body when ready, `null`
+/// when the playlist genuinely isn't written yet (404/5xx/transport error —
+/// worth retrying), and throws [HlsProbeAuthError] on 401/403, which is a
+/// permanent rejection no amount of polling will resolve.
 Future<String?> _fetchText(Dio dio, String url, CancelToken? cancelToken) async {
+  Response<String>? response;
   try {
-    final response = await dio.get<String>(
+    response = await dio.get<String>(
       url,
       cancelToken: cancelToken,
       options: Options(
@@ -104,14 +122,21 @@ Future<String?> _fetchText(Dio dio, String url, CancelToken? cancelToken) async 
         receiveTimeout: const Duration(seconds: 8),
         sendTimeout: const Duration(seconds: 8),
         validateStatus: (_) => true,
-        extra: {'prairie_hls_probe': true},
       ),
     );
-    if (response.statusCode == null || response.statusCode! >= 400) return null;
-    return response.data;
   } catch (_) {
     return null;
   }
+
+  final status = response.statusCode;
+  if (status == 401 || status == 403) throw HlsProbeAuthError(status!);
+  if (status == null || status >= 400) {
+    if (status == 404) {
+      developer.log('HLS playlist not found yet (404): $url', name: 'prairie.hls_probe');
+    }
+    return null;
+  }
+  return response.data;
 }
 
 Future<bool> _segmentReady(Dio dio, String url, CancelToken? cancelToken) async {

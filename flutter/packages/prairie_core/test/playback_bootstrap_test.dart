@@ -133,14 +133,11 @@ void main() {
   });
 
   group('effectiveHlsPlayMethod', () {
-    test('upgrades AV1 remux to transcode for Smart TV', () {
-      expect(effectiveHlsPlayMethod('remux', videoCodec: 'av1'), 'transcode');
-      expect(effectiveHlsPlayMethod('remux', videoCodec: 'AV01'), 'transcode');
-    });
-
-    test('keeps remux for non-AV1 and keeps transcode as-is', () {
-      expect(effectiveHlsPlayMethod('remux', videoCodec: 'hevc'), 'remux');
-      expect(effectiveHlsPlayMethod('transcode', videoCodec: 'av1'), 'transcode');
+    test('is a pure function of the server play method — no codec override', () {
+      expect(effectiveHlsPlayMethod('remux'), 'remux');
+      expect(effectiveHlsPlayMethod('REMUX'), 'remux');
+      expect(effectiveHlsPlayMethod('transcode'), 'transcode');
+      expect(effectiveHlsPlayMethod('direct'), 'transcode');
     });
   });
 

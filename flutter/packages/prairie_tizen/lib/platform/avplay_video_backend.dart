@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/widgets.dart';
 import 'package:prairie_core/prairie_core.dart';
@@ -20,10 +21,20 @@ class AvplayVideoBackend implements VideoBackend {
   String? _lastCaptionText;
   String? _lastError;
   bool _initialized = false;
+  bool? _lastBuffering;
+  bool? _lastIsInitialized;
 
   static bool _isHls(String url) {
     final path = url.split('?').first.toLowerCase();
     return path.endsWith('.m3u8') || path.contains('/hls') || path.contains('master.m3u8');
+  }
+
+  /// Redacts query-param values (session tokens) before a URL hits the log.
+  static String _redactQuery(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.query.isEmpty) return url;
+    final redacted = {for (final key in uri.queryParameters.keys) key: '<redacted>'};
+    return uri.replace(queryParameters: redacted).toString();
   }
 
   @override
@@ -45,6 +56,10 @@ class AvplayVideoBackend implements VideoBackend {
               StreamingPropertyType.userAgent: 'PrairieTizenClient',
             }
           : {StreamingPropertyType.userAgent: 'PrairieTizenClient'},
+    );
+    developer.log(
+      'attach url=${_redactQuery(url)} hls=$hls fixedMaxResolution=$fixed queryParams=${Uri.tryParse(url)?.queryParameters.keys.toList()}',
+      name: 'prairie.avplay',
     );
     _controller = controller;
     controller.addListener(_onControllerUpdate);
@@ -80,11 +95,25 @@ class AvplayVideoBackend implements VideoBackend {
   void _onControllerUpdate() {
     final controller = _controller;
     if (controller == null) return;
+    final value = controller.value;
 
-    if (controller.value.hasError) {
-      final message = (controller.value.errorDescription ?? 'Playback failed').trim();
+    if (value.isBuffering != _lastBuffering) {
+      _lastBuffering = value.isBuffering;
+      developer.log(
+        'isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}',
+        name: 'prairie.avplay',
+      );
+    }
+    if (value.isInitialized != _lastIsInitialized) {
+      _lastIsInitialized = value.isInitialized;
+      developer.log('isInitialized=${value.isInitialized} duration=${value.duration}', name: 'prairie.avplay');
+    }
+
+    if (value.hasError) {
+      final message = (value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
+        developer.log('hasError message=$message', name: 'prairie.avplay');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }

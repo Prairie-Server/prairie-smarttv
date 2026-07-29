@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Route;
@@ -10,9 +11,18 @@ const _progressIntervalMs = 10000;
 /// HLS remux/transcode sessions that stop advancing for this long after play
 /// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
 const _hlsStallTimeout = Duration(seconds: 20);
-/// PlusPlayer/webOS initialize must not hang forever when the HLS ladder is
-/// unplayable (e.g. AV1 fMP4 remux) while the server encode clock keeps moving.
+/// AVPlay/webOS initialize must not hang forever if the HLS ladder never
+/// becomes playable while the server encode clock keeps moving.
+///
+/// AVPlay's own `INITIAL_BUFFER_DURATION` (set on the HLS streaming property)
+/// means initialize() doesn't resolve until several segments are on disk —
+/// for a full encode (not remux) of high-resolution source, ffmpeg can run
+/// slower than real time, and a slow server/network delays every segment
+/// fetch on top of that. Transcode gets the same 90s budget as
+/// [transcodeStartupTimeout] (the upstream HLS-readiness wait) so this
+/// timeout isn't the tighter one in the chain.
 const _initializeTimeout = Duration(seconds: 25);
+const _initializeTimeoutTranscode = Duration(seconds: 90);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
@@ -112,14 +122,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
   }
 
-  String? _sourceVideoCodecForFile(WatchDetail? detail, int fileId) {
-    if (detail == null) return null;
-    for (final version in detail.versions) {
-      if (version.fileId == fileId) return version.codecVideo;
-    }
-    return detail.versions.isNotEmpty ? detail.versions.first.codecVideo : null;
-  }
-
   List<AudioTrackInfo> get _audioTracks {
     final watch = widget.launch.watch;
     final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
@@ -176,7 +178,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         nextSession,
         position,
         sourceResolution: _sourceResolutionForFile(widget.launch.watch, nextSession.mediaFileId),
-        sourceVideoCodec: _sourceVideoCodecForFile(widget.launch.watch, nextSession.mediaFileId),
         maxResolution: deviceCaps.maxResolution,
         cancelToken: cancel,
       );
@@ -221,6 +222,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         startPosition: prepared.playerStartSeconds > 0
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
+        playMethod: prepared.session.playMethod,
       );
       await backend.play();
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -349,7 +351,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           started,
           seekAt,
           sourceResolution: _sourceResolutionForFile(widget.launch.watch, started.mediaFileId),
-          sourceVideoCodec: _sourceVideoCodecForFile(widget.launch.watch, started.mediaFileId),
           maxResolution: deviceCaps.maxResolution,
           cancelToken: cancel,
         );
@@ -397,6 +398,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         startPosition: prepared.playerStartSeconds > 0
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
+        playMethod: prepared.session.playMethod,
       );
       await backend.play();
 
@@ -442,9 +444,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         setState(() {
           _error = e is ApiError
               ? e.message
-              : e is TranscodeStartupTimeoutError
-                  ? e.message
-                  : 'Playback failed: $e';
+              : e is HlsProbeAuthError
+                  ? 'Not authorized to play this stream. Try signing in again.'
+                  : e is TranscodeStartupTimeoutError
+                      ? e.message
+                      : 'Playback failed: $e';
           _loading = false;
         });
       }
@@ -469,11 +473,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _stallTimer?.cancel();
   }
 
-  Future<void> _initializeBackend(VideoBackend backend, {Duration? startPosition}) async {
+  Future<void> _initializeBackend(VideoBackend backend, {Duration? startPosition, String? playMethod}) async {
+    final timeout = playMethod?.trim().toLowerCase() == 'transcode' ? _initializeTimeoutTranscode : _initializeTimeout;
+    final startedAt = DateTime.now();
     try {
-      await backend.initialize(startPosition: startPosition).timeout(_initializeTimeout);
+      await backend.initialize(startPosition: startPosition).timeout(timeout);
+      developer.log(
+        'Player initialize succeeded in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
+        '(playMethod=$playMethod, budget=${timeout.inSeconds}s)',
+        name: 'prairie.player_screen',
+      );
     } on TimeoutException {
-      throw StateError('Player initialize timed out after ${_initializeTimeout.inSeconds}s');
+      developer.log(
+        'Player initialize timed out after ${timeout.inSeconds}s (playMethod=$playMethod)',
+        name: 'prairie.player_screen',
+      );
+      throw StateError('Player initialize timed out after ${timeout.inSeconds}s');
     }
   }
 

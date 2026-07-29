@@ -7,17 +7,13 @@ import 'playback_session_api.dart';
 import 'target_resolution.dart';
 import 'wait_for_hls_manifest.dart';
 
-export 'wait_for_hls_manifest.dart' show TranscodeStartupTimeoutError, isHlsUrl, waitForHlsManifest;
+export 'wait_for_hls_manifest.dart' show HlsProbeAuthError, TranscodeStartupTimeoutError, isHlsUrl, waitForHlsManifest;
 
-/// Remux of AV1 must package fMP4 HLS; PlusPlayer often never finishes
-/// initialize on that path. Prefer a full encode ladder for Smart TV.
-String effectiveHlsPlayMethod(String playMethod, {String? videoCodec}) {
-  final method = playMethod.trim().toLowerCase() == 'remux' ? 'remux' : 'transcode';
-  final sourceVideo = (videoCodec ?? '').toLowerCase();
-  if (method == 'remux' && (sourceVideo.contains('av1') || sourceVideo.contains('av01'))) {
-    return 'transcode';
-  }
-  return method;
+/// Purely a function of the server's chosen play method — no codec-specific
+/// override, so the same source always resolves the same way regardless of
+/// whether video-codec metadata happened to be populated for this call.
+String effectiveHlsPlayMethod(String playMethod) {
+  return playMethod.trim().toLowerCase() == 'remux' ? 'remux' : 'transcode';
 }
 
 bool needsHlsBootstrap(String? playMethod) {
@@ -127,7 +123,7 @@ const transcodeStartupTimeout = Duration(seconds: 90);
 
 /// After `/playback/start`, remux and transcode must POST `/playback/transcode/start`
 /// and play `manifest_url` (not the informational placeholder `stream_url`).
-/// Then wait until the first HLS segment exists so PlusPlayer does not time out.
+/// Then wait until the first HLS segment exists so AVPlay does not time out.
 Future<PreparedPlayback> preparePlayableSession(
   ApiClient client,
   PrairieSession session,
@@ -135,7 +131,6 @@ Future<PreparedPlayback> preparePlayableSession(
   double seekSeconds, {
   String? sourceResolution,
   String? maxResolution,
-  String? sourceVideoCodec,
   CancelToken? cancelToken,
   Dio? probeDio,
 }) async {
@@ -157,8 +152,7 @@ Future<PreparedPlayback> preparePlayableSession(
     maxResolution: maxResolution,
   );
 
-  final videoCodec = started.playbackInfo?.videoCodec ?? sourceVideoCodec;
-  var playMethod = effectiveHlsPlayMethod(started.playMethod, videoCodec: videoCodec);
+  var playMethod = effectiveHlsPlayMethod(started.playMethod);
   late TranscodeStartResponse transcode;
   try {
     transcode = await startTranscode(
