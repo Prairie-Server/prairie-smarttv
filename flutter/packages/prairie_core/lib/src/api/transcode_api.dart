@@ -197,9 +197,11 @@ Future<PreparedPlayback> preparePlayableSession(
   final streamUrl = buildStreamUrl(session.serverUrl, transcode.manifestUrl, session.accessToken);
 
   try {
+    // Prefer an explicit probe Dio; otherwise reuse ApiClient's Dio so HLS
+    // readiness polls advertise Prairie-SmartTV/… instead of Dart/x.y.
     await waitForHlsManifest(
       streamUrl,
-      dio: probeDio,
+      dio: probeDio ?? client.dio,
       timeout: transcodeStartupTimeout,
       requireSegment: true,
       throwOnTimeout: true,

@@ -117,6 +117,49 @@ TvPlaybackCapabilities buildTizenCapabilities({
   );
 }
 
+/// webOS AV1 hardware decode is common from ~2020 panels (webOS 5+); we
+/// advertise from webOS ≥ 6 to stay conservative without a canPlayType probe.
+const av1MinWebosVersion = 6.0;
+
+/// Build capabilities from a known webOS platform version + panel size.
+///
+/// Uses `device_info_plus_webos` signals (version, screen size, HDR10/UHD
+/// flags) plus the native `video_player_drm` backend availability.
+TvPlaybackCapabilities buildWebosCapabilities({
+  required double webosVersion,
+  required int screenWidth,
+  required int screenHeight,
+  bool nativePlayerAvailable = true,
+  bool? hdr10,
+  bool? uhd,
+}) {
+  final codecsVideo = <String>['h264'];
+  final major = webosVersion.floor();
+  if (nativePlayerAvailable || major >= 3) {
+    codecsVideo.add('hevc');
+  }
+  if (nativePlayerAvailable && webosVersion >= av1MinWebosVersion) {
+    codecsVideo.add('av1');
+  }
+
+  final containers = nativePlayerAvailable
+      ? <String>['mp4', 'mpegts', 'hls', 'mkv']
+      : <String>['mp4', 'mpegts', 'hls'];
+
+  var maxRes = resolutionTokenFromSize(screenWidth, screenHeight);
+  if (uhd == true && maxRes != '2160p') {
+    maxRes = '2160p';
+  }
+
+  return TvPlaybackCapabilities(
+    codecsVideo: codecsVideo,
+    codecsAudio: List<String>.from(TvPlaybackCapabilities.defaults.codecsAudio),
+    containers: containers,
+    maxResolution: maxRes,
+    hdr: hdr10 ?? major >= 4,
+  );
+}
+
 /// Map panel pixels to a Prairie `max_resolution` token.
 String resolutionTokenFromSize(int width, int height) {
   final w = width < 0 ? 0 : width;

@@ -46,14 +46,24 @@ class PrairieSession {
     username: username,
   );
 
-  PrairieSession copyWith({String? accessToken, String? refreshToken}) => PrairieSession(
-    serverUrl: serverUrl,
+  PrairieSession copyWith({
+    String? serverUrl,
+    String? accessToken,
+    String? refreshToken,
+    String? username,
+    String? profileId,
+    String? profileName,
+    String? profileAvatarUrl,
+    String? profileToken,
+    bool clearProfileToken = false,
+  }) => PrairieSession(
+    serverUrl: serverUrl ?? this.serverUrl,
     accessToken: accessToken ?? this.accessToken,
     refreshToken: refreshToken ?? this.refreshToken,
-    username: username,
-    profileId: profileId,
-    profileName: profileName,
-    profileAvatarUrl: profileAvatarUrl,
-    profileToken: profileToken,
+    username: username ?? this.username,
+    profileId: profileId ?? this.profileId,
+    profileName: profileName ?? this.profileName,
+    profileAvatarUrl: profileAvatarUrl ?? this.profileAvatarUrl,
+    profileToken: clearProfileToken ? null : (profileToken ?? this.profileToken),
   );
 }

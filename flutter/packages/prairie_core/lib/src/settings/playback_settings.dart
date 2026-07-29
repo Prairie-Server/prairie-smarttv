@@ -78,10 +78,17 @@ class PlaybackSettings {
   }
 }
 
-const _playbackSettingsKey = 'prairie.settings.playback';
+/// Stable key matching TS `prairie.playbackSettings`. Legacy Flutter key
+/// `prairie.settings.playback` is read as a fallback and migrated on save /
+/// via [DurableStore.ensureStorageSchema].
+const playbackSettingsKey = 'prairie.playbackSettings';
+const legacyPlaybackSettingsKey = 'prairie.settings.playback';
 
 Future<PlaybackSettings> loadPlaybackSettings(SharedPreferencesAsync prefs) async {
-  final raw = await prefs.getString(_playbackSettingsKey);
+  var raw = await prefs.getString(playbackSettingsKey);
+  if (raw == null || raw.isEmpty) {
+    raw = await prefs.getString(legacyPlaybackSettingsKey);
+  }
   if (raw == null) return const PlaybackSettings();
   try {
     return PlaybackSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -91,7 +98,7 @@ Future<PlaybackSettings> loadPlaybackSettings(SharedPreferencesAsync prefs) asyn
 }
 
 Future<PlaybackSettings> savePlaybackSettings(PlaybackSettings settings, SharedPreferencesAsync prefs) async {
-  await prefs.setString(_playbackSettingsKey, jsonEncode(settings.toJson()));
+  await prefs.setString(playbackSettingsKey, jsonEncode(settings.toJson()));
   return settings;
 }
 

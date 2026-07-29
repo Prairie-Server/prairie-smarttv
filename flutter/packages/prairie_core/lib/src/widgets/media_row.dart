@@ -3,15 +3,23 @@ import 'package:prairie_core/prairie_core.dart';
 
 /// A titled horizontal scroll rail of cards. Mirrors MediaRow.tsx.
 class MediaRow<T> extends StatelessWidget {
-  const MediaRow({super.key, required this.title, required this.items, required this.itemBuilder});
+  const MediaRow({
+    super.key,
+    required this.title,
+    required this.items,
+    required this.itemBuilder,
+    this.variant = MediaRowVariant.poster,
+  });
 
   final String title;
   final List<T> items;
   final Widget Function(BuildContext context, T item, int index) itemBuilder;
+  final MediaRowVariant variant;
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+    final height = variant == MediaRowVariant.landscape ? 220.0 : 240.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 32),
       child: Column(
@@ -23,7 +31,7 @@ class MediaRow<T> extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: 240,
+            height: height,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               scrollDirection: Axis.horizontal,
@@ -37,3 +45,5 @@ class MediaRow<T> extends StatelessWidget {
     );
   }
 }
+
+enum MediaRowVariant { poster, landscape }

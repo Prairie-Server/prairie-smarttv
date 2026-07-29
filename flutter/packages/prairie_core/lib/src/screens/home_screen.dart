@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
+import 'package:prairie_core/src/lib/detail_metadata.dart';
+import 'package:prairie_core/src/widgets/home_hero.dart';
+import 'package:prairie_core/src/widgets/landscape_card.dart';
 
-/// Mirrors HomeBrowseScreen.tsx's rails, minus continue-watching/hero (those
-/// need watch.ts/userState.ts wiring into a dedicated widget).
+/// Mirrors HomeBrowseScreen.tsx: featured hero carousel, landscape continue-
+/// watching rails, poster rails, and Live TV On now.
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -13,12 +16,17 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   late Future<List<HomeSection>> _sections;
+  int _heroIndex = 0;
 
   @override
   void initState() {
     super.initState();
     final session = ref.read(sessionProvider)!;
     _sections = fetchHomeSections(ref.read(apiClientProvider), session);
+  }
+
+  void _openItem(CatalogItem item) {
+    ref.read(routeProvider.notifier).go(DetailRoute(contentId: item.contentId, seed: item, back: const HomeRoute()));
   }
 
   @override
@@ -37,46 +45,110 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             return Center(child: Text('${snapshot.error}', style: const TextStyle(color: PrairieColors.danger)));
           }
           final sections = snapshot.data ?? [];
+          HomeSection? featured;
+          for (final s in sections) {
+            if (s.featured == true && s.items.isNotEmpty) {
+              featured = s;
+              break;
+            }
+          }
+          final rows = sections.where((s) => s.featured != true).toList();
           if (sections.isEmpty && onNow.isEmpty) {
             return const Center(child: Text('Nothing here yet', style: TextStyle(color: PrairieColors.muted)));
           }
+          final heroAutofocus = featured != null;
           return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 24),
+            padding: EdgeInsets.zero,
             children: [
-              if (onNow.isNotEmpty)
-                MediaRow<OnNowEntry>(
-                  title: 'On now',
-                  items: onNow,
-                  itemBuilder: (context, entry, index) => _OnNowCard(
-                    entry: entry,
-                    serverUrl: session.serverUrl,
-                    autofocus: index == 0,
-                    onTap: () => ref
-                        .read(routeProvider.notifier)
-                        .go(LiveTvPlayerRoute(channel: entry.channel, back: const HomeRoute())),
-                  ),
+              if (featured != null)
+                HomeHero(
+                  items: featured.items,
+                  serverUrl: session.serverUrl,
+                  index: _heroIndex,
+                  onIndexChange: (i) => setState(() => _heroIndex = i),
+                  onOpenItem: _openItem,
                 ),
-              for (var s = 0; s < sections.length; s++)
-                MediaRow<CatalogItem>(
-                  title: sections[s].title,
-                  items: sections[s].items,
-                  itemBuilder: (context, item, index) => PosterCard(
-                    title: item.title,
-                    subtitle: item.subtitle,
-                    posterUrl: item.posterUrl,
-                    serverUrl: session.serverUrl,
-                    watched: item.userState?.played ?? false,
-                    favorite: item.userState?.isFavorite ?? false,
-                    progress: item.progress,
-                    autofocus: onNow.isEmpty && s == 0 && index == 0,
-                    onTap: () => ref
-                        .read(routeProvider.notifier)
-                        .go(DetailRoute(contentId: item.contentId, seed: item, back: const HomeRoute())),
-                  ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (onNow.isNotEmpty)
+                      MediaRow<OnNowEntry>(
+                        title: 'On now',
+                        items: onNow,
+                        itemBuilder: (context, entry, index) => _OnNowCard(
+                          entry: entry,
+                          serverUrl: session.serverUrl,
+                          autofocus: !heroAutofocus && index == 0,
+                          onTap: () => ref
+                              .read(routeProvider.notifier)
+                              .go(LiveTvPlayerRoute(channel: entry.channel, back: const HomeRoute())),
+                        ),
+                      ),
+                    for (var s = 0; s < rows.length; s++)
+                      _buildSectionRow(
+                        session: session,
+                        section: rows[s],
+                        sectionIndex: s,
+                        autofocusFirst: !heroAutofocus && onNow.isEmpty && s == 0,
+                      ),
+                  ],
                 ),
+              ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildSectionRow({
+    required PrairieSession session,
+    required HomeSection section,
+    required int sectionIndex,
+    required bool autofocusFirst,
+  }) {
+    final landscape = usesLandscapeCards(section.sectionType, section.items);
+    if (landscape) {
+      return MediaRow<CatalogItem>(
+        title: section.title,
+        items: section.items,
+        variant: MediaRowVariant.landscape,
+        itemBuilder: (context, item, index) {
+          final remaining = (item.durationSeconds != null && item.positionSeconds != null)
+              ? formatRuntimeSeconds(item.durationSeconds! - item.positionSeconds!)
+              : null;
+          final subtitle = item.seriesTitle != null
+              ? '${item.seriesTitle}${item.seasonNumber != null && item.episodeNumber != null ? ' · S${item.seasonNumber}E${item.episodeNumber}' : ''}'
+              : item.subtitle;
+          return LandscapeCard(
+            title: item.title,
+            subtitle: subtitle,
+            meta: remaining != null ? '$remaining left' : null,
+            imageUrl: item.backdropUrl ?? item.posterUrl,
+            serverUrl: session.serverUrl,
+            progress: item.progress,
+            watched: item.userState?.played ?? false,
+            autofocus: autofocusFirst && index == 0,
+            onTap: () => _openItem(item),
+          );
+        },
+      );
+    }
+    return MediaRow<CatalogItem>(
+      title: section.title,
+      items: section.items,
+      itemBuilder: (context, item, index) => PosterCard(
+        title: item.title,
+        subtitle: item.subtitle,
+        posterUrl: item.posterUrl,
+        serverUrl: session.serverUrl,
+        watched: item.userState?.played ?? false,
+        favorite: item.userState?.isFavorite ?? false,
+        progress: item.progress,
+        autofocus: autofocusFirst && index == 0,
+        onTap: () => _openItem(item),
       ),
     );
   }

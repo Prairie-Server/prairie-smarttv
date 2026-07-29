@@ -1,5 +1,6 @@
 import '../models/auth.dart';
 import 'api_client.dart';
+import 'api_error.dart';
 import 'playback_types.dart';
 
 /// Mirrors `playback_info` from src/player/types.ts.
@@ -98,9 +99,33 @@ Future<void> reportPlaybackProgress(ApiClient client, PrairieSession session, St
       body: {'position': position, 'is_paused': isPaused},
     );
 
+/// True when DELETE/progress hit a session the server already reaped
+/// (ffmpeg failure, idle timeout, prior stop, superseded transcode id).
+bool isPlaybackSessionGone(Object error) {
+  if (error is! ApiError) return false;
+  if (error.status != 404) return false;
+  final code = (error.code ?? '').toLowerCase();
+  return code.isEmpty ||
+      code == 'playback_session_not_found' ||
+      code == 'not_found' ||
+      code == 'session_not_found';
+}
+
 /// Mirrors `stopPlaybackSession`.
-Future<void> stopPlaybackSession(ApiClient client, PrairieSession session, String playbackSessionId) => client.request<dynamic>(
-  _sessionOptions(session),
-  '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}',
-  method: 'DELETE',
-);
+///
+/// Idempotent: a 404 `playback_session_not_found` is treated as success — the
+/// encode job / session is already gone (common after ffmpeg errors).
+Future<void> stopPlaybackSession(ApiClient client, PrairieSession session, String playbackSessionId) async {
+  final trimmed = playbackSessionId.trim();
+  if (trimmed.isEmpty) return;
+  try {
+    await client.request<dynamic>(
+      _sessionOptions(session),
+      '/api/v1/playback/${Uri.encodeComponent(trimmed)}',
+      method: 'DELETE',
+    );
+  } on ApiError catch (err) {
+    if (isPlaybackSessionGone(err)) return;
+    rethrow;
+  }
+}

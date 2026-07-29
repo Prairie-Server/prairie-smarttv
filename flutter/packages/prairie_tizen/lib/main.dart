@@ -27,6 +27,9 @@ Future<void> main() async {
       overrides: [
         videoBackendFactoryProvider.overrideWithValue(() => AvplayVideoBackend()),
         tvCapabilitiesProvider.overrideWithValue(caps),
+        clientIdentityProvider.overrideWithValue(
+          ClientIdentity.smartTv(platformLabel: 'Tizen', devicePlatform: 'tizen'),
+        ),
       ],
       child: const PrairieApp(),
     ),

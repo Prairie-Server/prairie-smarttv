@@ -1,5 +1,6 @@
 import '../models/auth.dart';
 import '../models/catalog_item.dart';
+import '../models/watch_detail.dart';
 import 'api_client.dart';
 
 ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
@@ -181,39 +182,66 @@ class ItemDetail {
   const ItemDetail({
     required this.item,
     this.tagline,
+    this.ratingRtCritic,
+    this.ratingRtAudience,
     this.cast = const [],
     this.crew = const [],
     this.studios = const [],
     this.networks = const [],
+    this.releaseDate,
+    this.firstAirDate,
+    this.lastAirDate,
+    this.showStatus,
+    this.seasonCount,
+    this.episodeCount,
     this.seriesId,
     this.seasonNumber,
     this.episodeNumber,
+    this.userData,
     this.versions = const [],
     this.extras = const [],
   });
 
   final CatalogItem item;
   final String? tagline;
+  final int? ratingRtCritic;
+  final int? ratingRtAudience;
   final List<CastMember> cast;
   final List<CrewMember> crew;
   final List<String> studios;
   final List<String> networks;
+  final String? releaseDate;
+  final String? firstAirDate;
+  final String? lastAirDate;
+  final String? showStatus;
+  final int? seasonCount;
+  final int? episodeCount;
   final String? seriesId;
   final int? seasonNumber;
   final int? episodeNumber;
+  final WatchUserData? userData;
   final List<ItemVersion> versions;
   final List<ItemExtra> extras;
 
   factory ItemDetail.fromJson(Map<String, dynamic> json) => ItemDetail(
     item: catalogItemFromJson(json),
     tagline: json['tagline'] as String?,
+    ratingRtCritic: (json['rating_rt_critic'] as num?)?.toInt(),
+    ratingRtAudience: (json['rating_rt_audience'] as num?)?.toInt(),
     cast: (json['cast'] as List<dynamic>? ?? []).map((j) => CastMember.fromJson(j as Map<String, dynamic>)).toList(),
     crew: (json['crew'] as List<dynamic>? ?? []).map((j) => CrewMember.fromJson(j as Map<String, dynamic>)).toList(),
     studios: (json['studios'] as List<dynamic>?)?.cast<String>() ?? const [],
     networks: (json['networks'] as List<dynamic>?)?.cast<String>() ?? const [],
+    releaseDate: json['release_date'] as String?,
+    firstAirDate: json['first_air_date'] as String?,
+    lastAirDate: json['last_air_date'] as String?,
+    showStatus: json['show_status'] as String?,
+    seasonCount: json['season_count'] as int?,
+    episodeCount: json['episode_count'] as int?,
     seriesId: json['series_id'] as String?,
     seasonNumber: json['season_number'] as int?,
     episodeNumber: json['episode_number'] as int?,
+    userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
     versions: (json['versions'] as List<dynamic>? ?? []).map((j) => ItemVersion.fromJson(j as Map<String, dynamic>)).toList(),
     extras: (json['extras'] as List<dynamic>? ?? []).map((j) => ItemExtra.fromJson(j as Map<String, dynamic>)).toList(),
   );
@@ -257,6 +285,7 @@ class EpisodeSummary {
     this.posterUrl,
     this.stillUrl,
     this.runtime,
+    this.userData,
   });
 
   final String contentId;
@@ -267,6 +296,7 @@ class EpisodeSummary {
   final String? posterUrl;
   final String? stillUrl;
   final int? runtime;
+  final WatchUserData? userData;
 
   factory EpisodeSummary.fromJson(Map<String, dynamic> json) => EpisodeSummary(
     contentId: json['content_id'] as String,
@@ -277,6 +307,7 @@ class EpisodeSummary {
     posterUrl: json['poster_url'] as String?,
     stillUrl: json['still_url'] as String?,
     runtime: json['runtime'] as int?,
+    userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
   );
 }
 

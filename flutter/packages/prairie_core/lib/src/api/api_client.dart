@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpClient, HttpHeaders;
 
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
+import '../platform/client_identity.dart';
 import 'api_error.dart';
 
 /// Mirrors `ApiClientOptions` from src/api/client.ts.
@@ -138,20 +141,42 @@ String buildStreamUrl(String serverUrl, String streamPath, String? token, [Strin
 /// mirroring the TS module-level `refreshInFlight` variable — this app has
 /// exactly one active session at a time.
 class ApiClient {
-  ApiClient({Dio? dio}) : _dio = dio ?? Dio();
+  ApiClient({Dio? dio, ClientIdentity identity = const ClientIdentity()})
+    : identity = identity,
+      _dio = dio ?? Dio(BaseOptions(headers: {HttpHeaders.userAgentHeader: identity.userAgent})) {
+    // Override Dart's default `Dart/x.y` UA on both Dio headers and the
+    // underlying HttpClient (HttpClient.userAgent wins if left unset).
+    _dio.options.headers[HttpHeaders.userAgentHeader] = identity.userAgent;
+    final adapter = _dio.httpClientAdapter;
+    if (adapter is IOHttpClientAdapter) {
+      final previous = adapter.createHttpClient;
+      adapter.createHttpClient = () {
+        final client = previous?.call() ?? HttpClient();
+        client.userAgent = identity.userAgent;
+        return client;
+      };
+    }
+  }
 
+  /// Device / UA identity used on every request.
+  final ClientIdentity identity;
   final Dio _dio;
   static Completer<_RefreshResult?>? _refreshInFlight;
 
+  /// Dio instance for out-of-band probes (HLS readiness) that should share UA.
+  Dio get dio => _dio;
+
   Map<String, String> _buildHeaders(ApiClientOptions options, {String? accessToken, bool hasBody = false}) {
-    final headers = <String, String>{};
+    final headers = <String, String>{
+      HttpHeaders.userAgentHeader: identity.userAgent,
+    };
     if (hasBody) headers['Content-Type'] = 'application/json';
     final token = accessToken ?? options.accessToken;
     if (token != null) headers['Authorization'] = 'Bearer $token';
     if (options.profileId != null) headers['X-Profile-Id'] = options.profileId!;
     if (options.profileToken != null) headers['X-Profile-Token'] = options.profileToken!;
-    headers['X-Prairie-Device-Platform'] = 'smarttv';
-    headers['X-Prairie-Device-Name'] = 'Prairie Smart TV';
+    headers['X-Prairie-Device-Platform'] = identity.devicePlatform;
+    headers['X-Prairie-Device-Name'] = identity.deviceName;
     // TODO: port getImageFormats()'s capability-detected preference list
     // (src/lib/imageFormats.ts) once image loading is ported; avif/webp
     // covers what Flutter's built-in codecs decode today.
@@ -239,7 +264,15 @@ class ApiClient {
       final response = await _dio.post<dynamic>(
         _joinUrl(serverUrl, '/api/v1/auth/refresh'),
         data: jsonEncode({'refresh_token': refreshToken}),
-        options: Options(headers: {'Content-Type': 'application/json'}, validateStatus: (_) => true),
+        options: Options(
+          headers: {
+            HttpHeaders.userAgentHeader: identity.userAgent,
+            'Content-Type': 'application/json',
+            'X-Prairie-Device-Platform': identity.devicePlatform,
+            'X-Prairie-Device-Name': identity.deviceName,
+          },
+          validateStatus: (_) => true,
+        ),
       );
       if (response.statusCode == null || response.statusCode! >= 400) return null;
       final data = response.data;

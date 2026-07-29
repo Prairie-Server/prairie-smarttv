@@ -2,9 +2,8 @@ import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
-/// Mirrors ProfileSelectScreen.tsx. PIN-protected profiles
-/// (`verifyProfilePin`) aren't wired up yet — selecting a PIN profile logs
-/// in without verification for now.
+/// Mirrors ProfileSelectScreen.tsx — PIN-protected profiles require
+/// [verifyProfilePin] and store the returned `profileToken` on the session.
 class ProfilesScreen extends ConsumerStatefulWidget {
   const ProfilesScreen({super.key, required this.auth});
 
@@ -16,6 +15,10 @@ class ProfilesScreen extends ConsumerStatefulWidget {
 
 class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
   late Future<List<Profile>> _profiles;
+  Profile? _pinProfile;
+  final _pinController = TextEditingController();
+  bool _busy = false;
+  String? _error;
 
   @override
   void initState() {
@@ -23,22 +26,77 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
     _profiles = listProfiles(ref.read(apiClientProvider), widget.auth.serverUrl, widget.auth.accessToken);
   }
 
-  Future<void> _select(Profile profile) async {
-    await ref
-        .read(sessionProvider.notifier)
-        .set(
-          PrairieSession(
-            serverUrl: widget.auth.serverUrl,
-            accessToken: widget.auth.accessToken,
-            refreshToken: widget.auth.refreshToken,
-            username: widget.auth.username,
-            profileId: profile.id,
-            profileName: profile.name,
-            profileAvatarUrl: profile.avatarUrl,
-          ),
-        );
+  @override
+  void dispose() {
+    _pinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _finish(Profile profile, {String? profileToken}) async {
+    final client = ref.read(apiClientProvider);
+    final health = await fetchServerHealth(client, widget.auth.serverUrl);
+    await ref.read(sessionProvider.notifier).set(
+      PrairieSession(
+        serverUrl: widget.auth.serverUrl,
+        accessToken: widget.auth.accessToken,
+        refreshToken: widget.auth.refreshToken,
+        username: widget.auth.username,
+        profileId: profile.id,
+        profileName: profile.name,
+        profileAvatarUrl: profile.avatarUrl,
+        profileToken: profileToken,
+      ),
+      fetchedName: health?.serverName ?? '',
+    );
     if (!mounted) return;
     ref.read(routeProvider.notifier).go(const HomeRoute());
+  }
+
+  Future<void> _select(Profile profile) async {
+    setState(() => _error = null);
+    if (profile.hasPin ?? false) {
+      setState(() {
+        _pinProfile = profile;
+        _pinController.clear();
+      });
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await _finish(profile);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _submitPin() async {
+    final pinProfile = _pinProfile;
+    if (pinProfile == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await verifyProfilePin(
+        ref.read(apiClientProvider),
+        widget.auth.serverUrl,
+        widget.auth.accessToken,
+        pinProfile.id,
+        _pinController.text.trim(),
+      );
+      if (!result.valid || result.profileToken == null || result.profileToken!.isEmpty) {
+        throw StateError('Incorrect PIN');
+      }
+      await _finish(pinProfile, profileToken: result.profileToken);
+    } on ApiError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = e is StateError ? e.message : '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -60,20 +118,76 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('WHO\'S WATCHING', style: TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600, letterSpacing: 2)),
+                  const Text(
+                    'WHO\'S WATCHING',
+                    style: TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600, letterSpacing: 2),
+                  ),
                   const SizedBox(height: 8),
                   const Text('Prairie', style: TextStyle(fontFamily: 'Fraunces', fontSize: 36, color: PrairieColors.ink)),
+                  const SizedBox(height: 8),
+                  Text(widget.auth.username, style: const TextStyle(color: PrairieColors.muted)),
                   const SizedBox(height: 40),
-                  Wrap(
-                    spacing: 24,
-                    runSpacing: 24,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (var i = 0; i < profiles.length; i++)
-                        _ProfileCard(profile: profiles[i], autofocus: i == 0, onTap: () => _select(profiles[i])),
-                    ],
-                  ),
-                  if (hasSession) ...[
+                  if (_error != null) ...[
+                    Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_pinProfile == null)
+                    Wrap(
+                      spacing: 24,
+                      runSpacing: 24,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (var i = 0; i < profiles.length; i++)
+                          _ProfileCard(
+                            profile: profiles[i],
+                            autofocus: i == 0,
+                            onTap: _busy ? null : () => _select(profiles[i]),
+                          ),
+                      ],
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Enter PIN for ${_pinProfile!.name}',
+                            style: const TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _pinController,
+                            obscureText: true,
+                            keyboardType: TextInputType.number,
+                            autofocus: true,
+                            decoration: const InputDecoration(labelText: 'PIN'),
+                            onSubmitted: (_) => _submitPin(),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              ElevatedButton(
+                                onPressed: _busy ? null : _submitPin,
+                                child: Text(_busy ? 'Checking…' : 'Continue'),
+                              ),
+                              const SizedBox(width: 12),
+                              TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => setState(() {
+                                        _pinProfile = null;
+                                        _pinController.clear();
+                                        _error = null;
+                                      }),
+                                child: const Text('Cancel', style: TextStyle(color: PrairieColors.muted)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (hasSession && _pinProfile == null) ...[
                     const SizedBox(height: 32),
                     TextButton(
                       onPressed: () => ref.read(routeProvider.notifier).go(const HomeRoute()),
@@ -94,7 +208,7 @@ class _ProfileCard extends StatelessWidget {
   const _ProfileCard({required this.profile, required this.onTap, this.autofocus = false});
 
   final Profile profile;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool autofocus;
 
   @override

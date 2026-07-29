@@ -1,16 +1,32 @@
 # prairie_webos
 
-A new Flutter project.
+Prairie Smart TV client for LG webOS, built with [flutter-webos](https://github.com/lg-flutter-webos/flutter-webos).
 
-## Getting Started
+## Native plugins
 
-This project is a starting point for a Flutter application.
+Git dependencies from https://github.com/lg-flutter-webos/plugins (see `doc/plugin-list.md`):
 
-A few resources to get you started if this is your first Flutter project:
+| Package | Path | Purpose |
+| --- | --- | --- |
+| `video_player_drm` | `packages/video_player_drm` | Playback (multi-audio, subs, DRM) |
+| `device_info_plus_webos` | `packages/device_info_plus` | Device tier + capabilities |
+| `shared_preferences_webos` | `packages/shared_preferences` | Settings / session identity |
+| `flutter_secure_storage_webos` | `packages/flutter_secure_storage` | Tokens |
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Platform wiring
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- `lib/platform/webos_video_backend.dart` — `VideoBackend` over `video_player_drm`
+- `lib/platform/device_tier_webos.dart` — `PerformanceTier` from device info
+- `lib/main.dart` — overrides `videoBackendFactoryProvider` + `tvCapabilitiesProvider`
+
+## appinfo.json requirements
+
+- `"transparent": true` — required for the hardware video plane
+- `requiredACG`: `systemconfig.query` (device info), `securitykey.operation` (secure storage)
+
+## Build
+
+```bash
+# From repo flutter/ (requires flutter-webos + NDK on Linux)
+../scripts/build-webos.sh --obfuscate
+```

@@ -12,11 +12,13 @@
     "visible": true,
     "defaultWindowType": "card",
     "trustLevel": "default",
-    "locationHint":"none",
-    "noSplashOnLaunch":true,
+    "locationHint": "none",
+    "noSplashOnLaunch": true,
     "spinnerOnLaunch": false,
-    "transparent":false,
-    "uiRevision":2,
+    "transparent": true,
+    "uiRevision": 2,
     "requiredACG": [
+        "systemconfig.query",
+        "securitykey.operation"
     ]
 }
