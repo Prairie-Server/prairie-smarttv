@@ -29,10 +29,9 @@ dependencies:
       path: packages/shared_preferences
       ref: main
   flutter_secure_storage_webos:
-    git:
-      url: https://github.com/lg-flutter-webos/plugins.git
-      path: packages/flutter_secure_storage
-      ref: main
+    # Path fork: upstream git package pins platform_interface ^1.1.0 which
+    # cannot solve with flutter_secure_storage ^10 (needs ^2.0.1). API-compatible.
+    path: ../flutter_secure_storage_webos
   # Preferred over video_player_webos for multi-audio/subs/DRM.
   video_player_drm:
     git:

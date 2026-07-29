@@ -13,9 +13,11 @@ class WebosVideoBackend implements VideoBackend {
   VideoPlayerController? _controller;
   final _positionController = StreamController<Duration>.broadcast();
   final _captionController = StreamController<String?>.broadcast();
+  final _errorController = StreamController<String>.broadcast();
   Timer? _positionTimer;
   List<SubtitleTrackChoice> _subtitleTracks = [];
   String? _lastCaptionText;
+  String? _lastError;
   bool _initialized = false;
 
   static bool _isHls(String url) {
@@ -76,6 +78,14 @@ class WebosVideoBackend implements VideoBackend {
     final controller = _controller;
     if (controller == null) return;
 
+    if (controller.value.hasError) {
+      final message = (controller.value.errorDescription ?? 'Playback failed').trim();
+      if (message.isNotEmpty && message != _lastError) {
+        _lastError = message;
+        if (!_errorController.isClosed) _errorController.add(message);
+      }
+    }
+
     // Tracks often arrive after initialize via platform events.
     final incoming = controller.value.subtitleTracks;
     if (incoming != null && incoming.length != _subtitleTracks.length) {
@@ -124,6 +134,9 @@ class WebosVideoBackend implements VideoBackend {
   Stream<Duration> get positionStream => _positionController.stream;
 
   @override
+  Stream<String> get errorStream => _errorController.stream;
+
+  @override
   Duration? get duration {
     final d = _controller?.value.duration;
     if (d == null || d <= Duration.zero) return null;
@@ -154,5 +167,6 @@ class WebosVideoBackend implements VideoBackend {
     }
     if (!_positionController.isClosed) await _positionController.close();
     if (!_captionController.isClosed) await _captionController.close();
+    if (!_errorController.isClosed) await _errorController.close();
   }
 }

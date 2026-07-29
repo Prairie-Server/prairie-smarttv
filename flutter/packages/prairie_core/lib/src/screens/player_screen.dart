@@ -7,6 +7,9 @@ import 'package:prairie_core/prairie_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _progressIntervalMs = 10000;
+/// HLS remux/transcode sessions that stop advancing for this long after play
+/// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
+const _hlsStallTimeout = Duration(seconds: 20);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
@@ -32,12 +35,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _activeSessionId;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<String?>? _captionSub;
+  StreamSubscription<String>? _errorSub;
   Duration _position = Duration.zero;
+  Duration _lastProgressPosition = Duration.zero;
+  DateTime? _lastProgressAt;
   bool _loading = true;
   String? _error;
   bool _controlsVisible = true;
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
+  Timer? _stallTimer;
   bool _exiting = false;
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
@@ -56,8 +63,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _prepareCancel?.cancel();
     _positionSub?.cancel();
     _captionSub?.cancel();
+    _errorSub?.cancel();
     _progressTimer?.cancel();
     _hideControlsTimer?.cancel();
+    _stallTimer?.cancel();
     // Widget teardown that bypasses [_exit] (route replace, error boundary)
     // must still stop the Prairie session and free the hardware decoder.
     final sessionId = _activeSessionId;
@@ -206,13 +215,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
 
       setState(() => _loading = false);
+      _lastProgressPosition = _position;
+      _lastProgressAt = DateTime.now();
       _positionSub = backend.positionStream.listen((position) {
-        if (mounted) setState(() => _position = position);
+        if (!mounted) return;
+        if (position != _lastProgressPosition) {
+          _lastProgressPosition = position;
+          _lastProgressAt = DateTime.now();
+        }
+        setState(() => _position = position);
       });
       _captionSub = backend.captionStream.listen((text) {
         if (mounted) setState(() => _caption = text);
       });
+      _errorSub = backend.errorStream.listen((message) {
+        if (!mounted || _exiting || _error != null) return;
+        setState(() {
+          _error = message;
+          _loading = false;
+        });
+      });
       _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
     } catch (e) {
       if (startedSessionId != null && _activeSessionId == startedSessionId) {
@@ -229,6 +256,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
       }
     }
+  }
+
+  void _checkHlsStall() {
+    if (!mounted || _exiting || _error != null || _loading) return;
+    final backend = _backend;
+    if (backend == null || !backend.isPlaying) return;
+    final lastAt = _lastProgressAt;
+    if (lastAt == null) return;
+    if (DateTime.now().difference(lastAt) < _hlsStallTimeout) return;
+    setState(() {
+      _error = 'Playback stalled — the stream stopped producing media.';
+      _loading = false;
+    });
+    _stallTimer?.cancel();
   }
 
   /// Mirrors `resolvePreferredSubtitleIndex`: auto-select a text track
@@ -305,6 +346,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _activeSessionId = null;
     _playbackSession = null;
     _progressTimer?.cancel();
+    _stallTimer?.cancel();
+    await _errorSub?.cancel();
+    _errorSub = null;
     if (sessionId != null) {
       await _reportProgress(paused: true);
       // Await stop so Back cannot race a new play against a still-open session
