@@ -282,18 +282,31 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         if (!didPop) ref.read(routeProvider.notifier).go(widget.back);
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(detail?.item.title ?? widget.seed?.title ?? 'Loading…', style: const TextStyle(fontFamily: 'Fraunces')),
-          leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(widget.back)),
-        ),
         body: _loading && detail == null
           ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
           : detail == null
-          ? Center(child: Text(_error ?? 'Not found', style: const TextStyle(color: PrairieColors.danger)))
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_error ?? 'Not found', style: const TextStyle(color: PrairieColors.danger)),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: () => ref.read(routeProvider.notifier).go(widget.back),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Back'),
+                  ),
+                ],
+              ),
+            )
           : ListView(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.zero,
               children: [
-                if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(_error!, style: const TextStyle(color: PrairieColors.danger))),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                    child: Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
+                  ),
                 _Hero(
                   detail: detail,
                   serverUrl: session.serverUrl,
@@ -306,6 +319,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   showStartOver: showStartOver,
                   playEnabled: !isSeries || nextUp != null,
                   seasonCount: _seasons.length,
+                  onBack: () => ref.read(routeProvider.notifier).go(widget.back),
                   onPlay: () {
                     if (isSeries) {
                       if (nextUp == null) return;
@@ -325,6 +339,11 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   onToggleWatchlist: _toggleWatchlist,
                   onToggleWatched: _toggleWatched,
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 if (!isSeries && detail.versions.length > 1) ...[
                   const SizedBox(height: 24),
                   const Text('Version', style: TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink)),
@@ -438,6 +457,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                     ),
                   ),
                 ],
+                    ],
+                  ),
+                ),
               ],
             ),
       ),
@@ -480,6 +502,7 @@ class _Hero extends StatelessWidget {
     required this.showStartOver,
     required this.playEnabled,
     required this.seasonCount,
+    required this.onBack,
     required this.onPlay,
     required this.onStartOver,
     required this.onToggleFavorite,
@@ -498,6 +521,7 @@ class _Hero extends StatelessWidget {
   final bool showStartOver;
   final bool playEnabled;
   final int seasonCount;
+  final VoidCallback onBack;
   final VoidCallback onPlay;
   final VoidCallback onStartOver;
   final VoidCallback onToggleFavorite;
@@ -519,179 +543,187 @@ class _Hero extends StatelessWidget {
     // Mirrors `.detail-hero { min-height: min(70vh, 640px) }` — TV viewports
     // are essentially always tall enough to hit the 640px cap.
     final heroHeight = (MediaQuery.sizeOf(context).height * 0.7).clamp(0, 640).toDouble();
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: SizedBox(
-        height: heroHeight,
-        child: Stack(
-          children: [
-            const Positioned.fill(
-              child: DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated)),
-            ),
-            if (backdrop != null)
-              Positioned.fill(
-                child: Image.network(resolveAssetUrl(serverUrl, backdrop), fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+    return SizedBox(
+      height: heroHeight,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated)),
+          if (backdrop != null)
+            Image.network(resolveAssetUrl(serverUrl, backdrop), fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  const Color(0xFF0A0C10).withValues(alpha: 0.92),
+                  const Color(0xFF0A0C10).withValues(alpha: 0.55),
+                  const Color(0xFF0A0C10).withValues(alpha: 0.25),
+                ],
+                stops: const [0.18, 0.55, 1.0],
               ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      const Color(0xFF0A0C10).withValues(alpha: 0.92),
-                      const Color(0xFF0A0C10).withValues(alpha: 0.55),
-                      const Color(0xFF0A0C10).withValues(alpha: 0.25),
-                    ],
-                    stops: const [0.18, 0.55, 1.0],
+            ),
+          ),
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextButton.icon(
+                    onPressed: onBack,
+                    style: TextButton.styleFrom(
+                      foregroundColor: PrairieColors.ink,
+                      backgroundColor: const Color(0x590A0C10),
+                      padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                      shape: const StadiumBorder(),
+                    ),
+                    icon: const Icon(Icons.arrow_back, size: 18),
+                    label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
-                ),
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1024),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (poster != null && backdrop != null) ...[
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 40, offset: const Offset(0, 18))],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: Image.network(
-                              resolveAssetUrl(serverUrl, poster),
-                              width: 160,
-                              height: 240,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const SizedBox(width: 160, height: 240, child: PosterFallback()),
+                  const Spacer(),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1024),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (poster != null && backdrop != null) ...[
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 40, offset: const Offset(0, 18))],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Image.network(
+                                resolveAssetUrl(serverUrl, poster),
+                                width: 160,
+                                height: 240,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const SizedBox(width: 160, height: 240, child: PosterFallback()),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 20),
-                      ],
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              sources.join(' · '),
-                              style: const TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 6),
-                            if (detail.item.logoUrl != null)
-                              Image.network(
-                                resolveAssetUrl(serverUrl, detail.item.logoUrl!),
-                                height: 64,
-                                fit: BoxFit.contain,
-                                alignment: Alignment.bottomLeft,
-                                errorBuilder: (_, _, _) =>
-                                    Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
-                              )
-                            else
-                              Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
-                            if (detail.tagline != null) ...[
-                              const SizedBox(height: 4),
-                              Text(detail.tagline!, style: const TextStyle(color: PrairieColors.amber, fontStyle: FontStyle.italic)),
-                            ],
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                if (detail.item.contentRating != null)
-                                  DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      border: Border.all(color: PrairieColors.ink.withValues(alpha: 0.35)),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      child: Text(detail.item.contentRating!, style: const TextStyle(color: PrairieColors.ink, fontSize: 12)),
-                                    ),
-                                  ),
-                                Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
-                              ],
-                            ),
-                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null) ...[
+                          const SizedBox(width: 20),
+                        ],
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                sources.join(' · '),
+                                style: const TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
                               const SizedBox(height: 6),
-                              Text(
-                                [
-                                  if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
-                                  if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
-                                ].join(' · '),
-                                style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                              if (detail.item.logoUrl != null)
+                                Image.network(
+                                  resolveAssetUrl(serverUrl, detail.item.logoUrl!),
+                                  height: 64,
+                                  fit: BoxFit.contain,
+                                  alignment: Alignment.bottomLeft,
+                                  errorBuilder: (_, _, _) =>
+                                      Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
+                                )
+                              else
+                                Text(detail.item.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 32, color: PrairieColors.ink)),
+                              if (detail.tagline != null) ...[
+                                const SizedBox(height: 4),
+                                Text(detail.tagline!, style: const TextStyle(color: PrairieColors.amber, fontStyle: FontStyle.italic)),
+                              ],
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  if (detail.item.contentRating != null)
+                                    DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: PrairieColors.ink.withValues(alpha: 0.35)),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        child: Text(detail.item.contentRating!, style: const TextStyle(color: PrairieColors.ink, fontSize: 12)),
+                                      ),
+                                    ),
+                                  Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
+                                ],
                               ),
-                            ],
-                            if (detail.item.overview != null) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                detail.item.overview!,
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: PrairieColors.muted, height: 1.4),
-                              ),
-                            ],
-                            if (directed != null) ...[
-                              const SizedBox(height: 8),
-                              Text(directed, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
-                            ],
-                            if (starring != null) ...[
-                              const SizedBox(height: 4),
-                              Text(starring, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
-                            ],
-                            const SizedBox(height: 16),
-                            Wrap(
-                              spacing: 12,
-                              runSpacing: 8,
-                              children: [
-                                ElevatedButton.icon(
-                                  autofocus: true,
-                                  onPressed: (busyPlay || !playEnabled) ? null : onPlay,
-                                  icon: const Icon(Icons.play_arrow),
-                                  label: Text(playLabel),
-                                ),
-                                if (showStartOver)
-                                  OutlinedButton.icon(
-                                    onPressed: busyPlay ? null : onStartOver,
-                                    icon: const Icon(Icons.replay),
-                                    label: const Text('Start Over'),
-                                  ),
-                                IconButton(
-                                  onPressed: busyAction ? null : onToggleFavorite,
-                                  icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: PrairieColors.amber),
-                                  tooltip: 'Favorite',
-                                ),
-                                IconButton(
-                                  onPressed: busyAction ? null : onToggleWatchlist,
-                                  icon: Icon(inWatchlist ? Icons.bookmark : Icons.bookmark_border, color: PrairieColors.amber),
-                                  tooltip: 'Watchlist',
-                                ),
-                                IconButton(
-                                  onPressed: busyAction ? null : onToggleWatched,
-                                  icon: Icon(played ? Icons.check_circle : Icons.check_circle_outline, color: PrairieColors.amber),
-                                  tooltip: 'Watched',
+                              if (detail.ratingRtCritic != null || detail.ratingRtAudience != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  [
+                                    if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
+                                    if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
+                                  ].join(' · '),
+                                  style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
                                 ),
                               ],
-                            ),
-                          ],
+                              if (detail.item.overview != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  detail.item.overview!,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: PrairieColors.muted, height: 1.4),
+                                ),
+                              ],
+                              if (directed != null) ...[
+                                const SizedBox(height: 8),
+                                Text(directed, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                              ],
+                              if (starring != null) ...[
+                                const SizedBox(height: 4),
+                                Text(starring, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                              ],
+                              const SizedBox(height: 16),
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 8,
+                                children: [
+                                  ElevatedButton.icon(
+                                    autofocus: true,
+                                    onPressed: (busyPlay || !playEnabled) ? null : onPlay,
+                                    icon: const Icon(Icons.play_arrow),
+                                    label: Text(playLabel),
+                                  ),
+                                  if (showStartOver)
+                                    OutlinedButton.icon(
+                                      onPressed: busyPlay ? null : onStartOver,
+                                      icon: const Icon(Icons.replay),
+                                      label: const Text('Start Over'),
+                                    ),
+                                  IconButton(
+                                    onPressed: busyAction ? null : onToggleFavorite,
+                                    icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: PrairieColors.amber),
+                                    tooltip: 'Favorite',
+                                  ),
+                                  IconButton(
+                                    onPressed: busyAction ? null : onToggleWatchlist,
+                                    icon: Icon(inWatchlist ? Icons.bookmark : Icons.bookmark_border, color: PrairieColors.amber),
+                                    tooltip: 'Watchlist',
+                                  ),
+                                  IconButton(
+                                    onPressed: busyAction ? null : onToggleWatched,
+                                    icon: Icon(played ? Icons.check_circle : Icons.check_circle_outline, color: PrairieColors.amber),
+                                    tooltip: 'Watched',
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

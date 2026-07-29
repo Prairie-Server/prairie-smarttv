@@ -37,8 +37,11 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
-    // Quick Connect / QR is opt-in (matches ConnectScreen.tsx) — do not
-    // auto-start a device-login session on mount.
+    // QR / Quick Connect starts by default on login (intentional vs old TS
+    // opt-in "Show QR code" gate).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startQuickConnect();
+    });
   }
 
   @override

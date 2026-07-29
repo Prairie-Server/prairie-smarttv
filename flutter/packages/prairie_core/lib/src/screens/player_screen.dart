@@ -562,6 +562,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  String _playerMetaLine(bool isPlaying) {
+    final bits = <String>['TV player'];
+    final method = _playbackSession?.playMethod;
+    if (method == 'direct') bits.add('Direct');
+    if (method == 'remux') bits.add('Remux');
+    if (method == 'transcode') bits.add('Transcode');
+    if (!isPlaying) bits.add('Paused');
+    return bits.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final backend = _backend;
@@ -611,84 +621,129 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                 ),
               if (_controlsVisible && backend != null && !_loading && _error == null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
+                Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.72),
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.88),
+                        ],
+                        stops: const [0.0, 0.22, 0.62, 1.0],
                       ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(widget.launch.title ?? '', style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink)),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
-                              Expanded(
-                                child: Slider(
-                                  value: _position.inMilliseconds.toDouble().clamp(0, (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble()),
-                                  max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble().clamp(1, double.infinity),
-                                  activeColor: PrairieColors.amber,
-                                  onChanged: (value) => setState(() => _position = Duration(milliseconds: value.round())),
-                                  onChangeEnd: (value) => backend.seekTo(Duration(milliseconds: value.round())),
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: _exit,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: PrairieColors.ink,
+                                    backgroundColor: const Color(0x590A0C10),
+                                    padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                                    shape: const StadiumBorder(),
+                                  ),
+                                  icon: const Icon(Icons.arrow_back, size: 18),
+                                  label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
                                 ),
-                              ),
-                              Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
-                            ],
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              IconButton(iconSize: 32, color: PrairieColors.ink, onPressed: _exit, icon: const Icon(Icons.close)),
-                              const SizedBox(width: 12),
-                              TextButton(
-                                onPressed: () => _seekBy(const Duration(seconds: -15)),
-                                child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                iconSize: 48,
-                                color: PrairieColors.amber,
-                                onPressed: _togglePlayPause,
-                                icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                              ),
-                              const SizedBox(width: 8),
-                              TextButton(
-                                onPressed: () => _seekBy(const Duration(seconds: 15)),
-                                child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
-                              ),
-                              if (_audioTracks.length > 1) ...[
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  iconSize: 28,
-                                  color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
-                                  onPressed: _busyAudio ? null : _pickAudioTrack,
-                                  icon: const Icon(Icons.audiotrack),
-                                  tooltip: 'Audio',
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'NOW PLAYING',
+                                        style: TextStyle(color: PrairieColors.amber, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.2),
+                                      ),
+                                      Text(
+                                        widget.launch.title?.trim().isNotEmpty == true
+                                            ? widget.launch.title!
+                                            : 'File ${widget.launch.fileId}',
+                                        style: const TextStyle(fontFamily: 'Fraunces', fontSize: 24, color: PrairieColors.ink),
+                                      ),
+                                      Text(
+                                        _playerMetaLine(backend.isPlaying),
+                                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
-                              if (backend.subtitleTracks.isNotEmpty) ...[
+                            ),
+                            const Spacer(),
+                            Text(
+                              widget.launch.title ?? '',
+                              style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
+                                Expanded(
+                                  child: Slider(
+                                    value: _position.inMilliseconds.toDouble().clamp(0, (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble()),
+                                    max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble().clamp(1, double.infinity),
+                                    activeColor: PrairieColors.amber,
+                                    onChanged: (value) => setState(() => _position = Duration(milliseconds: value.round())),
+                                    onChangeEnd: (value) => backend.seekTo(Duration(milliseconds: value.round())),
+                                  ),
+                                ),
+                                Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
+                              ],
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                TextButton(
+                                  onPressed: () => _seekBy(const Duration(seconds: -15)),
+                                  child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                ),
                                 const SizedBox(width: 8),
                                 IconButton(
-                                  iconSize: 28,
-                                  color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
-                                  onPressed: _pickSubtitleTrack,
-                                  icon: const Icon(Icons.closed_caption),
-                                  tooltip: 'Subtitles',
+                                  iconSize: 48,
+                                  color: PrairieColors.amber,
+                                  onPressed: _togglePlayPause,
+                                  icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
                                 ),
+                                const SizedBox(width: 8),
+                                TextButton(
+                                  onPressed: () => _seekBy(const Duration(seconds: 15)),
+                                  child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                ),
+                                if (_audioTracks.length > 1) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    iconSize: 28,
+                                    color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
+                                    onPressed: _busyAudio ? null : _pickAudioTrack,
+                                    icon: const Icon(Icons.audiotrack),
+                                    tooltip: 'Audio',
+                                  ),
+                                ],
+                                if (backend.subtitleTracks.isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    iconSize: 28,
+                                    color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
+                                    onPressed: _pickSubtitleTrack,
+                                    icon: const Icon(Icons.closed_caption),
+                                    tooltip: 'Subtitles',
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

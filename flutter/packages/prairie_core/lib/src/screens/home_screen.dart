@@ -73,6 +73,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Catalog rows first; On now sits further down intentionally
+                    // (differs from the old TS home order).
+                    for (var s = 0; s < rows.length; s++)
+                      _buildSectionRow(
+                        session: session,
+                        section: rows[s],
+                        sectionIndex: s,
+                        autofocusFirst: !heroAutofocus && s == 0,
+                      ),
                     if (onNow.isNotEmpty)
                       MediaRow<OnNowEntry>(
                         title: 'On now',
@@ -80,18 +89,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         itemBuilder: (context, entry, index) => _OnNowCard(
                           entry: entry,
                           serverUrl: session.serverUrl,
-                          autofocus: !heroAutofocus && index == 0,
+                          autofocus: !heroAutofocus && rows.isEmpty && index == 0,
                           onTap: () => ref
                               .read(routeProvider.notifier)
                               .go(LiveTvPlayerRoute(channel: entry.channel, back: const HomeRoute())),
                         ),
-                      ),
-                    for (var s = 0; s < rows.length; s++)
-                      _buildSectionRow(
-                        session: session,
-                        section: rows[s],
-                        sectionIndex: s,
-                        autofocusFirst: !heroAutofocus && onNow.isEmpty && s == 0,
                       ),
                   ],
                 ),
