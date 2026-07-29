@@ -52,13 +52,13 @@ class _LandscapeCardState extends State<LandscapeCard> {
               color: PrairieColors.bgElevated.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _focused ? PrairieColors.amber.withValues(alpha: 0.6) : PrairieColors.ink.withValues(alpha: 0.1),
-                width: _focused ? 2 : 1,
+                color: _focused ? PrairieColors.ring : PrairieColors.ink.withValues(alpha: 0.1),
+                width: _focused ? 3 : 1,
               ),
               boxShadow: _focused
                   ? [
                       BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 28, offset: const Offset(0, 12)),
-                      BoxShadow(color: PrairieColors.ring.withValues(alpha: 0.35), blurRadius: 0, spreadRadius: 2),
+                      ...prairieFocusRing(width: 3),
                     ]
                   : null,
             ),

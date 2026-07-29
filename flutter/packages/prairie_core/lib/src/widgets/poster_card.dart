@@ -56,13 +56,13 @@ class _PosterCardState extends State<PosterCard> {
               color: PrairieColors.bgSoft.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: _focused ? PrairieColors.amber.withValues(alpha: 0.65) : PrairieColors.ink.withValues(alpha: 0.1),
-                width: _focused ? 2 : 1,
+                color: _focused ? PrairieColors.ring : PrairieColors.ink.withValues(alpha: 0.1),
+                width: _focused ? 3 : 1,
               ),
               boxShadow: _focused
                   ? [
                       BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 32, offset: const Offset(0, 14)),
-                      BoxShadow(color: PrairieColors.ring.withValues(alpha: 0.4), blurRadius: 0, spreadRadius: 2),
+                      ...prairieFocusRing(width: 3),
                     ]
                   : null,
             ),
