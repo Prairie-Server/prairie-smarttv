@@ -57,7 +57,7 @@ class AvplayVideoBackend implements VideoBackend {
 
   static bool _isHls(String url) {
     final path = url.split('?').first.toLowerCase();
-    return path.endsWith('.m3u8') || path.contains('/hls') || path.contains('master.m3u8');
+    return path.endsWith('.m3u8') || path.contains('/hls');
   }
 
   /// Redacts query-param values (session tokens) before a URL hits the log.
@@ -72,27 +72,21 @@ class AvplayVideoBackend implements VideoBackend {
   void attach(String url, {String? maxResolution}) {
     final hls = _isHls(url);
     final fixed = avPlayFixedMaxResolution(maxResolution);
-    final controller = VideoPlayerController.network(
-      url,
-      formatHint: hls ? VideoFormat.hls : null,
-      streamingProperty: hls
-          ? {
-              StreamingPropertyType.adaptiveInfo: [
-                'FIXED_MAX_RESOLUTION=$fixed',
-                'STARTBITRATE=HIGHEST',
-                'USER_AGENT=PrairieTizenClient',
-                'INITIAL_BUFFER_DURATION=6000',
-                'RESUME_BUFFER_DURATION=4000',
-              ].join('|'),
-              StreamingPropertyType.userAgent: 'PrairieTizenClient',
-            }
-          : {StreamingPropertyType.userAgent: 'PrairieTizenClient'},
-    );
+
+    final controller = VideoPlayerController.network(url);
+
     final queryParams = Uri.tryParse(url)?.queryParameters.keys.join(',');
+
     debugPrint(
-      'prairie.avplay: attach url=${_redactQuery(url)} hls=$hls fixedMaxResolution=$fixed queryParams=$queryParams',
+      'prairie.avplay: attach '
+      'url=${_redactQuery(url)} '
+      'hls=$hls '
+      'fixedMaxResolution=$fixed '
+      'queryParams=$queryParams',
     );
+
     reportDiagnostic('attach:hls=$hls:params=$queryParams');
+
     _controller = controller;
     controller.addListener(_onControllerUpdate);
   }
