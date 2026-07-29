@@ -2,23 +2,18 @@ import 'package:dio/dio.dart';
 
 import '../models/auth.dart';
 import 'api_client.dart';
-import 'api_error.dart';
 import 'playback_session_api.dart';
 import 'target_resolution.dart';
 import 'wait_for_hls_manifest.dart';
 
 export 'wait_for_hls_manifest.dart' show HlsProbeAuthError, TranscodeStartupTimeoutError, isHlsUrl, waitForHlsManifest;
 
-/// Purely a function of the server's chosen play method — no codec-specific
-/// override, so the same source always resolves the same way regardless of
-/// whether video-codec metadata happened to be populated for this call.
-String effectiveHlsPlayMethod(String playMethod) {
-  return playMethod.trim().toLowerCase() == 'remux' ? 'remux' : 'transcode';
-}
-
+/// Only a genuine re-encode needs the HLS transport. `remux` (video copy,
+/// optional audio re-encode) and `direct` both get `stream_url` verbatim from
+/// `/playback/start` and play progressive — no `/playback/transcode/start`,
+/// no demuxer, no manifest. See [preparePlayableSession].
 bool needsHlsBootstrap(String? playMethod) {
-  final method = (playMethod ?? '').trim().toLowerCase();
-  return method == 'remux' || method == 'transcode';
+  return (playMethod ?? '').trim().toLowerCase() == 'transcode';
 }
 
 class TranscodeStartInput {
@@ -121,9 +116,14 @@ class PreparedPlayback {
 
 const transcodeStartupTimeout = Duration(seconds: 90);
 
-/// After `/playback/start`, remux and transcode must POST `/playback/transcode/start`
-/// and play `manifest_url` (not the informational placeholder `stream_url`).
-/// Then wait until the first HLS segment exists so AVPlay does not time out.
+/// `direct` and `remux` play `stream_url` from `/playback/start` verbatim,
+/// progressive, over plain HTTP — no `/playback/transcode/start`, no HLS
+/// demuxer, no manifest. `remux` still gets its audio re-encoded server-side
+/// (ServeRemux acts on `transcode_audio` from the original `/playback/start`
+/// response) despite the video being a straight copy; that's the server's
+/// concern, not the client's — it never calls the transcode endpoint either
+/// way. Only `transcode` (genuine re-encode) needs the HLS transport and
+/// waits for the first segment to exist so the native player doesn't time out.
 Future<PreparedPlayback> preparePlayableSession(
   ApiClient client,
   PrairieSession session,
@@ -143,50 +143,20 @@ Future<PreparedPlayback> preparePlayableSession(
     );
   }
 
-  final startInput = TranscodeStartInput(
-    sessionId: started.sessionId,
-    seekSeconds: seekSeconds,
-    playMethod: started.playMethod,
-    transcodeAudio: started.playbackInfo?.transcodeAudio == true,
-    sourceResolution: sourceResolution,
-    maxResolution: maxResolution,
+  final transcode = await startTranscode(
+    client,
+    session,
+    buildTranscodeStartRequest(
+      TranscodeStartInput(
+        sessionId: started.sessionId,
+        seekSeconds: seekSeconds,
+        playMethod: 'transcode',
+        transcodeAudio: true,
+        sourceResolution: sourceResolution,
+        maxResolution: maxResolution,
+      ),
+    ),
   );
-
-  var playMethod = effectiveHlsPlayMethod(started.playMethod);
-  late TranscodeStartResponse transcode;
-  try {
-    transcode = await startTranscode(
-      client,
-      session,
-      buildTranscodeStartRequest(
-        TranscodeStartInput(
-          sessionId: startInput.sessionId,
-          seekSeconds: startInput.seekSeconds,
-          playMethod: playMethod,
-          transcodeAudio: playMethod == 'remux' ? startInput.transcodeAudio : true,
-          sourceResolution: startInput.sourceResolution,
-          maxResolution: startInput.maxResolution,
-        ),
-      ),
-    );
-  } catch (err) {
-    final isRemux = playMethod == 'remux';
-    if (!isRemux || err is! ApiError || err.status != 422) rethrow;
-    playMethod = 'transcode';
-    transcode = await startTranscode(
-      client,
-      session,
-      buildTranscodeStartRequest(
-        TranscodeStartInput(
-          sessionId: startInput.sessionId,
-          seekSeconds: startInput.seekSeconds,
-          playMethod: 'transcode',
-          sourceResolution: startInput.sourceResolution,
-          maxResolution: startInput.maxResolution,
-        ),
-      ),
-    );
-  }
 
   final streamOriginSeconds = (transcode.streamOriginSeconds ?? 0) < 0 ? 0.0 : (transcode.streamOriginSeconds ?? 0);
   final playerStartSeconds = () {
@@ -200,7 +170,7 @@ Future<PreparedPlayback> preparePlayableSession(
   final next = PlaybackSessionResponse(
     sessionId: sessionId,
     mediaFileId: started.mediaFileId,
-    playMethod: playMethod,
+    playMethod: 'transcode',
     position: mediaPosition > 0 ? mediaPosition : started.position,
     isPaused: started.isPaused,
     streamUrl: transcode.manifestUrl,

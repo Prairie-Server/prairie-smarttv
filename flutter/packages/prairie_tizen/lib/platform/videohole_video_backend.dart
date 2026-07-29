@@ -75,8 +75,9 @@ class VideoholeVideoBackend implements VideoBackend {
     // maxResolution is accepted for interface parity but unused here.
     final controller = VideoPlayerController.network(url);
 
-    debugPrint('prairie.videohole: attach url=${_redactQuery(url)}');
-    reportDiagnostic('attach:backend=videohole');
+    final transport = isHlsUrl(url) ? 'hls' : 'progressive';
+    debugPrint('prairie.videohole: attach url=${_redactQuery(url)} transport=$transport');
+    reportDiagnostic('attach:backend=videohole:transport=$transport');
 
     _controller = controller;
     controller.addListener(_onControllerUpdate);

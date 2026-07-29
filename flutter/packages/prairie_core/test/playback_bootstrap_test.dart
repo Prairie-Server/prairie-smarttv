@@ -124,20 +124,11 @@ void main() {
   });
 
   group('needsHlsBootstrap', () {
-    test('true for remux and transcode only', () {
+    test('true for transcode only — remux and direct both play stream_url progressive', () {
       expect(needsHlsBootstrap('direct'), isFalse);
-      expect(needsHlsBootstrap('remux'), isTrue);
+      expect(needsHlsBootstrap('remux'), isFalse);
       expect(needsHlsBootstrap('TRANSCODE'), isTrue);
       expect(needsHlsBootstrap(null), isFalse);
-    });
-  });
-
-  group('effectiveHlsPlayMethod', () {
-    test('is a pure function of the server play method — no codec override', () {
-      expect(effectiveHlsPlayMethod('remux'), 'remux');
-      expect(effectiveHlsPlayMethod('REMUX'), 'remux');
-      expect(effectiveHlsPlayMethod('transcode'), 'transcode');
-      expect(effectiveHlsPlayMethod('direct'), 'transcode');
     });
   });
 
