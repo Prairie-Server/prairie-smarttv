@@ -1,3 +1,5 @@
+import 'package:prairie_core/src/lib/language_labels.dart';
+
 import '../models/auth.dart';
 import '../models/watch_detail.dart';
 import 'api_client.dart';
@@ -41,10 +43,11 @@ FileVersion? selectFileVersion(WatchDetail watch, int fileId) {
   return null;
 }
 
-/// Mirrors `formatAudioLabel`.
+/// Mirrors `formatAudioLabel`, with the language segment humanized for
+/// display (the TS original showed the raw track metadata verbatim).
 String formatAudioLabel(AudioTrackInfo track, int index) {
   final parts = [
-    track.language,
+    if (track.language != null && track.language!.isNotEmpty) humanizeTrackLanguage(track.language!),
     track.title ?? track.embeddedTitle,
     track.codec,
     if (track.channels != null) '${track.channels}ch',

@@ -11,6 +11,7 @@ class HomeHero extends StatefulWidget {
     required this.onIndexChange,
     required this.onOpenItem,
     this.autofocusPlay = true,
+    this.playFocusNode,
   });
 
   final List<CatalogItem> items;
@@ -19,6 +20,7 @@ class HomeHero extends StatefulWidget {
   final ValueChanged<int> onIndexChange;
   final void Function(CatalogItem item) onOpenItem;
   final bool autofocusPlay;
+  final FocusNode? playFocusNode;
 
   @override
   State<HomeHero> createState() => _HomeHeroState();
@@ -127,6 +129,7 @@ class _HomeHeroState extends State<HomeHero> {
                       runSpacing: 8,
                       children: [
                         ElevatedButton.icon(
+                          focusNode: widget.playFocusNode,
                           autofocus: widget.autofocusPlay,
                           onPressed: () => widget.onOpenItem(item),
                           icon: const Icon(Icons.play_arrow),

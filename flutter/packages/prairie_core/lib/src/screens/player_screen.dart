@@ -429,7 +429,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
       });
       _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
-      unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
+      unawaited(_autoSelectSubtitleTrack(backend, widget.launch.initialSubtitleLanguage ?? settings.preferredSubtitleLanguage));
+      final initialAudio = widget.launch.initialAudioTrackIndex;
+      if (initialAudio != null && initialAudio != (_playbackSession?.audioTrackIndex ?? 0)) {
+        unawaited(_chooseAudio(initialAudio));
+      }
     } catch (e) {
       if (startedSessionId != null && _activeSessionId == startedSessionId) {
         // Leave stop to the catch path only when we didn't already stop above.
@@ -503,7 +507,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
             for (final track in backend.subtitleTracks)
               ListTile(
-                title: Text(track.language, style: const TextStyle(color: PrairieColors.ink)),
+                title: Text(humanizeTrackLanguage(track.language), style: const TextStyle(color: PrairieColors.ink)),
                 trailing: _selectedSubtitleTrackId == track.trackId ? const Icon(Icons.check, color: PrairieColors.amber) : null,
                 onTap: () => Navigator.of(context).pop<int?>(track.trackId),
               ),

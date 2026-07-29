@@ -6,6 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum _Section { servers, playback, display, subtitles, about }
 
+/// Focus fill for settings rows/sidebar — noticeably darker than
+/// [PrairieColors.amberDeep] (which is a fairly bright orange used elsewhere
+/// as a border/accent color, not meant to fill a large area behind text) and
+/// used without the amber glow shadow, which stacked with the fill to read
+/// as "obnoxiously bright."
+const _focusFill = Color(0xFF6C4D19);
+
 /// Common ISO 639-2/B subtitle language codes for the preferred-language picker.
 const _subtitleLanguageChoices = <(String code, String label)>[
   ('', 'Off / none'),
@@ -46,6 +53,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   PlaybackSettings _settings = const PlaybackSettings();
   bool _loaded = false;
   _Section _section = _Section.playback;
+  final _sidebarFocusNodes = {for (final s in _Section.values) s: FocusNode()};
+
+  @override
+  void dispose() {
+    for (final node in _sidebarFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -83,7 +99,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) ref.read(routeProvider.notifier).go(widget.back);
+        if (didPop) return;
+        // First back press drops focus to the sidebar (on the current
+        // section) rather than leaving the screen outright; only a second
+        // press, from the sidebar itself, actually navigates away.
+        final primary = FocusManager.instance.primaryFocus;
+        final inSidebar = _sidebarFocusNodes.values.any((node) => identical(node, primary));
+        if (!inSidebar) {
+          _sidebarFocusNodes[_section]?.requestFocus();
+          return;
+        }
+        ref.read(routeProvider.notifier).go(widget.back);
       },
       child: Scaffold(
         appBar: AppBar(
@@ -101,11 +127,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                       children: [
                         if (session != null)
-                          _SectionButton(label: 'Servers', selected: _section == _Section.servers, onTap: () => setState(() => _section = _Section.servers)),
-                        _SectionButton(label: 'Playback', selected: _section == _Section.playback, onTap: () => setState(() => _section = _Section.playback)),
-                        _SectionButton(label: 'Display', selected: _section == _Section.display, onTap: () => setState(() => _section = _Section.display)),
-                        _SectionButton(label: 'Subtitles', selected: _section == _Section.subtitles, onTap: () => setState(() => _section = _Section.subtitles)),
-                        _SectionButton(label: 'About', selected: _section == _Section.about, onTap: () => setState(() => _section = _Section.about)),
+                          _SectionButton(
+                            label: 'Servers',
+                            selected: _section == _Section.servers,
+                            focusNode: _sidebarFocusNodes[_Section.servers],
+                            onTap: () => setState(() => _section = _Section.servers),
+                          ),
+                        _SectionButton(
+                          label: 'Playback',
+                          selected: _section == _Section.playback,
+                          focusNode: _sidebarFocusNodes[_Section.playback],
+                          onTap: () => setState(() => _section = _Section.playback),
+                        ),
+                        _SectionButton(
+                          label: 'Display',
+                          selected: _section == _Section.display,
+                          focusNode: _sidebarFocusNodes[_Section.display],
+                          onTap: () => setState(() => _section = _Section.display),
+                        ),
+                        _SectionButton(
+                          label: 'Subtitles',
+                          selected: _section == _Section.subtitles,
+                          focusNode: _sidebarFocusNodes[_Section.subtitles],
+                          onTap: () => setState(() => _section = _Section.subtitles),
+                        ),
+                        _SectionButton(
+                          label: 'About',
+                          selected: _section == _Section.about,
+                          focusNode: _sidebarFocusNodes[_Section.about],
+                          onTap: () => setState(() => _section = _Section.about),
+                        ),
                       ],
                     ),
                   ),
@@ -191,20 +242,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       const SizedBox(height: 10),
       // Diagnostics must be focusable: InkWell with onTap: null used to be
       // skipped by focus traversal (_SettingsRow now always supplies a tap).
-      _SettingsRow(label: 'Play method', value: playMethod ?? 'auto'),
+      _SettingsRow(label: 'Play method', value: _playMethodLabel(playMethod)),
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Video codecs',
-        hint: caps.codecsVideo.join(', ').isEmpty ? 'none' : caps.codecsVideo.join(', '),
+        hint: _codecListLabel(caps.codecsVideo),
       ),
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Audio / display',
-        hint:
-            '${caps.codecsAudio.join(', ').isEmpty ? 'none' : caps.codecsAudio.join(', ')} · Max ${caps.maxResolution} · HDR ${caps.hdr ? 'yes' : 'no'}',
+        hint: '${_codecListLabel(caps.codecsAudio)} · Max ${caps.maxResolution} · HDR ${caps.hdr ? 'Yes' : 'No'}',
       ),
     ];
   }
+
+  String _playMethodLabel(String? method) => switch (method) {
+    'direct' => 'Direct Play',
+    'transcode' => 'Transcode',
+    null || 'auto' => 'Automatic',
+    final other => other,
+  };
+
+  String _codecListLabel(List<String> codecs) => codecs.isEmpty ? 'None' : codecs.map((c) => c.toUpperCase()).join(', ');
 
   List<Widget> _displaySection() => [
     const Text('Display', style: TextStyle(color: PrairieColors.ink, fontFamily: 'Fraunces', fontSize: 22)),
@@ -276,27 +335,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       const SizedBox(height: 12),
       _SettingsRow(
         label: 'Size',
-        value: appearance.fontSize.name,
+        value: subtitleFontSizeLabel(appearance.fontSize),
         onTap: () async {
-          final choice = await _pickEnum(SubtitleFontSize.values, appearance.fontSize, (s) => s.name);
+          final choice = await _pickEnum(SubtitleFontSize.values, appearance.fontSize, subtitleFontSizeLabel);
           if (choice != null) updateAppearance((a) => a.copyWith(fontSize: choice));
         },
       ),
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Background',
-        value: appearance.backgroundStyle.name,
+        value: subtitleBackgroundStyleLabel(appearance.backgroundStyle),
         onTap: () async {
-          final choice = await _pickEnum(SubtitleBackgroundStyle.values, appearance.backgroundStyle, (s) => s.name);
+          final choice = await _pickEnum(SubtitleBackgroundStyle.values, appearance.backgroundStyle, subtitleBackgroundStyleLabel);
           if (choice != null) updateAppearance((a) => a.copyWith(backgroundStyle: choice));
         },
       ),
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Position',
-        value: subtitlePositionWire(appearance.position),
+        value: subtitlePositionLabel(appearance.position),
         onTap: () async {
-          final choice = await _pickEnum(SubtitlePosition.values, appearance.position, subtitlePositionWire);
+          final choice = await _pickEnum(SubtitlePosition.values, appearance.position, subtitlePositionLabel);
           if (choice != null) updateAppearance((a) => a.copyWith(position: choice));
         },
       ),
@@ -367,18 +426,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  List<Widget> _aboutSection() => [
-    const Text('About', style: TextStyle(color: PrairieColors.ink, fontFamily: 'Fraunces', fontSize: 22)),
-    const SizedBox(height: 16),
-    const _SettingsRow(label: 'Platform', value: 'Flutter Smart TV'),
-    const SizedBox(height: 10),
-    const _SettingsRow(label: 'Client', value: 'prairie_core'),
-    const SizedBox(height: 10),
-    _SettingsRow(
-      label: 'Play method',
-      value: resolveForcedPlayMethod(_settings) ?? 'auto',
-    ),
-  ];
+  List<Widget> _aboutSection() {
+    final identity = ref.watch(clientIdentityProvider);
+    return [
+      const Text('About', style: TextStyle(color: PrairieColors.ink, fontFamily: 'Fraunces', fontSize: 22)),
+      const SizedBox(height: 16),
+      _SettingsRow(label: 'Client', value: identity.deviceName),
+      const SizedBox(height: 10),
+      _SettingsRow(
+        label: 'Play method',
+        value: _playMethodLabel(resolveForcedPlayMethod(_settings)),
+      ),
+    ];
+  }
 
   String _performanceLabel(PerformanceMode mode) => switch (mode) {
     PerformanceMode.auto => 'Auto',
@@ -419,8 +479,10 @@ class _SettingsRowState extends State<_SettingsRow> {
     final focused = _focused;
     final actionable = widget.onTap != null;
     return Material(
+      // Solid (not washed-out) when focused — light ink text needs a genuinely
+      // dark-orange fill behind it, not a pale amber tint, to stay readable.
       color: focused
-          ? PrairieColors.amber.withValues(alpha: 0.22)
+          ? _focusFill
           : widget.isOn
               ? PrairieColors.amber.withValues(alpha: 0.14)
               : PrairieColors.bgElevated.withValues(alpha: 0.72),
@@ -440,13 +502,12 @@ class _SettingsRowState extends State<_SettingsRow> {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: focused
-                  ? PrairieColors.ring
+                  ? PrairieColors.ink.withValues(alpha: 0.85)
                   : widget.isOn
                       ? PrairieColors.amber.withValues(alpha: 0.4)
                       : PrairieColors.ink.withValues(alpha: 0.1),
               width: focused ? 3 : 1,
             ),
-            boxShadow: focused ? prairieFocusRing(width: 2) : null,
           ),
           child: Row(
             children: [
@@ -464,7 +525,10 @@ class _SettingsRowState extends State<_SettingsRow> {
                     ),
                     if (widget.hint != null) ...[
                       const SizedBox(height: 2),
-                      Text(widget.hint!, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                      Text(
+                        widget.hint!,
+                        style: TextStyle(color: focused ? PrairieColors.ink.withValues(alpha: 0.85) : PrairieColors.muted, fontSize: 13),
+                      ),
                     ],
                   ],
                 ),
@@ -473,8 +537,10 @@ class _SettingsRowState extends State<_SettingsRow> {
                 const SizedBox(width: 12),
                 Text(
                   widget.value!,
+                  // Focused text stays ink (white), not amber — amber-on-amber
+                  // (the focus fill) was nearly unreadable.
                   style: TextStyle(
-                    color: focused ? PrairieColors.amberBright : PrairieColors.amber,
+                    color: focused ? PrairieColors.ink : PrairieColors.amber,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -566,15 +632,12 @@ class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
         constraints: const BoxConstraints(minHeight: 68),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
-          color: focused
-              ? PrairieColors.amber.withValues(alpha: 0.22)
-              : PrairieColors.bgElevated.withValues(alpha: 0.72),
+          color: focused ? _focusFill : PrairieColors.bgElevated.withValues(alpha: 0.72),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: focused ? PrairieColors.ring : PrairieColors.ink.withValues(alpha: 0.1),
+            color: focused ? PrairieColors.ink.withValues(alpha: 0.85) : PrairieColors.ink.withValues(alpha: 0.1),
             width: focused ? 3 : 1,
           ),
-          boxShadow: focused ? prairieFocusRing(width: 2) : null,
         ),
         child: Row(
           children: [
@@ -591,13 +654,16 @@ class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(widget.hint, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                  Text(
+                    widget.hint,
+                    style: TextStyle(color: focused ? PrairieColors.ink.withValues(alpha: 0.85) : PrairieColors.muted, fontSize: 13),
+                  ),
                 ],
               ),
             ),
             Icon(
               Icons.chevron_left,
-              color: focused ? PrairieColors.amberBright : PrairieColors.muted,
+              color: focused ? PrairieColors.ink : PrairieColors.muted,
             ),
             SizedBox(
               width: 56,
@@ -605,7 +671,7 @@ class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
                 '${widget.value}%',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: focused ? PrairieColors.amberBright : PrairieColors.amber,
+                  color: focused ? PrairieColors.ink : PrairieColors.amber,
                   fontWeight: FontWeight.w700,
                   fontSize: 16,
                 ),
@@ -613,7 +679,7 @@ class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
             ),
             Icon(
               Icons.chevron_right,
-              color: focused ? PrairieColors.amberBright : PrairieColors.muted,
+              color: focused ? PrairieColors.ink : PrairieColors.muted,
             ),
           ],
         ),
@@ -623,11 +689,12 @@ class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
 }
 
 class _SectionButton extends StatefulWidget {
-  const _SectionButton({required this.label, required this.selected, required this.onTap});
+  const _SectionButton({required this.label, required this.selected, required this.onTap, this.focusNode});
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
   @override
   State<_SectionButton> createState() => _SectionButtonState();
@@ -644,12 +711,13 @@ class _SectionButtonState extends State<_SectionButton> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: focused
-            ? PrairieColors.amber.withValues(alpha: 0.22)
+            ? _focusFill
             : selected
                 ? PrairieColors.amber.withValues(alpha: 0.14)
                 : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
+          focusNode: widget.focusNode,
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(12),
           onFocusChange: (value) => setState(() => _focused = value),
@@ -662,18 +730,21 @@ class _SectionButtonState extends State<_SectionButton> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: focused
-                    ? PrairieColors.ring
+                    ? PrairieColors.ink.withValues(alpha: 0.85)
                     : selected
                         ? PrairieColors.amber.withValues(alpha: 0.45)
                         : Colors.transparent,
                 width: focused ? 3 : 1,
               ),
-              boxShadow: focused ? prairieFocusRing(width: 2) : null,
             ),
             child: Text(
               widget.label,
+              // Focused text stays high-contrast ink (white) — using amber
+              // here nearly matched the amber focus wash/ring, making the
+              // label hard to read. Amber is reserved for the unfocused
+              // "selected section" indicator, which never overlaps focus.
               style: TextStyle(
-                color: focused || selected ? PrairieColors.amberBright : PrairieColors.ink,
+                color: focused ? PrairieColors.ink : selected ? PrairieColors.amberBright : PrairieColors.ink,
                 fontWeight: focused || selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),

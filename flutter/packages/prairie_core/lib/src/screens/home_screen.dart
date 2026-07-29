@@ -17,12 +17,32 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   late Future<List<HomeSection>> _sections;
   int _heroIndex = 0;
+  final _heroFocus = FocusNode(debugLabel: 'home-hero-play');
+  /// `autofocus:true` races the async section load — by the time the hero
+  /// mounts, initial D-pad presses may already have landed on the top nav.
+  /// Explicitly requesting focus once, like ItemDetail's hero pin, closes
+  /// that race.
+  bool _initialFocusApplied = false;
 
   @override
   void initState() {
     super.initState();
     final session = ref.read(sessionProvider)!;
     _sections = fetchHomeSections(ref.read(apiClientProvider), session);
+  }
+
+  @override
+  void dispose() {
+    _heroFocus.dispose();
+    super.dispose();
+  }
+
+  void _applyInitialFocus() {
+    if (_initialFocusApplied) return;
+    _initialFocusApplied = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _heroFocus.requestFocus();
+    });
   }
 
   void _openItem(CatalogItem item) {
@@ -57,6 +77,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             return const Center(child: Text('Nothing here yet', style: TextStyle(color: PrairieColors.muted)));
           }
           final heroAutofocus = featured != null;
+          if (heroAutofocus) _applyInitialFocus();
           return ListView(
             padding: EdgeInsets.zero,
             children: [
@@ -67,6 +88,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   index: _heroIndex,
                   onIndexChange: (i) => setState(() => _heroIndex = i),
                   onOpenItem: _openItem,
+                  playFocusNode: _heroFocus,
                 ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
@@ -156,7 +178,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-class _OnNowCard extends StatelessWidget {
+class _OnNowCard extends StatefulWidget {
   const _OnNowCard({required this.entry, required this.serverUrl, required this.onTap, this.autofocus = false});
 
   final OnNowEntry entry;
@@ -165,14 +187,37 @@ class _OnNowCard extends StatelessWidget {
   final bool autofocus;
 
   @override
+  State<_OnNowCard> createState() => _OnNowCardState();
+}
+
+class _OnNowCardState extends State<_OnNowCard> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final serverUrl = widget.serverUrl;
     final program = entry.program;
-    final logoUrl = entry.channel.logoUrl;
+    // On Now shows the program's content art (a poster/still) — the channel
+    // logo belongs on the Channels/Guide tabs, not here.
+    final posterUrl = program?.imageUrl;
     return InkWell(
-      onTap: onTap,
-      autofocus: autofocus,
+      onTap: widget.onTap,
+      autofocus: widget.autofocus,
       borderRadius: BorderRadius.circular(14),
-      child: SizedBox(
+      onFocusChange: (value) => setState(() => _focused = value),
+      // The theme's default focusColor (a light amber overlay) would
+      // otherwise paint on top of the border/glow below.
+      focusColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: 3),
+          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
+        ),
+        child: SizedBox(
         width: 200,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -184,10 +229,10 @@ class _OnNowCard extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     const DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated)),
-                    if (logoUrl != null)
+                    if (posterUrl != null)
                       Image.network(
-                        resolveAssetUrl(serverUrl, logoUrl),
-                        fit: BoxFit.contain,
+                        resolveAssetUrl(serverUrl, posterUrl),
+                        fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => _channelInitial(entry.channel),
                       )
                     else
@@ -211,6 +256,7 @@ class _OnNowCard extends StatelessWidget {
             Text(channelDisplayLabel(entry.channel), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
             Text(program?.title ?? 'On air', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 14)),
           ],
+        ),
         ),
       ),
     );

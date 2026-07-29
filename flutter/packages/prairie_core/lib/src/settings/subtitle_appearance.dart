@@ -18,6 +18,30 @@ String subtitlePositionWire(SubtitlePosition v) => switch (v) {
   _ => v.name,
 };
 
+/// Human-readable labels for the settings UI — the wire values above are
+/// storage keys, not display text (`v.name` alone gave lowercase-single-word
+/// labels like "xlarge"/"lowerThird").
+String subtitleFontSizeLabel(SubtitleFontSize v) => switch (v) {
+  SubtitleFontSize.small => 'Small',
+  SubtitleFontSize.medium => 'Medium',
+  SubtitleFontSize.large => 'Large',
+  SubtitleFontSize.xlarge => 'Extra Large',
+  SubtitleFontSize.xxlarge => 'Extra Extra Large',
+};
+
+String subtitleBackgroundStyleLabel(SubtitleBackgroundStyle v) => switch (v) {
+  SubtitleBackgroundStyle.box => 'Box',
+  SubtitleBackgroundStyle.shadow => 'Shadow',
+  SubtitleBackgroundStyle.outline => 'Outline',
+  SubtitleBackgroundStyle.none => 'None',
+};
+
+String subtitlePositionLabel(SubtitlePosition v) => switch (v) {
+  SubtitlePosition.bottom => 'Bottom',
+  SubtitlePosition.lowerThird => 'Lower Third',
+  SubtitlePosition.top => 'Top',
+};
+
 T _asEnum<T>(String? value, List<T> allowed, T fallback, String Function(T) wire) {
   if (value == null) return fallback;
   for (final option in allowed) {

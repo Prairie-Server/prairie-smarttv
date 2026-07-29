@@ -122,24 +122,32 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   @override
   Widget build(BuildContext context) {
     final index = indexProgramsByChannel(_programs);
+    final serverUrl = ref.watch(sessionProvider)!.serverUrl;
     return ShellScaffold(
       active: ShellTab.livetv,
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: SegmentedButton<_LiveTvTab>(
-              segments: const [
-                ButtonSegment(value: _LiveTvTab.channels, label: Text('Channels')),
-                ButtonSegment(value: _LiveTvTab.guide, label: Text('Guide')),
-                ButtonSegment(value: _LiveTvTab.recordings, label: Text('Recordings')),
+            child: Row(
+              children: [
+                for (final (tab, label) in const [
+                  (_LiveTvTab.channels, 'Channels'),
+                  (_LiveTvTab.guide, 'Guide'),
+                  (_LiveTvTab.recordings, 'Recordings'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _LiveTvTabPill(
+                      label: label,
+                      active: _tab == tab,
+                      onTap: () {
+                        setState(() => _tab = tab);
+                        if (tab == _LiveTvTab.recordings) _loadRecordings();
+                      },
+                    ),
+                  ),
               ],
-              selected: {_tab},
-              onSelectionChanged: (s) {
-                final next = s.first;
-                setState(() => _tab = next);
-                if (next == _LiveTvTab.recordings) _loadRecordings();
-              },
             ),
           ),
           if (_status != null)
@@ -159,11 +167,13 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                     _LiveTvTab.channels => _ChannelsList(
                       channels: _channels,
                       index: index,
+                      serverUrl: serverUrl,
                       onTune: _tune,
                     ),
                     _LiveTvTab.guide => _GuideList(
                       channels: _channels,
                       index: index,
+                      serverUrl: serverUrl,
                       recordingBusyId: _recordingBusyId,
                       onTune: _tune,
                       onRecord: _record,
@@ -176,6 +186,63 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                   },
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Channels/Guide/Recordings tab selector — replaces the default
+/// `SegmentedButton`, whose focus indicator was nearly invisible on TV.
+class _LiveTvTabPill extends StatefulWidget {
+  const _LiveTvTabPill({required this.label, required this.active, required this.onTap});
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  State<_LiveTvTabPill> createState() => _LiveTvTabPillState();
+}
+
+class _LiveTvTabPillState extends State<_LiveTvTabPill> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focused;
+    final active = widget.active;
+    return Material(
+      color: focused
+          ? PrairieColors.amberDeep
+          : active
+              ? PrairieColors.amber
+              : PrairieColors.bgElevated.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(999),
+        onFocusChange: (value) => setState(() => _focused = value),
+        focusColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        splashFactory: NoSplash.splashFactory,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: focused ? PrairieColors.ink.withValues(alpha: 0.85) : Colors.transparent,
+              width: focused ? 3 : 1,
+            ),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              color: (active && !focused) ? PrairieColors.bg : PrairieColors.ink,
+              fontWeight: focused || active ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -195,15 +262,53 @@ String _programLine(LiveTvProgram? program, String fallback) {
   return '${program.title} · $when';
 }
 
+/// Small rounded logo tile used by the Channels/Guide tabs — falls back to
+/// the channel number when there's no logo (On Now, on the home dashboard,
+/// shows the program's content poster instead; this is channel art only).
+class _ChannelBadge extends StatelessWidget {
+  const _ChannelBadge({required this.channel, required this.serverUrl});
+
+  final LiveTvChannel channel;
+  final String serverUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final logoUrl = channel.logoUrl;
+    final number = channel.numberOverride ?? channel.number;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 96,
+        height: 64,
+        padding: const EdgeInsets.all(6),
+        // Broadcast logo art is almost always designed for a light/white
+        // backdrop (often with dark or transparent-only strokes) — showing
+        // it directly on the app's dark surfaces made many logos unreadable.
+        color: Colors.white,
+        alignment: Alignment.center,
+        child: logoUrl != null
+            ? Image.network(
+                resolveAssetUrl(serverUrl, logoUrl),
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Text(number, style: const TextStyle(color: PrairieColors.bg, fontWeight: FontWeight.w600)),
+              )
+            : Text(number, style: const TextStyle(color: PrairieColors.bg, fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+}
+
 class _ChannelsList extends StatelessWidget {
   const _ChannelsList({
     required this.channels,
     required this.index,
+    required this.serverUrl,
     required this.onTune,
   });
 
   final List<LiveTvChannel> channels;
   final Map<String, List<LiveTvProgram>> index;
+  final String serverUrl;
   final void Function(LiveTvChannel) onTune;
 
   @override
@@ -221,46 +326,86 @@ class _ChannelsList extends StatelessWidget {
         final hdSuffix = channel.hd ? ' HD' : '';
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: PrairieColors.bgElevated.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              autofocus: i == 0,
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => onTune(channel),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 72,
-                      child: Text(
-                        '$number$hdSuffix',
-                        style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 2),
-                          Text(
-                            _programLine(current, 'No guide data'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+          child: _FocusableRow(
+            autofocus: i == 0,
+            onTap: () => onTune(channel),
+            child: Row(
+              children: [
+                _ChannelBadge(channel: channel, serverUrl: serverUrl),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 60,
+                  child: Text(
+                    '$number$hdSuffix',
+                    style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _programLine(current, 'No guide data'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Shared focus-aware row shell for Channels/Guide/Recordings — a visible
+/// amber-ring highlight, matching the rest of the app's TV focus language,
+/// instead of InkWell's barely-there default focus overlay.
+class _FocusableRow extends StatefulWidget {
+  const _FocusableRow({required this.child, this.onTap, this.autofocus = false});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final bool autofocus;
+
+  @override
+  State<_FocusableRow> createState() => _FocusableRowState();
+}
+
+class _FocusableRowState extends State<_FocusableRow> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focused;
+    return Material(
+      color: focused ? PrairieColors.amberDeep.withValues(alpha: 0.4) : PrairieColors.bgElevated.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        autofocus: widget.autofocus,
+        borderRadius: BorderRadius.circular(14),
+        onTap: widget.onTap,
+        onFocusChange: (value) => setState(() => _focused = value),
+        focusColor: Colors.transparent,
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: focused ? PrairieColors.ring : Colors.transparent, width: focused ? 3 : 1),
+            boxShadow: focused ? prairieFocusRing(width: 2) : null,
+          ),
+          child: widget.child,
+        ),
+      ),
     );
   }
 }
@@ -271,6 +416,7 @@ class _GuideList extends StatelessWidget {
   const _GuideList({
     required this.channels,
     required this.index,
+    required this.serverUrl,
     required this.recordingBusyId,
     required this.onTune,
     required this.onRecord,
@@ -278,6 +424,7 @@ class _GuideList extends StatelessWidget {
 
   final List<LiveTvChannel> channels;
   final Map<String, List<LiveTvProgram>> index;
+  final String serverUrl;
   final String? recordingBusyId;
   final void Function(LiveTvChannel) onTune;
   final void Function(LiveTvProgram) onRecord;
@@ -299,11 +446,15 @@ class _GuideList extends StatelessWidget {
         final recordingBusy = recordingBusyId != null;
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: DecoratedBox(
+          // A guide row has several separately-focusable action buttons
+          // rather than one tappable target, so the row border highlights
+          // whenever any of them has focus (mirrors the TS `:focus-within`
+          // rule) instead of relying on the buttons' own focus rings alone.
+          child: _GuideRowShell(
+            child: DecoratedBox(
             decoration: BoxDecoration(
               color: PrairieColors.bgElevated.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.transparent),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -312,8 +463,10 @@ class _GuideList extends StatelessWidget {
                   final wide = constraints.maxWidth >= 900;
                   final channelCol = Row(
                     children: [
+                      _ChannelBadge(channel: channel, serverUrl: serverUrl),
+                      const SizedBox(width: 12),
                       SizedBox(
-                        width: 72,
+                        width: 60,
                         child: Text(
                           '$number$hdSuffix',
                           style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
@@ -392,9 +545,66 @@ class _GuideList extends StatelessWidget {
                 },
               ),
             ),
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Highlights the whole guide row when any of its action buttons has focus
+/// (a `FocusScope` aggregates descendant focus, unlike a bare `Focus` node).
+class _GuideRowShell extends StatefulWidget {
+  const _GuideRowShell({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_GuideRowShell> createState() => _GuideRowShellState();
+}
+
+class _GuideRowShellState extends State<_GuideRowShell> {
+  // A plain marker node (never itself focused, never part of traversal) —
+  // FocusScope was tried here first but it created a traversal boundary per
+  // row, which broke D-pad down from moving past the first row's buttons.
+  // Membership-testing the focus manager's ancestor chain avoids that
+  // entirely since no new scope is introduced.
+  final _node = FocusNode(debugLabel: 'guide-row-marker', skipTraversal: true, canRequestFocus: false);
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_onGlobalFocusChange);
+  }
+
+  void _onGlobalFocusChange() {
+    final primary = FocusManager.instance.primaryFocus;
+    final within = primary != null && (primary == _node || primary.ancestors.contains(_node));
+    if (within != _focused) setState(() => _focused = within);
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_onGlobalFocusChange);
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _node,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: _focused ? 3 : 1),
+          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
+        ),
+        child: widget.child,
+      ),
     );
   }
 }
@@ -471,42 +681,53 @@ class _RecordingsList extends StatelessWidget {
     final busy = cancelBusyId == recording.id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: PrairieColors.bgElevated.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      recording.title.trim().isNotEmpty ? recording.title : 'Untitled recording',
-                      style: const TextStyle(fontFamily: 'Fraunces', fontSize: 17, color: PrairieColors.ink),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatGuideClock(recording.start)} – ${_formatGuideClock(recording.stop)}',
-                      style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                    ),
-                    Text(recording.status, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
-                  ],
+      child: _GuideRowShell(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: PrairieColors.bgElevated.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        recording.title.trim().isNotEmpty ? recording.title : 'Untitled recording',
+                        style: const TextStyle(fontFamily: 'Fraunces', fontSize: 17, color: PrairieColors.ink),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_formatGuideClock(recording.start)} – ${_formatGuideClock(recording.stop)}',
+                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                      ),
+                      Text(_recordingStatusLabel(recording.status), style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                    ],
+                  ),
                 ),
-              ),
-              if (canCancel)
-                TextButton.icon(
-                  onPressed: busy ? null : () => onCancel(recording),
-                  icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
-                  label: Text(busy ? 'Cancelling…' : 'Cancel', style: const TextStyle(color: PrairieColors.muted)),
-                ),
-            ],
+                if (canCancel)
+                  TextButton.icon(
+                    onPressed: busy ? null : () => onCancel(recording),
+                    icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
+                    label: Text(busy ? 'Cancelling…' : 'Cancel', style: const TextStyle(color: PrairieColors.muted)),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  String _recordingStatusLabel(String status) => switch (status.trim().toLowerCase()) {
+    'scheduled' => 'Scheduled',
+    'recording' || 'in_progress' => 'Recording',
+    'completed' => 'Completed',
+    'failed' => 'Failed',
+    'cancelled' || 'canceled' => 'Cancelled',
+    _ => status,
+  };
 }

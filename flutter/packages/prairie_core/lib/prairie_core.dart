@@ -30,6 +30,7 @@ export 'src/api/user_state_api.dart';
 export 'src/api/wait_for_hls_manifest.dart';
 export 'src/api/watch_api.dart';
 export 'src/discovery/discover.dart';
+export 'src/lib/language_labels.dart';
 export 'src/perf/performance_tier.dart';
 export 'src/platform/client_identity.dart';
 export 'src/platform/tv_capabilities.dart';

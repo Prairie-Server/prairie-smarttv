@@ -46,6 +46,7 @@ class _PosterCardState extends State<PosterCard> {
         autofocus: widget.autofocus,
         onFocusChange: (value) => setState(() => _focused = value),
         borderRadius: BorderRadius.circular(16),
+        focusColor: Colors.transparent,
         splashFactory: NoSplash.splashFactory,
         highlightColor: Colors.transparent,
         child: AnimatedScale(

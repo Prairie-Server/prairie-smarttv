@@ -10,12 +10,18 @@ class MediaRow<T> extends StatelessWidget {
     required this.items,
     required this.itemBuilder,
     this.variant = MediaRowVariant.poster,
+    this.escapeUpFocusNode,
   });
 
   final String title;
   final List<T> items;
   final Widget Function(BuildContext context, T item, int index) itemBuilder;
   final MediaRowVariant variant;
+  /// Explicit fallback focus target for arrow-up when Flutter's geometric
+  /// directional search can't find anything above this row (e.g. a rail
+  /// sitting directly under a page hero) — the search is unreliable enough
+  /// on real hardware that it can't be trusted as the only path back up.
+  final FocusNode? escapeUpFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +54,16 @@ class MediaRow<T> extends StatelessWidget {
                 final direction = event.logicalKey == LogicalKeyboardKey.arrowUp
                     ? TraversalDirection.up
                     : TraversalDirection.down;
-                final handled = node.focusInDirection(direction);
+                // Use the actually-focused card's rect, not this wrapper
+                // node's (which spans the full row width) — the wrapper's
+                // rect makes the geometric search unreliable, especially
+                // for "up" out of the last row on the page.
+                final focused = FocusManager.instance.primaryFocus;
+                var handled = focused?.focusInDirection(direction) ?? false;
+                if (!handled && direction == TraversalDirection.up && escapeUpFocusNode != null) {
+                  escapeUpFocusNode!.requestFocus();
+                  handled = true;
+                }
                 return handled ? KeyEventResult.handled : KeyEventResult.ignored;
               },
               child: ListView.separated(

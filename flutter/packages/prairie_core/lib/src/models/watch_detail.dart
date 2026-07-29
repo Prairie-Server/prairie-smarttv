@@ -150,7 +150,9 @@ class WatchDetail {
   );
 }
 
-/// Mirrors `PlayerLaunch` from src/screens/PlayerScreen.tsx.
+/// Mirrors `PlayerLaunch` from src/screens/PlayerScreen.tsx, extended with
+/// pre-play audio/subtitle choices made on Item Detail (not part of the TS
+/// original, which only ever offered mid-playback switching).
 class PlayerLaunch {
   const PlayerLaunch({
     required this.fileId,
@@ -158,6 +160,8 @@ class PlayerLaunch {
     this.contentId,
     this.startPositionSeconds,
     this.watch,
+    this.initialAudioTrackIndex,
+    this.initialSubtitleLanguage,
   });
 
   final int fileId;
@@ -165,4 +169,9 @@ class PlayerLaunch {
   final String? contentId;
   final double? startPositionSeconds;
   final WatchDetail? watch;
+  /// Index into the selected file's `audioTracks`, chosen ahead of time.
+  final int? initialAudioTrackIndex;
+  /// Subtitle language to auto-select on start — `''` means explicitly off,
+  /// `null` means fall back to the saved preferred-subtitle-language setting.
+  final String? initialSubtitleLanguage;
 }

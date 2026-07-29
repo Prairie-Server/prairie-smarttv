@@ -42,6 +42,7 @@ class _LandscapeCardState extends State<LandscapeCard> {
         autofocus: widget.autofocus,
         onFocusChange: (value) => setState(() => _focused = value),
         borderRadius: BorderRadius.circular(14),
+        focusColor: Colors.transparent,
         splashFactory: NoSplash.splashFactory,
         highlightColor: Colors.transparent,
         child: AnimatedScale(

@@ -32,6 +32,15 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   String? _error;
   int? _selectedFileId;
 
+  // Pre-play configurables (not part of the TS original, which only offered
+  // mid-playback switching) — the watch detail for whichever content would
+  // actually play right now (the movie itself, or the next-up episode).
+  WatchDetail? _playbackWatch;
+  int? _selectedAudioTrackIndex;
+  /// `null` = use the saved preferred-subtitle-language setting, `''` =
+  /// explicitly off, otherwise a specific track's language code.
+  String? _selectedSubtitleLanguage;
+
   // Optimistic user-state overrides (ItemDetail/CatalogItem are immutable).
   bool? _favoriteOverride;
   bool? _watchlistOverride;
@@ -131,6 +140,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _pinToHeroActions(playEnabled: !isSeriesType(item.item.type));
       if (isSeriesType(item.item.type)) {
         _loadSeasons();
+      } else {
+        _loadPlaybackOptionsFor(widget.contentId);
       }
       _loadSimilar();
     } catch (e) {
@@ -164,11 +175,39 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       final episodes = await fetchEpisodes(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId, seasonNumber);
       if (!mounted) return;
       setState(() => _episodes = episodes);
-      _pinToHeroActions(playEnabled: pickNextUpEpisode(episodes) != null);
+      final nextUp = pickNextUpEpisode(episodes);
+      _pinToHeroActions(playEnabled: nextUp != null);
+      if (nextUp != null) _loadPlaybackOptionsFor(nextUp.contentId);
     } catch (_) {
       // Ignore — episode grid just stays empty for this season.
     } finally {
       if (mounted) setState(() => _episodesLoading = false);
+    }
+  }
+
+  /// Pre-fetches watch detail (audio/subtitle track lists) for whichever
+  /// content would actually play right now, so the Playback options panel
+  /// can offer track pre-selection before the viewer presses Play.
+  ///
+  /// Always hits the real `/watch/{id}` endpoint rather than going through
+  /// [_resolveWatchDetail] — that method's cache-miss fast path builds a
+  /// synthetic `WatchDetail` straight from the already-loaded `ItemDetail`
+  /// for movies (`id == widget.contentId`), which carries no audio/subtitle
+  /// track data at all (`ItemVersion` never had it), so movies would always
+  /// show an empty Playback options panel while episodes (fetched by a
+  /// different id, so they take the real-fetch path) worked fine.
+  Future<void> _loadPlaybackOptionsFor(String contentId) async {
+    try {
+      final watch = await fetchWatchDetail(ref.read(apiClientProvider), ref.read(sessionProvider)!, contentId);
+      _watchCache[contentId] = watch;
+      if (!mounted) return;
+      setState(() {
+        _playbackWatch = watch;
+        _selectedAudioTrackIndex = null;
+        _selectedSubtitleLanguage = null;
+      });
+    } catch (_) {
+      // Optional — Play itself re-resolves watch detail regardless.
     }
   }
 
@@ -230,7 +269,15 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       if (!mounted) return;
       ref.read(routeProvider.notifier).go(
         PlayerRoute(
-          launch: PlayerLaunch(fileId: fileId, title: watch.title.isNotEmpty ? watch.title : title, contentId: id, startPositionSeconds: startPosition, watch: watch),
+          launch: PlayerLaunch(
+            fileId: fileId,
+            title: watch.title.isNotEmpty ? watch.title : title,
+            contentId: id,
+            startPositionSeconds: startPosition,
+            watch: watch,
+            initialAudioTrackIndex: _selectedAudioTrackIndex,
+            initialSubtitleLanguage: _selectedSubtitleLanguage,
+          ),
           back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back),
         ),
       );
@@ -410,14 +457,23 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   onToggleFavorite: _toggleFavorite,
                   onToggleWatchlist: _toggleWatchlist,
                   onToggleWatched: _toggleWatched,
+                  audioTracks: _currentPlaybackVersion(isSeries)?.audioTracks ?? const [],
+                  subtitleTracks: _currentPlaybackVersion(isSeries)?.subtitleTracks ?? const [],
+                  selectedAudioTrackIndex: _selectedAudioTrackIndex,
+                  selectedSubtitleLanguage: _selectedSubtitleLanguage,
+                  onAudioChanged: (v) => setState(() => _selectedAudioTrackIndex = v),
+                  onSubtitleChanged: (v) => setState(() => _selectedSubtitleLanguage = v),
                 ),
                 ExcludeFocus(
                   excluding: !_heroPinned,
-                  child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                 if (!isSeries && detail.versions.length > 1) ...[
                   const SizedBox(height: 24),
                   const Text('Version', style: TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink)),
@@ -430,21 +486,47 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                         ChoiceChip(
                           label: Text(_versionLabel(version)),
                           selected: _selectedFileId == version.fileId,
-                          onSelected: (_) => setState(() => _selectedFileId = version.fileId),
+                          onSelected: (_) => setState(() {
+                            _selectedFileId = version.fileId;
+                            // Track lists differ per file version.
+                            _selectedAudioTrackIndex = null;
+                            _selectedSubtitleLanguage = null;
+                          }),
                         ),
                     ],
                   ),
                 ],
+                Builder(
+                  // Audio/subtitle pickers live next to Play in the hero now;
+                  // this just shows the technical summary line for the
+                  // selected version.
+                  builder: (context) {
+                    final version = _currentPlaybackVersion(isSeries);
+                    if (version == null) return const SizedBox.shrink();
+                    final summary = [
+                      if (version.container != null) version.container!.toUpperCase(),
+                      if (version.resolution != null) version.resolution!,
+                      if (version.codecVideo != null) version.codecVideo!.toUpperCase(),
+                      if (version.codecAudio != null) '${version.codecAudio!.toUpperCase()} audio',
+                      if (version.duration != null) formatRuntimeSeconds(version.duration!),
+                    ].join(' · ');
+                    if (summary.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 24),
+                      child: Text(summary, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                    );
+                  },
+                ),
                 if (isSeries && _seasons.isNotEmpty) ...[
                   const SizedBox(height: 32),
                   Wrap(
                     spacing: 8,
                     children: [
                       for (final season in _seasons)
-                        ChoiceChip(
-                          label: Text(season.title ?? 'Season ${season.seasonNumber}'),
+                        _SeasonChip(
+                          label: season.title ?? 'Season ${season.seasonNumber}',
                           selected: _seasonNumber == season.seasonNumber,
-                          onSelected: (_) => _selectSeason(season.seasonNumber),
+                          onTap: () => _selectSeason(season.seasonNumber),
                         ),
                     ],
                   ),
@@ -490,49 +572,36 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   const SizedBox(height: 12),
                   _DetailsTable(detail: detail, isSeries: isSeries),
                 ],
-                if (detail.cast.isNotEmpty) ...[
-                  const SizedBox(height: 32),
-                  MediaRow<CastMember>(
-                    title: 'Cast',
-                    items: detail.cast,
-                    itemBuilder: (context, member, index) => SizedBox(
-                      width: 120,
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: PrairieColors.bgElevated,
-                            backgroundImage: member.photoUrl != null ? NetworkImage(resolveAssetUrl(session.serverUrl, member.photoUrl!)) : null,
-                            child: member.photoUrl == null ? const Icon(Icons.person, color: PrairieColors.muted) : null,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 13)),
-                          if (member.character != null)
-                            Text(member.character!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
                         ],
                       ),
                     ),
-                  ),
-                ],
-                if (_similar.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  MediaRow<CatalogItem>(
-                    title: 'More like this',
-                    items: _similar,
-                    itemBuilder: (context, item, index) => PosterCard(
-                      title: item.title,
-                      subtitle: item.subtitle,
-                      posterUrl: item.posterUrl,
-                      serverUrl: session.serverUrl,
-                      watched: item.userState?.played ?? false,
-                      onTap: () => ref.read(routeProvider.notifier).go(
-                        DetailRoute(contentId: item.contentId, seed: item, back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back)),
+                    // Cast/Similar are full-bleed MediaRows with their own
+                    // 24px inset — nesting them in the Padding above would
+                    // double it to 48px, leaving a visible extra gutter.
+                    if (detail.cast.isNotEmpty)
+                      MediaRow<CastMember>(
+                        title: 'Cast',
+                        items: detail.cast,
+                        escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
+                        itemBuilder: (context, member, index) => _CastMemberCard(member: member, serverUrl: session.serverUrl),
                       ),
-                    ),
-                  ),
-                ],
-                    ],
-                  ),
+                    if (_similar.isNotEmpty)
+                      MediaRow<CatalogItem>(
+                        title: 'More like this',
+                        items: _similar,
+                        escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
+                        itemBuilder: (context, item, index) => PosterCard(
+                          title: item.title,
+                          subtitle: item.subtitle,
+                          posterUrl: item.posterUrl,
+                          serverUrl: session.serverUrl,
+                          watched: item.userState?.played ?? false,
+                          onTap: () => ref.read(routeProvider.notifier).go(
+                            DetailRoute(contentId: item.contentId, seed: item, back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back)),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 ),
               ],
@@ -540,6 +609,14 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
             ),
       ),
     );
+  }
+
+  FileVersion? _currentPlaybackVersion(bool isSeries) {
+    final watch = _playbackWatch;
+    if (watch == null || watch.versions.isEmpty) return null;
+    if (isSeries) return watch.versions.first;
+    final fileId = _selectedFileId ?? watch.versions.first.fileId;
+    return selectFileVersion(watch, fileId) ?? watch.versions.first;
   }
 
   bool _hasDetailsSection(ItemDetail detail) {
@@ -586,6 +663,12 @@ class _Hero extends StatelessWidget {
     required this.onToggleFavorite,
     required this.onToggleWatchlist,
     required this.onToggleWatched,
+    this.audioTracks = const [],
+    this.subtitleTracks = const [],
+    this.selectedAudioTrackIndex,
+    this.selectedSubtitleLanguage,
+    this.onAudioChanged,
+    this.onSubtitleChanged,
   });
 
   final ItemDetail detail;
@@ -607,6 +690,12 @@ class _Hero extends StatelessWidget {
   final VoidCallback onToggleFavorite;
   final VoidCallback onToggleWatchlist;
   final VoidCallback onToggleWatched;
+  final List<AudioTrackInfo> audioTracks;
+  final List<SubtitleTrackInfo> subtitleTracks;
+  final int? selectedAudioTrackIndex;
+  final String? selectedSubtitleLanguage;
+  final ValueChanged<int?>? onAudioChanged;
+  final ValueChanged<String?>? onSubtitleChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -778,6 +867,86 @@ class _Hero extends StatelessWidget {
                                     icon: const Icon(Icons.replay),
                                     label: const Text('Start Over'),
                                   ),
+                                if (audioTracks.length > 1)
+                                  _TrackPickerButton(
+                                    icon: Icons.audiotrack,
+                                    valueLabel: selectedAudioTrackIndex == null
+                                        ? 'Auto'
+                                        : formatAudioLabel(audioTracks[selectedAudioTrackIndex!], selectedAudioTrackIndex!),
+                                    onTap: () async {
+                                      final choice = await showModalBottomSheet<int?>(
+                                        context: context,
+                                        backgroundColor: PrairieColors.bgElevated,
+                                        builder: (context) => SafeArea(
+                                          child: ListView(
+                                            shrinkWrap: true,
+                                            children: [
+                                              ListTile(
+                                                title: const Text('Auto', style: TextStyle(color: PrairieColors.ink)),
+                                                trailing: selectedAudioTrackIndex == null ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                                                onTap: () => Navigator.pop(context, null),
+                                              ),
+                                              for (var i = 0; i < audioTracks.length; i++)
+                                                ListTile(
+                                                  title: Text(formatAudioLabel(audioTracks[i], i), style: const TextStyle(color: PrairieColors.ink)),
+                                                  trailing: selectedAudioTrackIndex == i ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                                                  onTap: () => Navigator.pop(context, i),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                      onAudioChanged?.call(choice);
+                                    },
+                                  ),
+                                if (subtitleTracks.isNotEmpty)
+                                  _TrackPickerButton(
+                                    icon: Icons.subtitles_outlined,
+                                    valueLabel: selectedSubtitleLanguage == ''
+                                        ? 'Off'
+                                        : selectedSubtitleLanguage == null
+                                            ? 'Auto'
+                                            : humanizeTrackLanguage(selectedSubtitleLanguage!),
+                                    onTap: () async {
+                                      final choice = await showModalBottomSheet<String?>(
+                                        context: context,
+                                        backgroundColor: PrairieColors.bgElevated,
+                                        builder: (context) => SafeArea(
+                                          child: ListView(
+                                            shrinkWrap: true,
+                                            children: [
+                                              ListTile(
+                                                title: const Text('Off', style: TextStyle(color: PrairieColors.ink)),
+                                                trailing: selectedSubtitleLanguage == '' ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                                                onTap: () => Navigator.pop(context, ''),
+                                              ),
+                                              ListTile(
+                                                title: const Text('Auto', style: TextStyle(color: PrairieColors.ink)),
+                                                trailing: selectedSubtitleLanguage == null ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                                                onTap: () => Navigator.pop(context, null),
+                                              ),
+                                              for (final track in subtitleTracks)
+                                                if ((track.language ?? '').isNotEmpty)
+                                                  ListTile(
+                                                    title: Text(
+                                                      formatSubtitleLabel(
+                                                        language: humanizeTrackLanguage(track.language!),
+                                                        label: track.title,
+                                                        hearingImpaired: track.hearingImpaired,
+                                                        forced: track.forced,
+                                                      ),
+                                                      style: const TextStyle(color: PrairieColors.ink),
+                                                    ),
+                                                    trailing: selectedSubtitleLanguage == track.language ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                                                    onTap: () => Navigator.pop(context, track.language),
+                                                  ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                      onSubtitleChanged?.call(choice);
+                                    },
+                                  ),
                                 IconButton(
                                   onPressed: busyAction ? null : onToggleFavorite,
                                   icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: PrairieColors.amber),
@@ -806,6 +975,26 @@ class _Hero extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Compact audio/subtitle track picker button that sits next to Play — the
+/// button's own label always shows the current selection, so focusing it is
+/// enough to see what's active without opening the picker.
+class _TrackPickerButton extends StatelessWidget {
+  const _TrackPickerButton({required this.icon, required this.valueLabel, required this.onTap});
+
+  final IconData icon;
+  final String valueLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18),
+      label: Text(valueLabel),
     );
   }
 }
@@ -847,7 +1036,120 @@ class _DetailsTable extends StatelessWidget {
   }
 }
 
-class _EpisodeCard extends StatelessWidget {
+/// Focusable cast member card — plain widgets aren't part of the focus tree
+/// at all, which made directional nav skip the whole Cast row entirely.
+/// Season selector — replaces the bare default `ChoiceChip` (barely
+/// distinguishable selected/unselected states) with the app's own
+/// bordered-pill focus/selected language, matching `_SectionButton`.
+class _SeasonChip extends StatefulWidget {
+  const _SeasonChip({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_SeasonChip> createState() => _SeasonChipState();
+}
+
+class _SeasonChipState extends State<_SeasonChip> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focused;
+    final selected = widget.selected;
+    return Material(
+      color: focused
+          ? PrairieColors.amberDeep
+          : selected
+              ? PrairieColors.amber.withValues(alpha: 0.18)
+              : PrairieColors.bgElevated.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(20),
+        onFocusChange: (value) => setState(() => _focused = value),
+        focusColor: Colors.transparent,
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: focused
+                  ? PrairieColors.ink.withValues(alpha: 0.85)
+                  : selected
+                      ? PrairieColors.amber.withValues(alpha: 0.6)
+                      : PrairieColors.ink.withValues(alpha: 0.12),
+              width: focused ? 3 : selected ? 2 : 1,
+            ),
+            boxShadow: focused ? prairieFocusRing(width: 2) : null,
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              color: focused ? PrairieColors.ink : selected ? PrairieColors.amberBright : PrairieColors.ink,
+              fontWeight: focused || selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CastMemberCard extends StatefulWidget {
+  const _CastMemberCard({required this.member, required this.serverUrl});
+
+  final CastMember member;
+  final String serverUrl;
+
+  @override
+  State<_CastMemberCard> createState() => _CastMemberCardState();
+}
+
+class _CastMemberCardState extends State<_CastMemberCard> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final member = widget.member;
+    return Focus(
+      onFocusChange: (value) => setState(() => _focused = value),
+      child: SizedBox(
+        width: 120,
+        child: Column(
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _focused ? PrairieColors.amber : Colors.transparent, width: 3),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(3),
+                child: CircleAvatar(
+                  radius: 45,
+                  backgroundColor: PrairieColors.bgElevated,
+                  backgroundImage: member.photoUrl != null ? NetworkImage(resolveAssetUrl(widget.serverUrl, member.photoUrl!)) : null,
+                  child: member.photoUrl == null ? const Icon(Icons.person, color: PrairieColors.muted) : null,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 13)),
+            if (member.character != null)
+              Text(member.character!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EpisodeCard extends StatefulWidget {
   const _EpisodeCard({required this.episode, required this.serverUrl, required this.onTap});
 
   final EpisodeSummary episode;
@@ -855,30 +1157,51 @@ class _EpisodeCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_EpisodeCard> createState() => _EpisodeCardState();
+}
+
+class _EpisodeCardState extends State<_EpisodeCard> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
+    final episode = widget.episode;
     final still = episode.stillUrl ?? episode.posterUrl;
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: still != null
-                  ? Image.network(resolveAssetUrl(serverUrl, still), fit: BoxFit.cover, errorBuilder: (_, _, _) => const PosterFallback())
-                  : const PosterFallback(),
+      onFocusChange: (value) => setState(() => _focused = value),
+      // The theme's default focusColor (a light amber overlay) would
+      // otherwise paint on top of the border/glow below.
+      focusColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: 3),
+          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: still != null
+                    ? Image.network(resolveAssetUrl(widget.serverUrl, still), fit: BoxFit.cover, errorBuilder: (_, _, _) => const PosterFallback())
+                    : const PosterFallback(),
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(episode.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 13)),
-          Text(
-            'Episode ${episode.episodeNumber ?? ''}',
-            style: const TextStyle(color: PrairieColors.muted, fontSize: 12),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(episode.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 13)),
+            Text(
+              'Episode ${episode.episodeNumber ?? ''}',
+              style: const TextStyle(color: PrairieColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -15,7 +15,14 @@ class ShellScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider)!;
     final liveTvAvailable = ref.watch(liveTvAvailableProvider).valueOrNull ?? (active == ShellTab.livetv);
-    return Scaffold(
+    // Back on any tab other than Home returns to Home instead of exiting the
+    // app — only Home's own back falls through to the platform default.
+    return PopScope(
+      canPop: active == ShellTab.home,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) ref.read(routeProvider.notifier).go(const HomeRoute());
+      },
+      child: Scaffold(
       appBar: ShellNav(
         active: active,
         profileName: session.profileName,
@@ -43,6 +50,7 @@ class ShellScaffold extends ConsumerWidget {
         },
       ),
       body: body,
+      ),
     );
   }
 }
