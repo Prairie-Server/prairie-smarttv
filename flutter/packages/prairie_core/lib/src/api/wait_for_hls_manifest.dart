@@ -41,8 +41,11 @@ String? _resolveHlsReference(String playlistUrl, String reference) {
   }
 }
 
-/// Resolve the first media segment URI from an m3u8 body relative to [playlistUrl].
-String? firstMediaSegmentUrl(String playlistUrl, String body) {
+/// Resolve the first non-comment URI line in an m3u8 body relative to
+/// [playlistUrl] — the first media segment in a media playlist, or the
+/// variant URI in a master playlist (`#EXT-X-STREAM-INF` is always followed
+/// by exactly one URI line, same shape as a segment reference).
+String? firstUriLine(String playlistUrl, String body) {
   for (final rawLine in body.split('\n')) {
     final line = rawLine.trim();
     if (line.isEmpty || line.startsWith('#')) continue;
@@ -50,6 +53,9 @@ String? firstMediaSegmentUrl(String playlistUrl, String body) {
   }
   return null;
 }
+
+/// Resolve the first media segment URI from an m3u8 body relative to [playlistUrl].
+String? firstMediaSegmentUrl(String playlistUrl, String body) => firstUriLine(playlistUrl, body);
 
 /// Resolve the fMP4 init segment (`#EXT-X-MAP:URI="…"`) relative to
 /// [playlistUrl], if the playlist declares one. Media segments in an fMP4
@@ -92,6 +98,8 @@ Future<bool> waitForHlsManifest(
   final deadline = DateTime.now().add(timeout);
   var delay = interval;
   var nextKeepAliveAt = DateTime.now();
+  var probeUrl = url; // the master; AVPlay/attach() keeps the original `url`
+  var followedVariant = false;
 
   while (DateTime.now().isBefore(deadline)) {
     if (cancelToken?.isCancelled == true) return false;
@@ -106,18 +114,30 @@ Future<bool> waitForHlsManifest(
       nextKeepAliveAt = DateTime.now().add(keepAliveEvery);
     }
 
-    final body = await _fetchText(client, url, cancelToken);
+    final body = await _fetchText(client, probeUrl, cancelToken);
     if (cancelToken?.isCancelled == true) return false;
 
     if (body != null && body.contains('#EXTM3U')) {
+      // A master playlist carries #EXT-X-STREAM-INF and a variant URI, never
+      // #EXTINF. Follow it once and poll the media playlist from here on: the
+      // master is static, the media playlist is the one that grows.
+      if (!followedVariant && body.contains('#EXT-X-STREAM-INF')) {
+        final variant = firstUriLine(probeUrl, body);
+        if (variant != null) {
+          probeUrl = variant;
+          followedVariant = true;
+          continue; // re-probe immediately, don't burn a backoff tick
+        }
+        // No URI line yet — fall through to the normal backoff and retry.
+      }
       if (!requireSegment) return true;
       if (body.contains('#EXTINF')) {
-        final initUrl = initSegmentUrl(url, body);
+        final initUrl = initSegmentUrl(probeUrl, body);
         final initReady = initUrl == null || await _segmentReady(client, initUrl, cancelToken);
         if (cancelToken?.isCancelled == true) return false;
 
         if (initReady) {
-          final segmentUrl = firstMediaSegmentUrl(url, body);
+          final segmentUrl = firstUriLine(probeUrl, body);
           if (segmentUrl != null) {
             final ready = await _segmentReady(client, segmentUrl, cancelToken);
             if (cancelToken?.isCancelled == true) return false;
