@@ -10,7 +10,7 @@ class SubtitleTrackChoice {
 }
 
 /// Platform-agnostic contract for video playback, implemented per platform
-/// (Tizen via `video_player_avplay`, webOS via its own native path).
+/// (Tizen via `video_player_videohole`, webOS via its own native path).
 ///
 /// Mirrors the capability surface of src/platform/tizen/avplay.ts and
 /// src/player/*. DRM configuration is a known gap — see the Tizen
@@ -30,7 +30,7 @@ abstract class VideoBackend {
 
   /// Completes once the first frame/duration is known. Must only be called
   /// after [attach], ideally after [buildSurface] has been laid out for at
-  /// least one frame (Tizen AVPlay hole-punch).
+  /// least one frame (Tizen native player video-plane sizing).
   Future<void> initialize({Duration? startPosition});
 
   Future<void> play();
@@ -56,7 +56,7 @@ abstract class VideoBackend {
   /// Diagnostics-only, fire-and-forget report of a player-state event string
   /// (e.g. `'init:start:…'`). No-op unless the platform backend has a
   /// diagnostics channel wired up and the user opted into it — see Tizen's
-  /// `AvplayVideoBackend` beacon, the only reachable logging on that TV.
+  /// `VideoholeVideoBackend` beacon, the only reachable logging on that TV.
   /// Exists on the interface so callers in `prairie_core` (which never sees
   /// the concrete backend type) can still instrument lifecycle moments the
   /// backend itself doesn't observe, like [initialize]'s own call site.
@@ -76,12 +76,12 @@ abstract class VideoBackend {
   /// subtitle decoding/timing.
   Stream<String?> get captionStream;
 
-  /// The platform's native video-rendering widget (e.g. `video_player_avplay`'s
+  /// The platform's native video-rendering widget (e.g. `video_player_videohole`'s
   /// `VideoPlayer`), so the shared `PlayerScreen` never needs to know which
   /// native player produced it. Valid after [attach].
   Widget buildSurface();
 
-  /// Releases the native player session. Mirrors AVPlay's
+  /// Releases the native player session. Mirrors the native player's
   /// `close()`/session teardown on player exit — must be called before
   /// leaving the player screen so the TV's single hardware decoder is
   /// freed for the next playback.
@@ -90,7 +90,7 @@ abstract class VideoBackend {
 
 /// Supplies a fresh [VideoBackend] instance per playback session. Platform
 /// apps override [videoBackendFactoryProvider] with their real
-/// implementation (see prairie_tizen's `AvplayVideoBackend`) — `prairie_core`
+/// implementation (see prairie_tizen's `VideoholeVideoBackend`) — `prairie_core`
 /// only knows the interface, never the concrete native bridge.
 ///
 /// [enableDiagnostics] mirrors `PlaybackSettings.enableDiagnosticsBeacon` at

@@ -2,34 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:prairie_core/prairie_core.dart';
-import 'package:video_player_avplay/video_player.dart';
-import 'package:video_player_avplay/video_player_platform_interface.dart';
+import 'package:video_player_videohole/video_player.dart';
 
-/// [VideoBackend] implementation over `video_player_avplay`, wrapping Tizen's
-/// native AVPlay (MMPlayer/PlusPlayer) API.
+/// [VideoBackend] implementation over `video_player_videohole`, wrapping
+/// Tizen's system Media Player (`player.h` capi / MMPlayer).
 ///
-/// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
-/// underlying plugin but not yet wired up here.
-/// Diagnostic override: when non-empty, [AvplayVideoBackend.attach] hands this
-/// URL to AVPlay instead of the session's own stream URL.
-///
-/// This is the HLS stream from the video_player_avplay example, so it is known
-/// to work with this exact plugin and player, and it is a multi-variant master
-/// playlist -- the same code path that fails against our server. It partitions
-/// a silent prepare failure into "this app cannot play HLS at all" versus "the
-/// player rejects something specific about our manifest or URL".
-///
-/// That distinction is one no amount of server-side work can make. AVPlay
-/// fetches our master playlist, returns 200, and then issues no further request
-/// and raises no error, because PlusPlayer::OnPrepareDone only calls
-/// SendInitialized when the prepare succeeded and emits nothing when it did
-/// not. Seven sessions produced no diagnostic on any layer.
-///
-/// Set back to '' to resume normal playback.
-const String kHlsReferenceStreamOverride =
-    'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
-
-class AvplayVideoBackend implements VideoBackend {
+/// Chosen over `video_player_avplay` (PlusPlayer) because the AVPlay plugin's
+/// bundled GStreamer demuxer plugins (`libgsthls.so`, `libgstffmpeg.so`) hard
+/// -link `libclearkey.so.0`, and loading that library fails with `Operation
+/// not permitted` on retail-signed (non-partner-cert) builds — blocking
+/// playback of *any* content, DRM or not. `video_player_videohole` calls
+/// Tizen's standard `player_set_uri` directly and never touches that
+/// dependency, so it works on a retail cert. Trade-off: this plugin has no
+/// DRM support at all — fine, since Prairie never serves DRM content.
+class VideoholeVideoBackend implements VideoBackend {
   /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
   /// needs a VM service that a release build doesn't attach, and `debugPrint`
   /// needs an `sdb dlog` session at the TV). The server already logs full
@@ -38,7 +24,7 @@ class AvplayVideoBackend implements VideoBackend {
   /// timestamped and correlated with the playback session. Never let a
   /// beacon failure affect playback: every call is fire-and-forget. Both are
   /// null unless the user opted into `PlaybackSettings.enableDiagnosticsBeacon`.
-  AvplayVideoBackend({this.beaconClient, this.beaconServerUrl});
+  VideoholeVideoBackend({this.beaconClient, this.beaconServerUrl});
 
   final ApiClient? beaconClient;
   final String? Function()? beaconServerUrl;
@@ -74,11 +60,6 @@ class AvplayVideoBackend implements VideoBackend {
   bool? _lastBuffering;
   bool? _lastIsInitialized;
 
-  static bool _isHls(String url) {
-    final path = url.split('?').first.toLowerCase();
-    return path.endsWith('.m3u8') || path.contains('/hls');
-  }
-
   /// Redacts query-param values (session tokens) before a URL hits the log.
   static String _redactQuery(String url) {
     final uri = Uri.tryParse(url);
@@ -89,31 +70,13 @@ class AvplayVideoBackend implements VideoBackend {
 
   @override
   void attach(String url, {String? maxResolution}) {
-    // The readiness probe still runs against the real session URL, so the
-    // override only changes what the player is handed -- everything upstream of
-    // it is exercised exactly as in a normal session.
-    final effectiveUrl =
-        kHlsReferenceStreamOverride.isEmpty ? url : kHlsReferenceStreamOverride;
-    final usingReference = effectiveUrl != url;
-    final hls = _isHls(effectiveUrl);
-    final fixed = avPlayFixedMaxResolution(maxResolution);
+    // video_player_videohole has no equivalent to AVPlay's fixed-max-resolution
+    // knob (no DRM/ABR-cap parameter on the plugin's network constructor), so
+    // maxResolution is accepted for interface parity but unused here.
+    final controller = VideoPlayerController.network(url);
 
-    final controller = VideoPlayerController.network(effectiveUrl);
-
-    final queryParams = Uri.tryParse(effectiveUrl)?.queryParameters.keys.join(',');
-
-    debugPrint(
-      'prairie.avplay: attach '
-      'url=${_redactQuery(effectiveUrl)} '
-      'hls=$hls '
-      'fixedMaxResolution=$fixed '
-      'queryParams=$queryParams '
-      'referenceStream=$usingReference',
-    );
-
-    // ref= is what proves which build is actually on the device: dlog is blank
-    // on this TV, so the server request log is the only readable channel.
-    reportDiagnostic('attach:hls=$hls:params=$queryParams:ref=$usingReference');
+    debugPrint('prairie.videohole: attach url=${_redactQuery(url)}');
+    reportDiagnostic('attach:backend=videohole');
 
     _controller = controller;
     controller.addListener(_onControllerUpdate);
@@ -123,7 +86,7 @@ class AvplayVideoBackend implements VideoBackend {
   Future<void> initialize({Duration? startPosition}) async {
     final controller = _controller;
     if (controller == null) {
-      throw StateError('AvplayVideoBackend.attach must be called before initialize');
+      throw StateError('VideoholeVideoBackend.attach must be called before initialize');
     }
     await controller.initialize();
     _initialized = true;
@@ -131,10 +94,9 @@ class AvplayVideoBackend implements VideoBackend {
       await controller.seekTo(startPosition);
     }
     try {
-      final tracks = await controller.getActiveTrackInfo();
+      final tracks = await controller.textTracks ?? const <TextTrack>[];
       _subtitleTracks = tracks
-          .where((t) => t.trackType == TrackType.text)
-          .map((t) => SubtitleTrackChoice(trackId: t.trackId, language: (t as TextTrack).language))
+          .map((t) => SubtitleTrackChoice(trackId: t.trackId, language: t.language))
           .toList();
     } catch (_) {
       _subtitleTracks = [];
@@ -153,12 +115,12 @@ class AvplayVideoBackend implements VideoBackend {
 
     if (value.isBuffering != _lastBuffering) {
       _lastBuffering = value.isBuffering;
-      debugPrint('prairie.avplay: isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}');
+      debugPrint('prairie.videohole: isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}');
       reportDiagnostic('buf=${value.isBuffering}:pos=${value.position.inMilliseconds}');
     }
     if (value.isInitialized != _lastIsInitialized) {
       _lastIsInitialized = value.isInitialized;
-      debugPrint('prairie.avplay: isInitialized=${value.isInitialized} duration=${value.duration}');
+      debugPrint('prairie.videohole: isInitialized=${value.isInitialized} duration=${value.duration}');
       reportDiagnostic('init=${value.isInitialized}:dur=${value.duration.end.inMilliseconds}');
     }
 
@@ -166,15 +128,13 @@ class AvplayVideoBackend implements VideoBackend {
       final message = (value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
-        debugPrint('prairie.avplay: hasError message=$message');
+        debugPrint('prairie.videohole: hasError message=$message');
         reportDiagnostic('err=$message');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }
 
-    final captions = controller.value.captions;
-    final textCaptions = captions.textCaptions;
-    final text = textCaptions != null && textCaptions.isNotEmpty ? textCaptions.first.text : null;
+    final text = value.caption.text.isEmpty ? null : value.caption.text;
     if (text != _lastCaptionText) {
       _lastCaptionText = text;
       _captionController.add(text);
@@ -207,7 +167,7 @@ class AvplayVideoBackend implements VideoBackend {
       }
     }
     if (track == null) return;
-    await controller.setTrackSelection(TextTrack(trackId: trackId, mimetype: '', language: track.language));
+    await controller.setTrackSelection(TextTrack(trackId: trackId, language: track.language));
   }
 
   @override
@@ -243,9 +203,10 @@ class AvplayVideoBackend implements VideoBackend {
   Widget buildSurface() {
     final controller = _controller;
     if (controller == null) return const SizedBox.shrink();
-    // Full-bleed surface: Tizen hole-punch needs a non-zero laid-out size
-    // before prepareAsync completes. AspectRatio(1.0) before init shrinks the
-    // hole and leaves the Flutter loading spinner covering a blank plane.
+    // Full-bleed surface: the native player's video plane needs a non-zero
+    // laid-out size before prepare completes, same constraint as AVPlay's
+    // hole-punch. AspectRatio(1.0) before init shrinks the hole and leaves
+    // the Flutter loading spinner covering a blank plane.
     return SizedBox.expand(child: VideoPlayer(controller));
   }
 

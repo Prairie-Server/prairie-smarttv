@@ -25,7 +25,7 @@ class PlaybackSettings {
   final bool disableAv1;
   final SubtitleAppearance subtitleAppearance;
   final String preferredSubtitleLanguage;
-  /// Off by default — sends player-state beacons (see `AvplayVideoBackend`)
+  /// Off by default — sends player-state beacons (see `VideoholeVideoBackend`)
   /// on every playback session, which is extra network traffic in normal use
   /// and only useful while actively diagnosing a TV playback issue.
   final bool enableDiagnosticsBeacon;

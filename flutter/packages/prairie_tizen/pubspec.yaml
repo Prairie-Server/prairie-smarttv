@@ -18,7 +18,7 @@ dependencies:
   flutter_secure_storage_tizen: ^0.1.3
   # path_provider_tizen intentionally omitted — prairie_core does not use
   # path_provider; dropping it shrinks the TPK.
-  video_player_avplay: ^0.8.14
+  video_player_videohole: ^0.5.9
   device_info_plus_tizen: ^1.4.0
 
 dev_dependencies:

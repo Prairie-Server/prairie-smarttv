@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
-import 'platform/avplay_video_backend.dart';
+import 'platform/videohole_video_backend.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +33,7 @@ Future<void> main() async {
     ProviderScope(
       overrides: [
         videoBackendFactoryProvider.overrideWith(
-          (ref) => ({bool enableDiagnostics = false}) => AvplayVideoBackend(
+          (ref) => ({bool enableDiagnostics = false}) => VideoholeVideoBackend(
             beaconClient: enableDiagnostics ? ref.read(apiClientProvider) : null,
             beaconServerUrl: enableDiagnostics ? () => ref.read(sessionProvider)?.serverUrl : null,
           ),

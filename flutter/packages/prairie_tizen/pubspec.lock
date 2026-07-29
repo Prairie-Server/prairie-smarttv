@@ -211,14 +211,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_tizen:
-    dependency: transitive
-    description:
-      name: flutter_tizen
-      sha256: "5df51a022828127d8d3bf2af32e67b746b764b1209193148fd33b0d7b7c122a7"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.7"
   flutter_web_plugins:
     dependency: transitive
     description: flutter
@@ -628,14 +620,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
-  video_player_avplay:
+  video_player_videohole:
     dependency: "direct main"
     description:
-      name: video_player_avplay
-      sha256: "7d534fbdd079e30b58fcd4bee05cb2fb224decd98cdd6bbd07699eab6fac6d3c"
+      name: video_player_videohole
+      sha256: "3638658ec6f3169dc631cbf4754f3e1b8fed83c109b3e757fe7d067963c4a0d2"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.14"
+    version: "0.5.9"
   vm_service:
     dependency: transitive
     description:
