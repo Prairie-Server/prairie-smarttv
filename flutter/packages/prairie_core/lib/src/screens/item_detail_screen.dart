@@ -38,6 +38,16 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   bool? _playedOverride;
 
   final _watchCache = <String, WatchDetail>{};
+  final _scrollController = ScrollController();
+  final _playFocus = FocusNode(debugLabel: 'detail-play');
+  final _backFocus = FocusNode(debugLabel: 'detail-back');
+  /// Once the viewer moves focus/scroll themselves, stop re-pinning to Play.
+  bool _userMovedFocus = false;
+  bool _pinScheduled = false;
+  bool _pinning = false;
+  /// Lower rails stay unfocusable until the hero actions have been focused once,
+  /// so async "More like this" mounts can't steal the initial focus.
+  bool _heroPinned = false;
 
   bool get _isFavorite => _favoriteOverride ?? _detail?.item.userState?.isFavorite ?? false;
   bool get _inWatchlist => _watchlistOverride ?? _detail?.item.userState?.inWatchlist ?? false;
@@ -46,7 +56,50 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   @override
   void initState() {
     super.initState();
+    FocusManager.instance.addListener(_onFocusManagerChange);
     _load();
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_onFocusManagerChange);
+    _scrollController.dispose();
+    _playFocus.dispose();
+    _backFocus.dispose();
+    super.dispose();
+  }
+
+  void _onFocusManagerChange() {
+    if (_pinning || !_heroPinned || _userMovedFocus) return;
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return;
+    if (primary == _playFocus || primary == _backFocus) return;
+    // Focus landed below the hero (seasons, episodes, More like this, …).
+    _userMovedFocus = true;
+  }
+
+  /// Keep the hero actions focused at the top. Async seasons/similar mounts
+  /// otherwise steal focus onto "More like this" posters and scroll them into
+  /// view — after which D-pad up can't escape the horizontal rail.
+  void _pinToHeroActions({required bool playEnabled}) {
+    if (_userMovedFocus || !mounted) return;
+    if (_pinScheduled) return;
+    _pinScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pinScheduled = false;
+      if (!mounted || _userMovedFocus) return;
+      _pinning = true;
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+      _playFocus.skipTraversal = !playEnabled;
+      final target = playEnabled ? _playFocus : _backFocus;
+      target.requestFocus();
+      _pinning = false;
+      if (!_heroPinned && mounted) {
+        setState(() => _heroPinned = true);
+      }
+    });
   }
 
   Future<void> _load() async {
@@ -62,6 +115,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _watchlistOverride = null;
       _playedOverride = null;
       _watchCache.clear();
+      _userMovedFocus = false;
+      _heroPinned = false;
     });
     try {
       final client = ref.read(apiClientProvider);
@@ -73,6 +128,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         _selectedFileId = preferredVersion(item)?.fileId;
         _loading = false;
       });
+      _pinToHeroActions(playEnabled: !isSeriesType(item.item.type));
       if (isSeriesType(item.item.type)) {
         _loadSeasons();
       }
@@ -91,6 +147,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       final seasons = await fetchSeasons(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
       if (!mounted || seasons.isEmpty) return;
       setState(() => _seasons = seasons);
+      _pinToHeroActions(playEnabled: false);
       _selectSeason(seasons.first.seasonNumber);
     } catch (_) {
       // Seasons are optional — a movie or a server without the endpoint
@@ -107,6 +164,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       final episodes = await fetchEpisodes(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId, seasonNumber);
       if (!mounted) return;
       setState(() => _episodes = episodes);
+      _pinToHeroActions(playEnabled: pickNextUpEpisode(episodes) != null);
     } catch (_) {
       // Ignore — episode grid just stays empty for this season.
     } finally {
@@ -119,6 +177,10 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       final result = await fetchSimilarItems(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
       if (!mounted) return;
       setState(() => _similar = result.cards);
+      final detail = _detail;
+      final playEnabled = detail != null &&
+          (!isSeriesType(detail.item.type) || pickNextUpEpisode(_episodes) != null);
+      _pinToHeroActions(playEnabled: playEnabled);
     } catch (_) {
       // Recommendations are optional.
     }
@@ -299,7 +361,15 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                 ],
               ),
             )
-          : ListView(
+          : NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is UserScrollNotification) {
+                  _userMovedFocus = true;
+                }
+                return false;
+              },
+              child: ListView(
+              controller: _scrollController,
               padding: EdgeInsets.zero,
               children: [
                 if (_error != null)
@@ -319,6 +389,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   showStartOver: showStartOver,
                   playEnabled: !isSeries || nextUp != null,
                   seasonCount: _seasons.length,
+                  playFocusNode: _playFocus,
+                  backFocusNode: _backFocus,
                   onBack: () => ref.read(routeProvider.notifier).go(widget.back),
                   onPlay: () {
                     if (isSeries) {
@@ -339,7 +411,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   onToggleWatchlist: _toggleWatchlist,
                   onToggleWatched: _toggleWatched,
                 ),
-                Padding(
+                ExcludeFocus(
+                  excluding: !_heroPinned,
+                  child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -460,7 +534,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                     ],
                   ),
                 ),
+                ),
               ],
+            ),
             ),
       ),
     );
@@ -502,6 +578,8 @@ class _Hero extends StatelessWidget {
     required this.showStartOver,
     required this.playEnabled,
     required this.seasonCount,
+    required this.playFocusNode,
+    required this.backFocusNode,
     required this.onBack,
     required this.onPlay,
     required this.onStartOver,
@@ -521,6 +599,8 @@ class _Hero extends StatelessWidget {
   final bool showStartOver;
   final bool playEnabled;
   final int seasonCount;
+  final FocusNode playFocusNode;
+  final FocusNode backFocusNode;
   final VoidCallback onBack;
   final VoidCallback onPlay;
   final VoidCallback onStartOver;
@@ -574,6 +654,7 @@ class _Hero extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextButton.icon(
+                  focusNode: backFocusNode,
                   onPressed: onBack,
                   style: TextButton.styleFrom(
                     foregroundColor: PrairieColors.ink,
@@ -686,7 +767,7 @@ class _Hero extends StatelessWidget {
                               runSpacing: 8,
                               children: [
                                 ElevatedButton.icon(
-                                  autofocus: true,
+                                  focusNode: playFocusNode,
                                   onPressed: (busyPlay || !playEnabled) ? null : onPlay,
                                   icon: const Icon(Icons.play_arrow),
                                   label: Text(playLabel),
