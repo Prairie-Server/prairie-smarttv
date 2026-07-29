@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
@@ -25,6 +26,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   VideoBackend? _backend;
   PlaybackSessionResponse? _playbackSession;
+  /// Tracked as soon as `/playback/start` returns so Back during prepare
+  /// still DELETEs the server session (PlusPlayer can open the stream before
+  /// Dart finishes initialize).
+  String? _activeSessionId;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<String?>? _captionSub;
   Duration _position = Duration.zero;
@@ -37,6 +42,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
   String? _caption;
+  CancelToken? _prepareCancel;
 
   @override
   void initState() {
@@ -47,10 +53,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   void dispose() {
+    _prepareCancel?.cancel();
     _positionSub?.cancel();
     _captionSub?.cancel();
     _progressTimer?.cancel();
     _hideControlsTimer?.cancel();
+    // Widget teardown that bypasses [_exit] (route replace, error boundary)
+    // must still stop the Prairie session and free the hardware decoder.
+    final sessionId = _activeSessionId;
+    _activeSessionId = null;
+    if (sessionId != null && !_exiting) {
+      final client = ref.read(apiClientProvider);
+      final session = ref.read(sessionProvider);
+      if (session != null) {
+        unawaited(stopPlaybackSession(client, session, sessionId).catchError((_) {}));
+      }
+    }
+    final backend = _backend;
+    _backend = null;
+    if (backend != null) {
+      unawaited(backend.dispose());
+    }
     super.dispose();
   }
 
@@ -66,23 +89,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _scheduleHideControls();
   }
 
+  String? _sourceResolutionForFile(WatchDetail? detail, int fileId) {
+    if (detail == null) return null;
+    for (final version in detail.versions) {
+      if (version.fileId == fileId) return version.resolution;
+    }
+    return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
+  }
+
   Future<void> _start() async {
     setState(() {
       _loading = true;
       _error = null;
     });
+    final cancel = CancelToken();
+    _prepareCancel?.cancel();
+    _prepareCancel = cancel;
+
+    String? startedSessionId;
     try {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
+      final deviceCaps = applyAv1AdvertiseOverrides(
+        ref.read(tvCapabilitiesProvider),
+        forceAv1: settings.forceAv1,
+        disableAv1: settings.disableAv1,
+      );
       final forcedMethod = switch (resolveForcedPlayMethod(settings)) {
         'direct' => PlayMethod.direct,
         'transcode' => PlayMethod.transcode,
         _ => null,
       };
-      var codecsVideo = List<String>.from(TvCapabilities.codecsVideo);
-      if (settings.forceAv1 && !codecsVideo.contains('av1')) codecsVideo.add('av1');
-      if (settings.disableAv1) codecsVideo.remove('av1');
+
       final started = await startPlayback(
         client,
         session,
@@ -91,23 +130,82 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           profileId: session.profileId,
           startPosition: widget.launch.startPositionSeconds,
           forcedPlayMethod: forcedMethod,
-          codecsVideo: codecsVideo,
+          codecsVideo: deviceCaps.codecsVideo,
+          codecsAudio: deviceCaps.codecsAudio,
+          containers: deviceCaps.containers,
+          maxResolution: deviceCaps.maxResolution,
+          hdr: deviceCaps.hdr,
         ),
       );
-      final streamUrl = resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken);
-      final backend = ref.read(videoBackendFactoryProvider)();
-      await backend.load(streamUrl, startPosition: Duration(seconds: started.position.round()));
-      await backend.play();
-      if (!mounted) {
-        await backend.dispose();
+      startedSessionId = started.sessionId;
+      _activeSessionId = started.sessionId;
+
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await stopPlaybackSession(client, session, started.sessionId).catchError((_) {});
+        _activeSessionId = null;
         return;
       }
+
+      final seekAt = widget.launch.startPositionSeconds ?? started.position;
+      final PreparedPlayback prepared;
+      try {
+        prepared = await preparePlayableSession(
+          client,
+          session,
+          started,
+          seekAt,
+          sourceResolution: _sourceResolutionForFile(widget.launch.watch, started.mediaFileId),
+          maxResolution: deviceCaps.maxResolution,
+          cancelToken: cancel,
+        );
+      } catch (prepErr) {
+        await stopPlaybackSession(client, session, started.sessionId).catchError((_) {});
+        _activeSessionId = null;
+        rethrow;
+      }
+
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _activeSessionId = null;
+        return;
+      }
+
+      _activeSessionId = prepared.session.sessionId;
+      final backend = ref.read(videoBackendFactoryProvider)();
+      backend.attach(prepared.streamUrl, maxResolution: deviceCaps.maxResolution);
+      // Mount the hole-punch surface BEFORE initialize — PlusPlayer prepares
+      // against the display rect; awaiting init with no VideoPlayer in the
+      // tree leaves Direct Play streaming on the server while Flutter spins.
       setState(() {
         _backend = backend;
-        _playbackSession = started;
+        _playbackSession = prepared.session;
         _subtitleAppearance = settings.subtitleAppearance;
-        _loading = false;
+        _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
       });
+      await WidgetsBinding.instance.endOfFrame;
+
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await backend.dispose();
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _activeSessionId = null;
+        return;
+      }
+
+      await backend.initialize(
+        startPosition: prepared.playerStartSeconds > 0
+            ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
+            : null,
+      );
+      await backend.play();
+
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await backend.dispose();
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _activeSessionId = null;
+        return;
+      }
+
+      setState(() => _loading = false);
       _positionSub = backend.positionStream.listen((position) {
         if (mounted) setState(() => _position = position);
       });
@@ -115,11 +213,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         if (mounted) setState(() => _caption = text);
       });
       _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
-      _autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage);
+      unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
     } catch (e) {
-      if (mounted) {
+      if (startedSessionId != null && _activeSessionId == startedSessionId) {
+        // Leave stop to the catch path only when we didn't already stop above.
+      }
+      if (mounted && !_exiting) {
         setState(() {
-          _error = e is ApiError ? e.message : 'Playback failed: $e';
+          _error = e is ApiError
+              ? e.message
+              : e is TranscodeStartupTimeoutError
+                  ? e.message
+                  : 'Playback failed: $e';
           _loading = false;
         });
       }
@@ -175,7 +280,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _reportProgress({bool paused = false}) async {
-    final sessionId = _playbackSession?.sessionId;
+    final sessionId = _activeSessionId ?? _playbackSession?.sessionId;
     if (sessionId == null) return;
     try {
       await reportPlaybackProgress(
@@ -193,11 +298,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _exit() async {
     if (_exiting) return;
     _exiting = true;
+    _prepareCancel?.cancel();
     final backend = _backend;
-    final sessionId = _playbackSession?.sessionId;
+    _backend = null;
+    final sessionId = _activeSessionId ?? _playbackSession?.sessionId;
+    _activeSessionId = null;
+    _playbackSession = null;
+    _progressTimer?.cancel();
     if (sessionId != null) {
       await _reportProgress(paused: true);
-      unawaited(stopPlaybackSession(ref.read(apiClientProvider), ref.read(sessionProvider)!, sessionId).catchError((_) {}));
+      // Await stop so Back cannot race a new play against a still-open session
+      // on the single hardware decoder / server encode slot.
+      final session = ref.read(sessionProvider);
+      if (session != null) {
+        await stopPlaybackSession(ref.read(apiClientProvider), session, sessionId).catchError((_) {});
+      }
     }
     await backend?.dispose();
     if (!mounted) return;
@@ -251,7 +366,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (backend != null) Center(child: backend.buildSurface()),
+              if (backend != null) backend.buildSurface(),
               if (_caption != null && _caption!.isNotEmpty)
                 Align(
                   alignment: Alignment(0, 1 - 2 * subtitleAppearanceBottomFraction(_subtitleAppearance)),
@@ -275,13 +390,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 48),
+                        child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: PrairieColors.danger)),
+                      ),
                       const SizedBox(height: 16),
                       ElevatedButton(onPressed: _exit, child: const Text('Back')),
                     ],
                   ),
                 ),
-              if (_controlsVisible && backend != null)
+              if (_controlsVisible && backend != null && !_loading && _error == null)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -307,7 +425,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                               Expanded(
                                 child: Slider(
                                   value: _position.inMilliseconds.toDouble().clamp(0, (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble()),
-                                  max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble(),
+                                  max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble().clamp(1, double.infinity),
                                   activeColor: PrairieColors.amber,
                                   onChanged: (value) => setState(() => _position = Duration(milliseconds: value.round())),
                                   onChangeEnd: (value) => backend.seekTo(Duration(milliseconds: value.round())),

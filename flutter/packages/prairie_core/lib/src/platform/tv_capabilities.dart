@@ -1,0 +1,146 @@
+/// Probed / advertised TV playback capabilities sent to Prairie as
+/// `codecs_video` / `codecs_audio` / etc. on `/playback/start`.
+///
+/// Mirrors `TvPlaybackCapabilities` from
+/// `src/platform/tizen/deviceCapabilities.ts`.
+class TvPlaybackCapabilities {
+  const TvPlaybackCapabilities({
+    required this.codecsVideo,
+    required this.codecsAudio,
+    required this.containers,
+    required this.maxResolution,
+    required this.hdr,
+  });
+
+  final List<String> codecsVideo;
+  final List<String> codecsAudio;
+  final List<String> containers;
+  final String maxResolution;
+  final bool hdr;
+
+  /// Conservative defaults used when no platform probe has run yet.
+  /// Matches `DEFAULT_TV_CAPABILITIES` — note: does **not** include `av1`.
+  static const defaults = TvPlaybackCapabilities(
+    codecsVideo: ['h264', 'hevc'],
+    codecsAudio: ['aac', 'ac3', 'eac3', 'mp3'],
+    containers: ['mp4', 'mpegts', 'hls', 'mkv'],
+    maxResolution: '2160p',
+    hdr: true,
+  );
+
+  TvPlaybackCapabilities copyWith({
+    List<String>? codecsVideo,
+    List<String>? codecsAudio,
+    List<String>? containers,
+    String? maxResolution,
+    bool? hdr,
+  }) =>
+      TvPlaybackCapabilities(
+        codecsVideo: codecsVideo ?? this.codecsVideo,
+        codecsAudio: codecsAudio ?? this.codecsAudio,
+        containers: containers ?? this.containers,
+        maxResolution: maxResolution ?? this.maxResolution,
+        hdr: hdr ?? this.hdr,
+      );
+}
+
+/// AV1 hardware decode starts with the 2020 panels (Tizen 5.5).
+const av1MinTizenVersion = 5.5;
+
+/// Whether this TV can Direct Play AV1.
+///
+/// Combine signals with OR: a false systeminfo answer must not veto a positive
+/// media/capability signal on Tizen ≥ 5.5. Unknown / non-Tizen stays
+/// conservative (no advertise). Mirrors `probeAv1Support`.
+bool probeAv1Support({
+  required double tizenVersion,
+  bool systemInfoAv1 = false,
+  bool canPlayAv1 = false,
+}) {
+  if (tizenVersion > 0 && tizenVersion < av1MinTizenVersion) return false;
+  // Browser / unit hosts without a Tizen version never advertise AV1.
+  if (tizenVersion == 0) return false;
+  return systemInfoAv1 || canPlayAv1;
+}
+
+/// Apply user Advertise/Disable AV1 overrides on top of a probe result.
+TvPlaybackCapabilities applyAv1AdvertiseOverrides(
+  TvPlaybackCapabilities caps, {
+  bool forceAv1 = false,
+  bool disableAv1 = false,
+}) {
+  var codecs = List<String>.from(caps.codecsVideo);
+  if (disableAv1) {
+    codecs = codecs.where((c) => c != 'av1').toList();
+  } else if (forceAv1 && !codecs.contains('av1')) {
+    codecs.add('av1');
+  }
+  return caps.copyWith(codecsVideo: codecs);
+}
+
+/// Build capabilities from a known Tizen platform version + panel size.
+///
+/// Native Flutter has no HTML5 `canPlayType` / `webapis.systeminfo` bridge, so
+/// AV1 is advertised from the hardware floor (Tizen ≥ 5.5) whenever the
+/// native AVPlay backend is in use — matching panels that decode av01 even
+/// when OEM systeminfo lies (see TS QLED 6.5 note).
+TvPlaybackCapabilities buildTizenCapabilities({
+  required double tizenVersion,
+  required int screenWidth,
+  required int screenHeight,
+  bool avplayAvailable = true,
+  bool? systemInfoAv1,
+}) {
+  final codecsVideo = <String>['h264'];
+  final major = tizenVersion.floor();
+  if (avplayAvailable || major >= 3) {
+    codecsVideo.add('hevc');
+  }
+  // Native AVPlay path: treat Tizen ≥ 5.5 as canPlayAv1=true (no HTML5 probe).
+  final av1 = probeAv1Support(
+    tizenVersion: tizenVersion,
+    systemInfoAv1: systemInfoAv1 ?? false,
+    canPlayAv1: avplayAvailable && tizenVersion >= av1MinTizenVersion,
+  );
+  if (av1) codecsVideo.add('av1');
+
+  final containers = avplayAvailable
+      ? <String>['mp4', 'mpegts', 'hls', 'mkv']
+      : <String>['mp4', 'mpegts', 'hls'];
+
+  return TvPlaybackCapabilities(
+    codecsVideo: codecsVideo,
+    codecsAudio: List<String>.from(TvPlaybackCapabilities.defaults.codecsAudio),
+    containers: containers,
+    maxResolution: resolutionTokenFromSize(screenWidth, screenHeight),
+    hdr: major >= 4,
+  );
+}
+
+/// Map panel pixels to a Prairie `max_resolution` token.
+String resolutionTokenFromSize(int width, int height) {
+  final w = width < 0 ? 0 : width;
+  final h = height < 0 ? 0 : height;
+  if (h >= 2160 || w >= 3840) return '2160p';
+  if (h >= 1440 || w >= 2560) return '1440p';
+  if (h >= 1080 || w >= 1920) return '1080p';
+  if (h > 0 || w > 0) return '720p';
+  return '720p';
+}
+
+/// AVPlay `ADAPTIVE_INFO` FIXED_MAX_RESOLUTION value for a Prairie token.
+String avPlayFixedMaxResolution(String? token) {
+  switch ((token ?? '').trim().toLowerCase()) {
+    case '2160p':
+    case '4k':
+    case 'uhd':
+      return '3840x2160';
+    case '1440p':
+      return '2560x1440';
+    case '720p':
+      return '1280x720';
+    case '1080p':
+    default:
+      return '1920x1080';
+  }
+}

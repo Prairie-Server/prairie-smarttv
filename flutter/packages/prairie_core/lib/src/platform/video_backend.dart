@@ -15,10 +15,23 @@ class SubtitleTrackChoice {
 /// Mirrors the capability surface of src/platform/tizen/avplay.ts and
 /// src/player/*. DRM configuration is a known gap — see the Tizen
 /// implementation's TODOs.
+///
+/// Lifecycle (Tizen hole-punch requires the surface in the tree before
+/// native prepare completes):
+/// 1. [attach] — create the native controller (sync)
+/// 2. mount [buildSurface] via setState
+/// 3. [initialize] — await first frame / duration
+/// 4. [play] / seek / …
+/// 5. [dispose]
 abstract class VideoBackend {
-  /// Prepares playback of [url] and returns once the first frame/duration
-  /// is known. Mirrors `createMediaPlayer`'s init step.
-  Future<void> load(String url, {Duration? startPosition});
+  /// Creates the native player for [url] without waiting for prepare.
+  /// After this returns, [buildSurface] is valid to mount.
+  void attach(String url, {String? maxResolution});
+
+  /// Completes once the first frame/duration is known. Must only be called
+  /// after [attach], ideally after [buildSurface] has been laid out for at
+  /// least one frame (Tizen AVPlay hole-punch).
+  Future<void> initialize({Duration? startPosition});
 
   Future<void> play();
   Future<void> pause();
@@ -30,9 +43,10 @@ abstract class VideoBackend {
 
   Duration? get duration;
   bool get isPlaying;
+  bool get isInitialized;
 
   /// Text tracks the native player found in the current stream. Empty
-  /// until after [load] resolves; may also be empty if the file has no
+  /// until after [initialize] resolves; may also be empty if the file has no
   /// embedded subtitles.
   List<SubtitleTrackChoice> get subtitleTracks;
 
@@ -47,7 +61,7 @@ abstract class VideoBackend {
 
   /// The platform's native video-rendering widget (e.g. `video_player_avplay`'s
   /// `VideoPlayer`), so the shared `PlayerScreen` never needs to know which
-  /// native player produced it. Only valid to call after [load] resolves.
+  /// native player produced it. Valid after [attach].
   Widget buildSurface();
 
   /// Releases the native player session. Mirrors AVPlay's

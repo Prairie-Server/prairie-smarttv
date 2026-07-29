@@ -61,18 +61,30 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
       final raw = playableLiveUrl(started);
       if (raw == null) throw StateError('Live TV session returned no stream URL');
       final streamUrl = resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken, session.profileId);
+      final caps = ref.read(tvCapabilitiesProvider);
       final backend = ref.read(videoBackendFactoryProvider)();
-      await backend.load(streamUrl);
-      await backend.play();
-      if (!mounted) {
-        await backend.dispose();
-        return;
-      }
+      backend.attach(streamUrl, maxResolution: caps.maxResolution);
+      // Mount hole-punch surface before initialize (same as VOD PlayerScreen).
       setState(() {
         _backend = backend;
         _note = started.note;
-        _loading = false;
       });
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || _exited) {
+        await backend.dispose();
+        await releaseLiveTvSession(client, session, started.sessionId).catchError((_) {});
+        _liveSessionId = null;
+        return;
+      }
+      await backend.initialize();
+      await backend.play();
+      if (!mounted || _exited) {
+        await backend.dispose();
+        await releaseLiveTvSession(client, session, started.sessionId).catchError((_) {});
+        _liveSessionId = null;
+        return;
+      }
+      setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -88,12 +100,17 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
     _exited = true;
     final sessionId = _liveSessionId;
     _liveSessionId = null;
-    await _backend?.dispose();
+    final backend = _backend;
+    _backend = null;
+    await backend?.dispose();
+    if (sessionId != null) {
+      final session = ref.read(sessionProvider);
+      if (session != null) {
+        await releaseLiveTvSession(ref.read(apiClientProvider), session, sessionId).catchError((_) {});
+      }
+    }
     if (!mounted) return;
     ref.read(routeProvider.notifier).go(widget.back);
-    if (sessionId != null) {
-      unawaited(releaseLiveTvSession(ref.read(apiClientProvider), ref.read(sessionProvider)!, sessionId).catchError((_) {}));
-    }
   }
 
   Future<void> _togglePlayPause() async {
