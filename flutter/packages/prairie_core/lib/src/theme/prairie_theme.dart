@@ -15,6 +15,7 @@ class PrairieColors {
   static const bgSoft = Color(0xFF222B38);
   static const amber = Color(0xFFE0A84A);
   static const amberDeep = Color(0xFFC48C2E);
+  static const amberBright = Color(0xFFF0C574);
   static const ink = Color(0xFFF3EFE6);
   static const muted = Color(0xFF9AA3B2);
   static const danger = Color(0xFFE07070);
@@ -71,6 +72,95 @@ class PrairieBackground extends StatelessWidget {
   }
 }
 
+/// Solid focus ring that follows border-radius (Tizen paints CSS `outline` as
+/// a square). Mirrors `--focus-ring-solid`.
+List<BoxShadow> prairieFocusRing({double width = 3}) => [
+  BoxShadow(color: PrairieColors.ring, blurRadius: 0, spreadRadius: width),
+];
+
+ButtonStyle _prairiePrimaryButtonStyle() {
+  return ButtonStyle(
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return PrairieColors.amber.withValues(alpha: 0.35);
+      }
+      // Brighter amber when focused — filled primary alone is hard to read as
+      // "focused" next to outline siblings.
+      if (states.contains(WidgetState.focused)) return PrairieColors.amberBright;
+      return PrairieColors.amber;
+    }),
+    foregroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return PrairieColors.bg.withValues(alpha: 0.55);
+      }
+      return PrairieColors.bg;
+    }),
+    // High-contrast cream ring on amber fill (not another amber outline).
+    side: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) {
+        return const BorderSide(color: PrairieColors.ink, width: 3);
+      }
+      return BorderSide.none;
+    }),
+    elevation: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) return 8;
+      return 0;
+    }),
+    shadowColor: WidgetStateProperty.all(PrairieColors.ring.withValues(alpha: 0.55)),
+    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 22, vertical: 16)),
+    textStyle: WidgetStateProperty.all(const TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600, fontSize: 16)),
+    shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+    overlayColor: WidgetStateProperty.all(PrairieColors.ink.withValues(alpha: 0.12)),
+  );
+}
+
+ButtonStyle _prairieSecondaryButtonStyle() {
+  return ButtonStyle(
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      // Invert on focus (TS `.focus-btn--secondary:focus`) — much clearer than
+      // a faint amber border on a dark ghost button.
+      if (states.contains(WidgetState.focused)) return PrairieColors.ink;
+      return const Color(0x8C0A0C10);
+    }),
+    foregroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) return PrairieColors.bg;
+      return PrairieColors.ink;
+    }),
+    side: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) {
+        return const BorderSide(color: PrairieColors.ring, width: 3);
+      }
+      return BorderSide(color: PrairieColors.ink.withValues(alpha: 0.24));
+    }),
+    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 22, vertical: 16)),
+    textStyle: WidgetStateProperty.all(const TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600, fontSize: 16)),
+    shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+    overlayColor: WidgetStateProperty.all(PrairieColors.amber.withValues(alpha: 0.12)),
+  );
+}
+
+ButtonStyle _prairieGhostButtonStyle() {
+  return ButtonStyle(
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) return PrairieColors.ink;
+      return Colors.transparent;
+    }),
+    foregroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) return PrairieColors.bg;
+      return PrairieColors.muted;
+    }),
+    side: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.focused)) {
+        return const BorderSide(color: PrairieColors.ring, width: 3);
+      }
+      return BorderSide.none;
+    }),
+    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+    textStyle: WidgetStateProperty.all(const TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600)),
+    shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+  );
+}
+
 ThemeData buildPrairieTheme() {
   const colorScheme = ColorScheme.dark(
     surface: PrairieColors.bg,
@@ -98,13 +188,35 @@ ThemeData buildPrairieTheme() {
           headlineSmall: const TextStyle(fontFamily: 'Fraunces', color: PrairieColors.ink),
           titleLarge: const TextStyle(fontFamily: 'Fraunces', color: PrairieColors.ink),
         ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: PrairieColors.amber,
-        foregroundColor: PrairieColors.bg,
-        textStyle: const TextStyle(fontFamily: 'Sora', fontWeight: FontWeight.w600),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: _prairiePrimaryButtonStyle()),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: _prairieSecondaryButtonStyle()),
+    textButtonTheme: TextButtonThemeData(style: _prairieGhostButtonStyle()),
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.focused)) return PrairieColors.bg;
+          return PrairieColors.amber;
+        }),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.focused)) return PrairieColors.ink;
+          return Colors.transparent;
+        }),
+        side: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.focused)) {
+            return const BorderSide(color: PrairieColors.ring, width: 3);
+          }
+          return BorderSide.none;
+        }),
+        shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
       ),
+    ),
+    chipTheme: base.chipTheme.copyWith(
+      selectedColor: PrairieColors.amber.withValues(alpha: 0.22),
+      checkmarkColor: PrairieColors.amber,
+      labelStyle: const TextStyle(color: PrairieColors.ink),
+      secondaryLabelStyle: const TextStyle(color: PrairieColors.bg),
+      side: BorderSide(color: PrairieColors.ink.withValues(alpha: 0.16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -117,5 +229,7 @@ ThemeData buildPrairieTheme() {
     ),
     listTileTheme: const ListTileThemeData(textColor: PrairieColors.ink, iconColor: PrairieColors.muted),
     focusColor: PrairieColors.ring,
+    highlightColor: PrairieColors.amber.withValues(alpha: 0.14),
+    hoverColor: PrairieColors.amber.withValues(alpha: 0.1),
   );
 }

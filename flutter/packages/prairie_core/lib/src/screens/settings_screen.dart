@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -136,7 +137,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _SettingsRow(
         label: 'Connected',
         hint: session.serverUrl,
-        onTap: null,
       ),
     const SizedBox(height: 10),
     _SettingsRow(
@@ -189,19 +189,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       const SizedBox(height: 24),
       const Text('Diagnostics', style: TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600)),
       const SizedBox(height: 10),
-      _SettingsRow(label: 'Play method', value: playMethod ?? 'auto', onTap: null),
+      // Diagnostics must be focusable: InkWell with onTap: null used to be
+      // skipped by focus traversal (_SettingsRow now always supplies a tap).
+      _SettingsRow(label: 'Play method', value: playMethod ?? 'auto'),
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Video codecs',
         hint: caps.codecsVideo.join(', ').isEmpty ? 'none' : caps.codecsVideo.join(', '),
-        onTap: null,
       ),
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Audio / display',
         hint:
             '${caps.codecsAudio.join(', ').isEmpty ? 'none' : caps.codecsAudio.join(', ')} · Max ${caps.maxResolution} · HDR ${caps.hdr ? 'yes' : 'no'}',
-        onTap: null,
       ),
     ];
   }
@@ -337,14 +337,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           );
         },
       ),
-      const SizedBox(height: 16),
-      Text('Background opacity: ${appearance.backgroundOpacity}%', style: const TextStyle(color: PrairieColors.muted)),
-      Slider(
-        value: appearance.backgroundOpacity.toDouble(),
-        min: 0,
-        max: 100,
-        activeColor: PrairieColors.amber,
-        onChanged: (v) => updateAppearance((a) => a.copyWith(backgroundOpacity: v.round())),
+      const SizedBox(height: 10),
+      _OpacitySettingsRow(
+        label: 'Background opacity',
+        hint: 'Left / Right to adjust (Up / Down keeps scrolling)',
+        value: appearance.backgroundOpacity,
+        onChanged: (v) => updateAppearance((a) => a.copyWith(backgroundOpacity: v)),
       ),
     ];
   }
@@ -372,14 +370,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   List<Widget> _aboutSection() => [
     const Text('About', style: TextStyle(color: PrairieColors.ink, fontFamily: 'Fraunces', fontSize: 22)),
     const SizedBox(height: 16),
-    const _SettingsRow(label: 'Platform', value: 'Flutter Smart TV', onTap: null),
+    const _SettingsRow(label: 'Platform', value: 'Flutter Smart TV'),
     const SizedBox(height: 10),
-    const _SettingsRow(label: 'Client', value: 'prairie_core', onTap: null),
+    const _SettingsRow(label: 'Client', value: 'prairie_core'),
     const SizedBox(height: 10),
     _SettingsRow(
       label: 'Play method',
       value: resolveForcedPlayMethod(_settings) ?? 'auto',
-      onTap: null,
     ),
   ];
 
@@ -392,14 +389,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 /// Mirrors `.settings-row`: full-width prairie row with label/hint and optional amber value.
-class _SettingsRow extends StatelessWidget {
+class _SettingsRow extends StatefulWidget {
   const _SettingsRow({
     required this.label,
     this.hint,
     this.value,
     this.trailing,
     this.isOn = false,
-    required this.onTap,
+    this.onTap,
   });
 
   final String label;
@@ -407,24 +404,49 @@ class _SettingsRow extends StatelessWidget {
   final String? value;
   final Widget? trailing;
   final bool isOn;
+  /// Null = read-only diagnostic row. Still focusable so D-pad can scroll here.
   final VoidCallback? onTap;
 
   @override
+  State<_SettingsRow> createState() => _SettingsRowState();
+}
+
+class _SettingsRowState extends State<_SettingsRow> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
+    final focused = _focused;
+    final actionable = widget.onTap != null;
     return Material(
-      color: isOn ? PrairieColors.amber.withValues(alpha: 0.14) : PrairieColors.bgElevated.withValues(alpha: 0.72),
+      color: focused
+          ? PrairieColors.amber.withValues(alpha: 0.22)
+          : widget.isOn
+              ? PrairieColors.amber.withValues(alpha: 0.14)
+              : PrairieColors.bgElevated.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        onTap: onTap,
+        // Always provide onTap so InkWell stays in the TV focus traversal order.
+        onTap: widget.onTap ?? () {},
         borderRadius: BorderRadius.circular(14),
-        child: Container(
+        onFocusChange: (value) => setState(() => _focused = value),
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
           constraints: const BoxConstraints(minHeight: 68),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isOn ? PrairieColors.amber.withValues(alpha: 0.4) : PrairieColors.ink.withValues(alpha: 0.1),
+              color: focused
+                  ? PrairieColors.ring
+                  : widget.isOn
+                      ? PrairieColors.amber.withValues(alpha: 0.4)
+                      : PrairieColors.ink.withValues(alpha: 0.1),
+              width: focused ? 3 : 1,
             ),
+            boxShadow: focused ? prairieFocusRing(width: 2) : null,
           ),
           child: Row(
             children: [
@@ -432,23 +454,36 @@ class _SettingsRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label, style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600, fontSize: 16)),
-                    if (hint != null) ...[
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        color: PrairieColors.ink,
+                        fontWeight: focused ? FontWeight.w700 : FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (widget.hint != null) ...[
                       const SizedBox(height: 2),
-                      Text(hint!, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                      Text(widget.hint!, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
                     ],
                   ],
                 ),
               ),
-              if (value != null) ...[
+              if (widget.value != null) ...[
                 const SizedBox(width: 12),
-                Text(value!, style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600)),
-                if (onTap != null) ...[
+                Text(
+                  widget.value!,
+                  style: TextStyle(
+                    color: focused ? PrairieColors.amberBright : PrairieColors.amber,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (actionable) ...[
                   const SizedBox(width: 6),
                   Icon(Icons.chevron_right, color: PrairieColors.muted.withValues(alpha: 0.7), size: 18),
                 ],
-              ] else if (trailing != null)
-                ?trailing,
+              ] else if (widget.trailing != null)
+                widget.trailing!,
             ],
           ),
         ),
@@ -482,7 +517,112 @@ class _SettingsToggleRow extends StatelessWidget {
   }
 }
 
-class _SectionButton extends StatelessWidget {
+/// Opacity control that only consumes Left/Right so Up/Down can scroll the list.
+class _OpacitySettingsRow extends StatefulWidget {
+  const _OpacitySettingsRow({
+    required this.label,
+    required this.hint,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String hint;
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_OpacitySettingsRow> createState() => _OpacitySettingsRowState();
+}
+
+class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
+  bool _focused = false;
+  static const _step = 5;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      widget.onChanged((widget.value - _step).clamp(0, 100));
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      widget.onChanged((widget.value + _step).clamp(0, 100));
+      return KeyEventResult.handled;
+    }
+    // Up/Down intentionally ignored so focus traversal / list scroll continues.
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focused;
+    return Focus(
+      onKeyEvent: _onKey,
+      onFocusChange: (value) => setState(() => _focused = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        constraints: const BoxConstraints(minHeight: 68),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: focused
+              ? PrairieColors.amber.withValues(alpha: 0.22)
+              : PrairieColors.bgElevated.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: focused ? PrairieColors.ring : PrairieColors.ink.withValues(alpha: 0.1),
+            width: focused ? 3 : 1,
+          ),
+          boxShadow: focused ? prairieFocusRing(width: 2) : null,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.label,
+                    style: TextStyle(
+                      color: PrairieColors.ink,
+                      fontWeight: focused ? FontWeight.w700 : FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(widget.hint, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_left,
+              color: focused ? PrairieColors.amberBright : PrairieColors.muted,
+            ),
+            SizedBox(
+              width: 56,
+              child: Text(
+                '${widget.value}%',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: focused ? PrairieColors.amberBright : PrairieColors.amber,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: focused ? PrairieColors.amberBright : PrairieColors.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionButton extends StatefulWidget {
   const _SectionButton({required this.label, required this.selected, required this.onTap});
 
   final String label;
@@ -490,28 +630,51 @@ class _SectionButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_SectionButton> createState() => _SectionButtonState();
+}
+
+class _SectionButtonState extends State<_SectionButton> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
+    final focused = _focused;
+    final selected = widget.selected;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: selected ? PrairieColors.amber.withValues(alpha: 0.14) : Colors.transparent,
+        color: focused
+            ? PrairieColors.amber.withValues(alpha: 0.22)
+            : selected
+                ? PrairieColors.amber.withValues(alpha: 0.14)
+                : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
-          onTap: onTap,
+          onTap: widget.onTap,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
+          onFocusChange: (value) => setState(() => _focused = value),
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: Colors.transparent,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: selected ? PrairieColors.amber.withValues(alpha: 0.45) : Colors.transparent,
+                color: focused
+                    ? PrairieColors.ring
+                    : selected
+                        ? PrairieColors.amber.withValues(alpha: 0.45)
+                        : Colors.transparent,
+                width: focused ? 3 : 1,
               ),
+              boxShadow: focused ? prairieFocusRing(width: 2) : null,
             ),
             child: Text(
-              label,
+              widget.label,
               style: TextStyle(
-                color: selected ? PrairieColors.amber : PrairieColors.ink,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                color: focused || selected ? PrairieColors.amberBright : PrairieColors.ink,
+                fontWeight: focused || selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ),

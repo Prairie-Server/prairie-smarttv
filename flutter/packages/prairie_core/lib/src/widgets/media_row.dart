@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:prairie_core/prairie_core.dart';
 
 /// A titled horizontal scroll rail of cards. Mirrors MediaRow.tsx.
@@ -34,12 +35,29 @@ class MediaRow<T> extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             height: height,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              scrollDirection: Axis.horizontal,
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 16),
-              itemBuilder: (context, index) => itemBuilder(context, items[index], index),
+            // Arrow-up from a nested horizontal rail must leave the row for the
+            // vertical page (detail hero / previous rail), not get trapped.
+            child: Focus(
+              canRequestFocus: false,
+              onKeyEvent: (node, event) {
+                if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                if (event.logicalKey != LogicalKeyboardKey.arrowUp &&
+                    event.logicalKey != LogicalKeyboardKey.arrowDown) {
+                  return KeyEventResult.ignored;
+                }
+                final direction = event.logicalKey == LogicalKeyboardKey.arrowUp
+                    ? TraversalDirection.up
+                    : TraversalDirection.down;
+                final handled = node.focusInDirection(direction);
+                return handled ? KeyEventResult.handled : KeyEventResult.ignored;
+              },
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                scrollDirection: Axis.horizontal,
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 16),
+                itemBuilder: (context, index) => itemBuilder(context, items[index], index),
+              ),
             ),
           ),
         ],

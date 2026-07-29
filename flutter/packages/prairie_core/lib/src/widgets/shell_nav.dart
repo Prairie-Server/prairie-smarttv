@@ -177,17 +177,27 @@ class _NavTabState extends State<_NavTab> {
   @override
   Widget build(BuildContext context) {
     return Focus(
+      canRequestFocus: false,
       onFocusChange: (value) => setState(() => _focused = value),
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
-          border: _focused ? Border.all(color: PrairieColors.ring, width: 2) : null,
+          border: _focused ? Border.all(color: PrairieColors.ring, width: 3) : null,
+          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
         ),
         child: TextButton.icon(
           onPressed: widget.onPressed,
           style: TextButton.styleFrom(
-            foregroundColor: widget.active ? PrairieColors.bg : PrairieColors.ink,
-            backgroundColor: widget.active ? PrairieColors.amber : Colors.transparent,
+            foregroundColor: widget.active
+                ? PrairieColors.bg
+                : _focused
+                    ? PrairieColors.bg
+                    : PrairieColors.ink,
+            backgroundColor: widget.active
+                ? PrairieColors.amber
+                : _focused
+                    ? PrairieColors.ink
+                    : Colors.transparent,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
