@@ -9,7 +9,17 @@ import 'wait_for_hls_manifest.dart';
 
 export 'wait_for_hls_manifest.dart' show TranscodeStartupTimeoutError, isHlsUrl, waitForHlsManifest;
 
-/// Remux/transcode sessions need an HLS encode job before the player has a real URL.
+/// Remux of AV1 must package fMP4 HLS; PlusPlayer often never finishes
+/// initialize on that path. Prefer a full encode ladder for Smart TV.
+String effectiveHlsPlayMethod(String playMethod, {String? videoCodec}) {
+  final method = playMethod.trim().toLowerCase() == 'remux' ? 'remux' : 'transcode';
+  final sourceVideo = (videoCodec ?? '').toLowerCase();
+  if (method == 'remux' && (sourceVideo.contains('av1') || sourceVideo.contains('av01'))) {
+    return 'transcode';
+  }
+  return method;
+}
+
 bool needsHlsBootstrap(String? playMethod) {
   final method = (playMethod ?? '').trim().toLowerCase();
   return method == 'remux' || method == 'transcode';
@@ -42,6 +52,8 @@ Map<String, dynamic> buildTranscodeStartRequest(TranscodeStartInput input) {
     'seek_seconds': input.seekSeconds < 0 ? 0 : input.seekSeconds,
     'target_resolution': targetResolution,
     if (isRemux) 'target_codec_video': 'copy',
+    // Omit target_codec_video on encode so the server picks the best of
+    // client ∩ encodable (av1 → hevc → h264). Smart TV usually lands on hevc.
     'target_codec_audio': isRemux ? remuxAudio : 'aac',
     'target_bitrate_kbps': isRemux ? 0 : targetBitrateKbpsForResolution(targetResolution),
     'segment_duration': 2,
@@ -123,6 +135,7 @@ Future<PreparedPlayback> preparePlayableSession(
   double seekSeconds, {
   String? sourceResolution,
   String? maxResolution,
+  String? sourceVideoCodec,
   CancelToken? cancelToken,
   Dio? probeDio,
 }) async {
@@ -144,10 +157,24 @@ Future<PreparedPlayback> preparePlayableSession(
     maxResolution: maxResolution,
   );
 
-  var playMethod = started.playMethod.trim().toLowerCase() == 'remux' ? 'remux' : 'transcode';
+  final videoCodec = started.playbackInfo?.videoCodec ?? sourceVideoCodec;
+  var playMethod = effectiveHlsPlayMethod(started.playMethod, videoCodec: videoCodec);
   late TranscodeStartResponse transcode;
   try {
-    transcode = await startTranscode(client, session, buildTranscodeStartRequest(startInput));
+    transcode = await startTranscode(
+      client,
+      session,
+      buildTranscodeStartRequest(
+        TranscodeStartInput(
+          sessionId: startInput.sessionId,
+          seekSeconds: startInput.seekSeconds,
+          playMethod: playMethod,
+          transcodeAudio: playMethod == 'remux' ? startInput.transcodeAudio : true,
+          sourceResolution: startInput.sourceResolution,
+          maxResolution: startInput.maxResolution,
+        ),
+      ),
+    );
   } catch (err) {
     final isRemux = playMethod == 'remux';
     if (!isRemux || err is! ApiError || err.status != 422) rethrow;

@@ -84,12 +84,19 @@ TvPlaybackCapabilities applyAv1AdvertiseOverrides(
 /// AV1 is advertised from the hardware floor (Tizen ≥ 5.5) whenever the
 /// native AVPlay backend is in use — matching panels that decode av01 even
 /// when OEM systeminfo lies (see TS QLED 6.5 note).
+///
+/// [uhd] mirrors webOS / TS ProductInfo (`isUdPanelSupported`): Tizen Flutter
+/// surfaces usually report 1920×1080 even on UHD panels, which previously
+/// forced 1080p HEVC encodes of native 4K. When [uhd] is null and AVPlay is
+/// available on Tizen ≥ 5.0, we assume UHD (same class of panels that ship
+/// with AVPlay apps).
 TvPlaybackCapabilities buildTizenCapabilities({
   required double tizenVersion,
   required int screenWidth,
   required int screenHeight,
   bool avplayAvailable = true,
   bool? systemInfoAv1,
+  bool? uhd,
 }) {
   final codecsVideo = <String>['h264'];
   final major = tizenVersion.floor();
@@ -108,11 +115,17 @@ TvPlaybackCapabilities buildTizenCapabilities({
       ? <String>['mp4', 'mpegts', 'hls', 'mkv']
       : <String>['mp4', 'mpegts', 'hls'];
 
+  var maxRes = resolutionTokenFromSize(screenWidth, screenHeight);
+  final treatAsUhd = uhd ?? (avplayAvailable && tizenVersion >= 5.0);
+  if (treatAsUhd && maxRes != '2160p') {
+    maxRes = '2160p';
+  }
+
   return TvPlaybackCapabilities(
     codecsVideo: codecsVideo,
     codecsAudio: List<String>.from(TvPlaybackCapabilities.defaults.codecsAudio),
     containers: containers,
-    maxResolution: resolutionTokenFromSize(screenWidth, screenHeight),
+    maxResolution: maxRes,
     hdr: major >= 4,
   );
 }

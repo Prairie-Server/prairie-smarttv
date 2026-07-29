@@ -4,13 +4,9 @@ import 'package:prairie_core/prairie_core.dart';
 
 enum _LiveTvTab { channels, guide, recordings }
 
-const _minutesPerPixel = 2.0; // 1 minute of program = 2px wide in the guide.
-const _guideRowHeight = 72.0;
-const _guideChannelColumnWidth = 180.0;
-const _guideWindowHours = 6;
-
 /// Mirrors LiveTvScreen.tsx's Channels/Guide/Recordings tabs, including
-/// Record now / Record next scheduling from the guide.
+/// Record now / Record next scheduling from the guide (Now/Next rows, not an
+/// EPG timeline).
 class LiveTvScreen extends ConsumerStatefulWidget {
   const LiveTvScreen({super.key});
 
@@ -28,12 +24,10 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   String? _recordingBusyId;
   String? _cancelBusyId;
   _LiveTvTab _tab = _LiveTvTab.guide;
-  late DateTime _windowStart;
 
   @override
   void initState() {
     super.initState();
-    _windowStart = DateTime.now();
     _load();
   }
 
@@ -53,7 +47,6 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       setState(() {
         _channels = channels;
         _programs = programs;
-        _windowStart = DateTime.now();
       });
       _loadRecordings();
     } catch (e) {
@@ -126,66 +119,6 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     }
   }
 
-  Future<void> _showProgramActions(LiveTvChannel channel, LiveTvProgram program) async {
-    final now = DateTime.now();
-    final canRecord = program.id.trim().isNotEmpty && program.stop.isAfter(now);
-    final isNow = !program.start.isAfter(now) && program.stop.isAfter(now);
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: PrairieColors.bgElevated,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(program.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
-              const SizedBox(height: 4),
-              Text(
-                '${channelDisplayLabel(channel)} · ${_formatClock(program.start)} – ${_formatClock(program.stop)}',
-                style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _tune(channel);
-                },
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Watch'),
-              ),
-              if (canRecord) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _recordingBusyId != null
-                      ? null
-                      : () {
-                          Navigator.of(context).pop();
-                          _record(program);
-                        },
-                  icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger),
-                  label: Text(
-                    _recordingBusyId == program.id
-                        ? 'Scheduling…'
-                        : (isNow ? 'Record now' : 'Record'),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formatClock(DateTime dt) {
-    final local = dt.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
   @override
   Widget build(BuildContext context) {
     final index = indexProgramsByChannel(_programs);
@@ -226,16 +159,14 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                     _LiveTvTab.channels => _ChannelsList(
                       channels: _channels,
                       index: index,
+                      onTune: _tune,
+                    ),
+                    _LiveTvTab.guide => _GuideList(
+                      channels: _channels,
+                      index: index,
                       recordingBusyId: _recordingBusyId,
                       onTune: _tune,
                       onRecord: _record,
-                    ),
-                    _LiveTvTab.guide => _GuideGrid(
-                      channels: _channels,
-                      index: index,
-                      windowStart: _windowStart,
-                      onTune: _tune,
-                      onProgramTap: _showProgramActions,
                     ),
                     _LiveTvTab.recordings => _RecordingsList(
                       recordings: _recordings,
@@ -250,8 +181,94 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   }
 }
 
+String _formatGuideClock(DateTime dt) {
+  final local = dt.toLocal();
+  final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final suffix = local.hour >= 12 ? 'PM' : 'AM';
+  return '$hour12:$minute $suffix';
+}
+
+String _programLine(LiveTvProgram? program, String fallback) {
+  if (program == null) return fallback;
+  final when = '${_formatGuideClock(program.start)} – ${_formatGuideClock(program.stop)}';
+  return '${program.title} · $when';
+}
+
 class _ChannelsList extends StatelessWidget {
   const _ChannelsList({
+    required this.channels,
+    required this.index,
+    required this.onTune,
+  });
+
+  final List<LiveTvChannel> channels;
+  final Map<String, List<LiveTvProgram>> index;
+  final void Function(LiveTvChannel) onTune;
+
+  @override
+  Widget build(BuildContext context) {
+    if (channels.isEmpty) {
+      return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      itemCount: channels.length,
+      itemBuilder: (context, i) {
+        final channel = channels[i];
+        final current = currentProgramInIndex(index, channel.id);
+        final number = channel.numberOverride ?? channel.number;
+        final hdSuffix = channel.hd ? ' HD' : '';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: PrairieColors.bgElevated.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              autofocus: i == 0,
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => onTune(channel),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 72,
+                      child: Text(
+                        '$number$hdSuffix',
+                        style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text(
+                            _programLine(current, 'No guide data'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Mirrors the TS Guide tab: Now/Next rows with inline Watch / Record now /
+/// Record next — not a horizontal EPG timeline.
+class _GuideList extends StatelessWidget {
+  const _GuideList({
     required this.channels,
     required this.index,
     required this.recordingBusyId,
@@ -271,205 +288,135 @@ class _ChannelsList extends StatelessWidget {
       return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
     }
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       itemCount: channels.length,
       itemBuilder: (context, i) {
         final channel = channels[i];
-        final current = currentProgramInIndex(index, channel.id);
+        final now = currentProgramInIndex(index, channel.id);
         final next = nextProgramInIndex(index, channel.id);
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: PrairieColors.bgElevated,
-            child: Text(channel.numberOverride ?? channel.number, style: const TextStyle(color: PrairieColors.amber, fontSize: 12)),
-          ),
-          title: Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink)),
-          subtitle: Text(current?.title ?? 'No guide data', style: const TextStyle(color: PrairieColors.muted)),
-          trailing: Wrap(
-            spacing: 4,
-            children: [
-              IconButton(
-                tooltip: 'Watch',
-                icon: const Icon(Icons.play_circle_outline, color: PrairieColors.amber),
-                onPressed: () => onTune(channel),
+        final number = channel.numberOverride ?? channel.number;
+        final hdSuffix = channel.hd ? ' HD' : '';
+        final recordingBusy = recordingBusyId != null;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: PrairieColors.bgElevated.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.transparent),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final wide = constraints.maxWidth >= 900;
+                  final channelCol = Row(
+                    children: [
+                      SizedBox(
+                        width: 72,
+                        child: Text(
+                          '$number$hdSuffix',
+                          style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          channelDisplayLabel(channel),
+                          style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600, fontSize: 16),
+                        ),
+                      ),
+                    ],
+                  );
+                  final programsCol = wide
+                      ? Row(
+                          children: [
+                            Expanded(child: _NowNextBlock(label: 'Now', line: _programLine(now, 'Nothing listed'))),
+                            const SizedBox(width: 16),
+                            Expanded(child: _NowNextBlock(label: 'Next', line: _programLine(next, 'Nothing listed'))),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _NowNextBlock(label: 'Now', line: _programLine(now, 'Nothing listed')),
+                            const SizedBox(height: 12),
+                            _NowNextBlock(label: 'Next', line: _programLine(next, 'Nothing listed')),
+                          ],
+                        );
+                  final actions = Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        autofocus: i == 0,
+                        onPressed: () => onTune(channel),
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Watch'),
+                      ),
+                      if (now?.id.trim().isNotEmpty == true)
+                        OutlinedButton.icon(
+                          onPressed: recordingBusy ? null : () => onRecord(now!),
+                          icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger, size: 18),
+                          label: Text(recordingBusyId == now!.id ? 'Scheduling…' : 'Record now'),
+                        ),
+                      if (next?.id.trim().isNotEmpty == true)
+                        OutlinedButton.icon(
+                          onPressed: recordingBusy ? null : () => onRecord(next!),
+                          icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger, size: 18),
+                          label: Text(recordingBusyId == next!.id ? 'Scheduling…' : 'Record next'),
+                        ),
+                    ],
+                  );
+                  if (wide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(flex: 9, child: channelCol),
+                        const SizedBox(width: 16),
+                        Expanded(flex: 14, child: programsCol),
+                        const SizedBox(width: 16),
+                        actions,
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      channelCol,
+                      const SizedBox(height: 12),
+                      programsCol,
+                      const SizedBox(height: 12),
+                      actions,
+                    ],
+                  );
+                },
               ),
-              if (current?.id.trim().isNotEmpty == true)
-                IconButton(
-                  tooltip: 'Record now',
-                  icon: Icon(
-                    Icons.fiber_manual_record,
-                    color: recordingBusyId == current!.id ? PrairieColors.muted : PrairieColors.danger,
-                  ),
-                  onPressed: recordingBusyId != null ? null : () => onRecord(current),
-                ),
-              if (next?.id.trim().isNotEmpty == true)
-                IconButton(
-                  tooltip: 'Record next',
-                  icon: Icon(
-                    Icons.fiber_smart_record,
-                    color: recordingBusyId == next!.id ? PrairieColors.muted : PrairieColors.danger,
-                  ),
-                  onPressed: recordingBusyId != null ? null : () => onRecord(next),
-                ),
-            ],
+            ),
           ),
-          onTap: () => onTune(channel),
         );
       },
     );
   }
 }
 
-class _GuideGrid extends StatelessWidget {
-  const _GuideGrid({
-    required this.channels,
-    required this.index,
-    required this.windowStart,
-    required this.onTune,
-    required this.onProgramTap,
-  });
+class _NowNextBlock extends StatelessWidget {
+  const _NowNextBlock({required this.label, required this.line});
 
-  final List<LiveTvChannel> channels;
-  final Map<String, List<LiveTvProgram>> index;
-  final DateTime windowStart;
-  final void Function(LiveTvChannel) onTune;
-  final void Function(LiveTvChannel, LiveTvProgram) onProgramTap;
-
-  double _xFor(DateTime time) => time.difference(windowStart).inMinutes * _minutesPerPixel;
+  final String label;
+  final String line;
 
   @override
   Widget build(BuildContext context) {
-    if (channels.isEmpty) {
-      return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
-    }
-    final windowWidth = _guideWindowHours * 60 * _minutesPerPixel;
-    final nowX = _xFor(DateTime.now());
-
-    return SingleChildScrollView(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: _guideChannelColumnWidth,
-            child: Column(
-              children: [
-                const SizedBox(height: 28),
-                const Divider(height: 1, color: PrairieColors.bgSoft),
-                for (final channel in channels)
-                  InkWell(
-                    onTap: () => onTune(channel),
-                    child: SizedBox(
-                      height: _guideRowHeight,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 14,
-                              backgroundColor: PrairieColors.bgElevated,
-                              child: Text(channel.numberOverride ?? channel.number, style: const TextStyle(color: PrairieColors.amber, fontSize: 10)),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                channelDisplayLabel(channel),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: PrairieColors.ink, fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: windowWidth,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 28,
-                      child: Stack(
-                        children: [
-                          for (var h = 0; h <= _guideWindowHours; h++)
-                            Positioned(
-                              left: h * 60 * _minutesPerPixel,
-                              top: 0,
-                              child: Text(_formatHour(windowStart.add(Duration(hours: h))), style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1, color: PrairieColors.bgSoft),
-                    for (final channel in channels)
-                      SizedBox(
-                        height: _guideRowHeight,
-                        child: Stack(
-                          children: [
-                            for (final program in index[channel.id] ?? const <LiveTvProgram>[])
-                              Positioned(
-                                left: _xFor(program.start).clamp(0, windowWidth),
-                                width: (_xFor(program.stop) - _xFor(program.start)).clamp(24, windowWidth),
-                                top: 4,
-                                bottom: 4,
-                                child: _ProgramBlock(
-                                  program: program,
-                                  isNow: !program.start.isAfter(DateTime.now()) && program.stop.isAfter(DateTime.now()),
-                                  onTap: () => onProgramTap(channel, program),
-                                ),
-                              ),
-                            Positioned(left: nowX, top: 0, bottom: 0, child: Container(width: 2, color: PrairieColors.amber)),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatHour(DateTime dt) {
-    final local = dt.toLocal();
-    final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final suffix = local.hour >= 12 ? 'PM' : 'AM';
-    return '$hour12 $suffix';
-  }
-}
-
-class _ProgramBlock extends StatelessWidget {
-  const _ProgramBlock({required this.program, required this.isNow, required this.onTap});
-
-  final LiveTvProgram program;
-  final bool isNow;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: isNow ? PrairieColors.amber.withValues(alpha: 0.22) : PrairieColors.bgElevated,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isNow ? PrairieColors.amber.withValues(alpha: 0.6) : PrairieColors.ink.withValues(alpha: 0.08)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(color: PrairieColors.amber, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.2),
         ),
-        child: Text(
-          program.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: isNow ? PrairieColors.amber : PrairieColors.ink, fontSize: 12, fontWeight: isNow ? FontWeight.w600 : FontWeight.normal),
-        ),
-      ),
+        const SizedBox(height: 4),
+        Text(line, style: const TextStyle(color: PrairieColors.ink, height: 1.35)),
+      ],
     );
   }
 }
@@ -503,20 +450,17 @@ class _RecordingsList extends StatelessWidget {
     }
 
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       children: [
         if (active.isNotEmpty) ...[
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Text('Scheduled', style: TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600)),
-          ),
+          const Text('Scheduled & in progress', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+          const SizedBox(height: 8),
           for (final recording in active) _recordingTile(recording, canCancel: true),
         ],
         if (history.isNotEmpty) ...[
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text('History', style: TextStyle(color: PrairieColors.muted, fontWeight: FontWeight.w600)),
-          ),
+          const SizedBox(height: 16),
+          const Text('History', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+          const SizedBox(height: 8),
           for (final recording in history) _recordingTile(recording, canCancel: false),
         ],
       ],
@@ -525,16 +469,44 @@ class _RecordingsList extends StatelessWidget {
 
   Widget _recordingTile(LiveTvRecording recording, {required bool canCancel}) {
     final busy = cancelBusyId == recording.id;
-    return ListTile(
-      leading: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger),
-      title: Text(recording.title, style: const TextStyle(color: PrairieColors.ink)),
-      subtitle: Text(recording.status, style: const TextStyle(color: PrairieColors.muted)),
-      trailing: canCancel
-          ? IconButton(
-              icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
-              onPressed: busy ? null : () => onCancel(recording),
-            )
-          : null,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: PrairieColors.bgElevated.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      recording.title.trim().isNotEmpty ? recording.title : 'Untitled recording',
+                      style: const TextStyle(fontFamily: 'Fraunces', fontSize: 17, color: PrairieColors.ink),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_formatGuideClock(recording.start)} – ${_formatGuideClock(recording.stop)}',
+                      style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                    ),
+                    Text(recording.status, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                  ],
+                ),
+              ),
+              if (canCancel)
+                TextButton.icon(
+                  onPressed: busy ? null : () => onCancel(recording),
+                  icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
+                  label: Text(busy ? 'Cancelling…' : 'Cancel', style: const TextStyle(color: PrairieColors.muted)),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

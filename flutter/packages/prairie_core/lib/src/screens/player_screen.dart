@@ -10,6 +10,9 @@ const _progressIntervalMs = 10000;
 /// HLS remux/transcode sessions that stop advancing for this long after play
 /// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
 const _hlsStallTimeout = Duration(seconds: 20);
+/// PlusPlayer/webOS initialize must not hang forever when the HLS ladder is
+/// unplayable (e.g. AV1 fMP4 remux) while the server encode clock keeps moving.
+const _initializeTimeout = Duration(seconds: 25);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
@@ -45,6 +48,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
+  /// When the stream was attached; stall detection runs during prepare too.
+  DateTime? _streamAttachedAt;
   bool _exiting = false;
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
@@ -107,6 +112,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
   }
 
+  String? _sourceVideoCodecForFile(WatchDetail? detail, int fileId) {
+    if (detail == null) return null;
+    for (final version in detail.versions) {
+      if (version.fileId == fileId) return version.codecVideo;
+    }
+    return detail.versions.isNotEmpty ? detail.versions.first.codecVideo : null;
+  }
+
   List<AudioTrackInfo> get _audioTracks {
     final watch = widget.launch.watch;
     final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
@@ -163,6 +176,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         nextSession,
         position,
         sourceResolution: _sourceResolutionForFile(widget.launch.watch, nextSession.mediaFileId),
+        sourceVideoCodec: _sourceVideoCodecForFile(widget.launch.watch, nextSession.mediaFileId),
         maxResolution: deviceCaps.maxResolution,
         cancelToken: cancel,
       );
@@ -189,6 +203,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _selectedSubtitleTrackId = null;
         _caption = null;
       });
+      _streamAttachedAt = DateTime.now();
+      _lastProgressAt = _streamAttachedAt;
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || _exiting || cancel.isCancelled) {
         await backend.dispose();
@@ -196,7 +216,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      await backend.initialize(
+      await _initializeBackend(
+        backend,
         startPosition: prepared.playerStartSeconds > 0
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
@@ -232,9 +253,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _loading = false;
         });
       });
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
       _showControls();
     } catch (e) {
@@ -331,6 +349,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           started,
           seekAt,
           sourceResolution: _sourceResolutionForFile(widget.launch.watch, started.mediaFileId),
+          sourceVideoCodec: _sourceVideoCodecForFile(widget.launch.watch, started.mediaFileId),
           maxResolution: deviceCaps.maxResolution,
           cancelToken: cancel,
         );
@@ -358,6 +377,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _subtitleAppearance = settings.subtitleAppearance;
         _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
       });
+      _streamAttachedAt = DateTime.now();
+      _lastProgressAt = _streamAttachedAt;
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       await WidgetsBinding.instance.endOfFrame;
 
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -367,7 +392,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      await backend.initialize(
+      await _initializeBackend(
+        backend,
         startPosition: prepared.playerStartSeconds > 0
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
@@ -403,10 +429,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         });
       });
       _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
     } catch (e) {
       if (startedSessionId != null && _activeSessionId == startedSessionId) {
@@ -426,17 +448,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _checkHlsStall() {
-    if (!mounted || _exiting || _error != null || _loading) return;
+    if (!mounted || _exiting || _error != null) return;
     final backend = _backend;
-    if (backend == null || !backend.isPlaying) return;
-    final lastAt = _lastProgressAt;
+    if (backend == null) return;
+    // Prefer last media progress; fall back to attach time so hung initialize
+    // (while `_loading`) still fails closed instead of spinning forever.
+    final lastAt = _lastProgressAt ?? _streamAttachedAt;
     if (lastAt == null) return;
     if (DateTime.now().difference(lastAt) < _hlsStallTimeout) return;
     setState(() {
-      _error = 'Playback stalled — the stream stopped producing media.';
+      _error = _loading
+          ? 'Playback failed to start — the stream never became ready.'
+          : 'Playback stalled — the stream stopped producing media.';
       _loading = false;
     });
     _stallTimer?.cancel();
+  }
+
+  Future<void> _initializeBackend(VideoBackend backend, {Duration? startPosition}) async {
+    try {
+      await backend.initialize(startPosition: startPosition).timeout(_initializeTimeout);
+    } on TimeoutException {
+      throw StateError('Player initialize timed out after ${_initializeTimeout.inSeconds}s');
+    }
   }
 
   /// Mirrors `resolvePreferredSubtitleIndex`: auto-select a text track
@@ -562,6 +596,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  String _playerMetaLine(bool isPlaying) {
+    final bits = <String>['TV player'];
+    final method = _playbackSession?.playMethod;
+    if (method == 'direct') bits.add('Direct');
+    if (method == 'remux') bits.add('Remux');
+    if (method == 'transcode') bits.add('Transcode');
+    if (!isPlaying) bits.add('Paused');
+    return bits.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final backend = _backend;
@@ -611,84 +655,129 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   ),
                 ),
               if (_controlsVisible && backend != null && !_loading && _error == null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
+                Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.72),
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.88),
+                        ],
+                        stops: const [0.0, 0.22, 0.62, 1.0],
                       ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(widget.launch.title ?? '', style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink)),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
-                              Expanded(
-                                child: Slider(
-                                  value: _position.inMilliseconds.toDouble().clamp(0, (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble()),
-                                  max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble().clamp(1, double.infinity),
-                                  activeColor: PrairieColors.amber,
-                                  onChanged: (value) => setState(() => _position = Duration(milliseconds: value.round())),
-                                  onChangeEnd: (value) => backend.seekTo(Duration(milliseconds: value.round())),
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: _exit,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: PrairieColors.ink,
+                                    backgroundColor: const Color(0x590A0C10),
+                                    padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                                    shape: const StadiumBorder(),
+                                  ),
+                                  icon: const Icon(Icons.arrow_back, size: 18),
+                                  label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
                                 ),
-                              ),
-                              Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
-                            ],
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              IconButton(iconSize: 32, color: PrairieColors.ink, onPressed: _exit, icon: const Icon(Icons.close)),
-                              const SizedBox(width: 12),
-                              TextButton(
-                                onPressed: () => _seekBy(const Duration(seconds: -15)),
-                                child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                iconSize: 48,
-                                color: PrairieColors.amber,
-                                onPressed: _togglePlayPause,
-                                icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                              ),
-                              const SizedBox(width: 8),
-                              TextButton(
-                                onPressed: () => _seekBy(const Duration(seconds: 15)),
-                                child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
-                              ),
-                              if (_audioTracks.length > 1) ...[
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  iconSize: 28,
-                                  color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
-                                  onPressed: _busyAudio ? null : _pickAudioTrack,
-                                  icon: const Icon(Icons.audiotrack),
-                                  tooltip: 'Audio',
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'NOW PLAYING',
+                                        style: TextStyle(color: PrairieColors.amber, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.2),
+                                      ),
+                                      Text(
+                                        widget.launch.title?.trim().isNotEmpty == true
+                                            ? widget.launch.title!
+                                            : 'File ${widget.launch.fileId}',
+                                        style: const TextStyle(fontFamily: 'Fraunces', fontSize: 24, color: PrairieColors.ink),
+                                      ),
+                                      Text(
+                                        _playerMetaLine(backend.isPlaying),
+                                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
-                              if (backend.subtitleTracks.isNotEmpty) ...[
+                            ),
+                            const Spacer(),
+                            Text(
+                              widget.launch.title ?? '',
+                              style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
+                                Expanded(
+                                  child: Slider(
+                                    value: _position.inMilliseconds.toDouble().clamp(0, (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble()),
+                                    max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble().clamp(1, double.infinity),
+                                    activeColor: PrairieColors.amber,
+                                    onChanged: (value) => setState(() => _position = Duration(milliseconds: value.round())),
+                                    onChangeEnd: (value) => backend.seekTo(Duration(milliseconds: value.round())),
+                                  ),
+                                ),
+                                Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
+                              ],
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                TextButton(
+                                  onPressed: () => _seekBy(const Duration(seconds: -15)),
+                                  child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                ),
                                 const SizedBox(width: 8),
                                 IconButton(
-                                  iconSize: 28,
-                                  color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
-                                  onPressed: _pickSubtitleTrack,
-                                  icon: const Icon(Icons.closed_caption),
-                                  tooltip: 'Subtitles',
+                                  iconSize: 48,
+                                  color: PrairieColors.amber,
+                                  onPressed: _togglePlayPause,
+                                  icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
                                 ),
+                                const SizedBox(width: 8),
+                                TextButton(
+                                  onPressed: () => _seekBy(const Duration(seconds: 15)),
+                                  child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                ),
+                                if (_audioTracks.length > 1) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    iconSize: 28,
+                                    color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
+                                    onPressed: _busyAudio ? null : _pickAudioTrack,
+                                    icon: const Icon(Icons.audiotrack),
+                                    tooltip: 'Audio',
+                                  ),
+                                ],
+                                if (backend.subtitleTracks.isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    iconSize: 28,
+                                    color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
+                                    onPressed: _pickSubtitleTrack,
+                                    icon: const Icon(Icons.closed_caption),
+                                    tooltip: 'Subtitles',
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

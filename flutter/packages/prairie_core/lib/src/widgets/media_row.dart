@@ -19,7 +19,9 @@ class MediaRow<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
-    final height = variant == MediaRowVariant.landscape ? 220.0 : 240.0;
+    // Must fit card art + title/subtitle below — 240px clipped poster titles
+    // (2:3 art alone is ~210px on a 140-wide card).
+    final height = variant == MediaRowVariant.landscape ? 268.0 : 292.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 32),
       child: Column(
