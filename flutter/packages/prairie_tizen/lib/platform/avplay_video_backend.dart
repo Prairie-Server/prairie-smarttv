@@ -10,6 +10,25 @@ import 'package:video_player_avplay/video_player_platform_interface.dart';
 ///
 /// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
 /// underlying plugin but not yet wired up here.
+/// Diagnostic override: when non-empty, [AvplayVideoBackend.attach] hands this
+/// URL to AVPlay instead of the session's own stream URL.
+///
+/// This is the HLS stream from the video_player_avplay example, so it is known
+/// to work with this exact plugin and player, and it is a multi-variant master
+/// playlist -- the same code path that fails against our server. It partitions
+/// a silent prepare failure into "this app cannot play HLS at all" versus "the
+/// player rejects something specific about our manifest or URL".
+///
+/// That distinction is one no amount of server-side work can make. AVPlay
+/// fetches our master playlist, returns 200, and then issues no further request
+/// and raises no error, because PlusPlayer::OnPrepareDone only calls
+/// SendInitialized when the prepare succeeded and emits nothing when it did
+/// not. Seven sessions produced no diagnostic on any layer.
+///
+/// Set back to '' to resume normal playback.
+const String kHlsReferenceStreamOverride =
+    'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+
 class AvplayVideoBackend implements VideoBackend {
   /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
   /// needs a VM service that a release build doesn't attach, and `debugPrint`
@@ -70,22 +89,31 @@ class AvplayVideoBackend implements VideoBackend {
 
   @override
   void attach(String url, {String? maxResolution}) {
-    final hls = _isHls(url);
+    // The readiness probe still runs against the real session URL, so the
+    // override only changes what the player is handed -- everything upstream of
+    // it is exercised exactly as in a normal session.
+    final effectiveUrl =
+        kHlsReferenceStreamOverride.isEmpty ? url : kHlsReferenceStreamOverride;
+    final usingReference = effectiveUrl != url;
+    final hls = _isHls(effectiveUrl);
     final fixed = avPlayFixedMaxResolution(maxResolution);
 
-    final controller = VideoPlayerController.network(url);
+    final controller = VideoPlayerController.network(effectiveUrl);
 
-    final queryParams = Uri.tryParse(url)?.queryParameters.keys.join(',');
+    final queryParams = Uri.tryParse(effectiveUrl)?.queryParameters.keys.join(',');
 
     debugPrint(
       'prairie.avplay: attach '
-      'url=${_redactQuery(url)} '
+      'url=${_redactQuery(effectiveUrl)} '
       'hls=$hls '
       'fixedMaxResolution=$fixed '
-      'queryParams=$queryParams',
+      'queryParams=$queryParams '
+      'referenceStream=$usingReference',
     );
 
-    reportDiagnostic('attach:hls=$hls:params=$queryParams');
+    // ref= is what proves which build is actually on the device: dlog is blank
+    // on this TV, so the server request log is the only readable channel.
+    reportDiagnostic('attach:hls=$hls:params=$queryParams:ref=$usingReference');
 
     _controller = controller;
     controller.addListener(_onControllerUpdate);
