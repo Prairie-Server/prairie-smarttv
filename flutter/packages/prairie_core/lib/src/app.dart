@@ -20,6 +20,7 @@ import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'state/session_provider.dart';
 import 'theme/prairie_theme.dart';
+import 'widgets/prairie_loading_indicator.dart';
 
 /// Top-level app widget. Platform apps (`prairie_tizen`, `prairie_webos`)
 /// only need `runApp(const ProviderScope(child: PrairieApp()))` in their
@@ -69,7 +70,7 @@ class _StartupGateState extends ConsumerState<_StartupGate> {
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: PrairieLoadingIndicator()));
     }
     return const AppRoot();
   }

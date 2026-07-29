@@ -154,7 +154,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
             ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+                ? const Center(child: PrairieLoadingIndicator())
                 : switch (_tab) {
                     _LiveTvTab.channels => _ChannelsList(
                       channels: _channels,

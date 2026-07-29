@@ -91,7 +91,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(widget.back)),
         ),
         body: !_loaded
-            ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+            ? const Center(child: PrairieLoadingIndicator())
             : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

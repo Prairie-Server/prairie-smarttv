@@ -78,7 +78,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     return ShellScaffold(
       active: ShellTab.collections,
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+          ? const Center(child: PrairieLoadingIndicator())
           : ListView(
               padding: const EdgeInsets.symmetric(vertical: 24),
               children: [

@@ -152,7 +152,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             Text('No matches for "$_submitted".', style: const TextStyle(color: PrairieColors.muted)),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+                ? const Center(child: PrairieLoadingIndicator())
                 : PosterGrid(
                     items: _items,
                     serverUrl: session.serverUrl,

@@ -164,7 +164,7 @@ class _LibraryBrowseScreenState extends ConsumerState<LibraryBrowseScreen> {
           if (_error != null) Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+                ? const Center(child: PrairieLoadingIndicator())
                 : _items.isEmpty
                 ? const Center(child: Text('No titles in this library yet.', style: TextStyle(color: PrairieColors.muted)))
                 : PosterGrid(

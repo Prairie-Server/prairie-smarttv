@@ -639,7 +639,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     ),
                   ),
                 ),
-              if (_loading) const Center(child: CircularProgressIndicator(color: PrairieColors.amber)),
+              if (_loading) const Center(child: PrairieLoadingIndicator()),
               if (_error != null)
                 Center(
                   child: Column(

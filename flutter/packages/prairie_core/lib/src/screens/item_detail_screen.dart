@@ -345,7 +345,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       },
       child: Scaffold(
         body: _loading && detail == null
-          ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+          ? const Center(child: PrairieLoadingIndicator())
           : detail == null
           ? Center(
               child: Column(
@@ -450,7 +450,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   if (_episodesLoading)
-                    const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+                    const Center(child: PrairieLoadingIndicator())
                   else
                     GridView.builder(
                       shrinkWrap: true,

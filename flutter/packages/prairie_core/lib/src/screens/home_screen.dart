@@ -39,7 +39,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         future: _sections,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator(color: PrairieColors.amber));
+            return const Center(child: PrairieLoadingIndicator());
           }
           if (snapshot.hasError) {
             return Center(child: Text('${snapshot.error}', style: const TextStyle(color: PrairieColors.danger)));

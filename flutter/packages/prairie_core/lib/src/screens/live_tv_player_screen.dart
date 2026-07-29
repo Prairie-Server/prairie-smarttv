@@ -138,7 +138,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
           fit: StackFit.expand,
           children: [
             if (backend != null) Center(child: backend.buildSurface()),
-            if (_loading) const Center(child: CircularProgressIndicator(color: PrairieColors.amber)),
+            if (_loading) const Center(child: PrairieLoadingIndicator()),
             Positioned(
               left: 0,
               right: 0,

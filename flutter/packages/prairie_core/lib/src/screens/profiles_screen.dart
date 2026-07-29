@@ -109,7 +109,7 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
             future: _profiles,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return const CircularProgressIndicator(color: PrairieColors.amber);
+                return const PrairieLoadingIndicator();
               }
               if (snapshot.hasError) {
                 return Text('${snapshot.error}', style: const TextStyle(color: PrairieColors.danger));

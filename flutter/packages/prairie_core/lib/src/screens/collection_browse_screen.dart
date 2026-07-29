@@ -111,7 +111,7 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
           if (_error != null) Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: PrairieColors.amber))
+                ? const Center(child: PrairieLoadingIndicator())
                 : _items.isEmpty
                 ? const Center(child: Text('This collection is empty.', style: TextStyle(color: PrairieColors.muted)))
                 : PosterGrid(
