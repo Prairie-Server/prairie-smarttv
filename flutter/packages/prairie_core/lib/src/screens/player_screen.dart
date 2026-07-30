@@ -2,11 +2,17 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _progressIntervalMs = 10000;
+/// D-pad Left/Right on the seek bar — fixed seconds, not Material Slider's
+/// default 5% of runtime (which is several minutes on a feature film).
+@visibleForTesting
+const playerSeekBarStep = Duration(seconds: 10);
+const _seekBarStep = playerSeekBarStep;
 /// HLS remux/transcode sessions that stop advancing for this long after play
 /// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
 const _hlsStallTimeout = Duration(seconds: 20);
@@ -65,9 +71,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   CancelToken? _prepareCancel;
   bool _busyAudio = false;
 
+  /// Receives D-pad keys while chrome is hidden so nav can bring it back.
+  final FocusNode _idleFocus = FocusNode(debugLabel: 'player.idle');
+  final FocusNode _backFocus = FocusNode(debugLabel: 'player.back');
+  final FocusNode _seekFocus = FocusNode(debugLabel: 'player.seek');
+  final FocusNode _playFocus = FocusNode(debugLabel: 'player.play');
+
   @override
   void initState() {
     super.initState();
+    _seekFocus.addListener(_onControlFocusChanged);
+    _playFocus.addListener(_onControlFocusChanged);
+    _backFocus.addListener(_onControlFocusChanged);
     _start();
     _scheduleHideControls();
   }
@@ -81,6 +96,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _progressTimer?.cancel();
     _hideControlsTimer?.cancel();
     _stallTimer?.cancel();
+    _seekFocus.removeListener(_onControlFocusChanged);
+    _playFocus.removeListener(_onControlFocusChanged);
+    _backFocus.removeListener(_onControlFocusChanged);
+    _idleFocus.dispose();
+    _backFocus.dispose();
+    _seekFocus.dispose();
+    _playFocus.dispose();
     // Widget teardown that bypasses [_exit] (route replace, error boundary)
     // must still stop the Prairie session and free the hardware decoder.
     final sessionId = _activeSessionId;
@@ -100,16 +122,76 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
+  void _onControlFocusChanged() {
+    if (_seekFocus.hasFocus || _playFocus.hasFocus || _backFocus.hasFocus) {
+      _scheduleHideControls();
+    }
+  }
+
   void _scheduleHideControls() {
     _hideControlsTimer?.cancel();
     _hideControlsTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted) setState(() => _controlsVisible = false);
+      if (!mounted) return;
+      setState(() => _controlsVisible = false);
+      // Controls leave the tree with their FocusNodes — park focus on the
+      // idle catcher so the next D-pad event has somewhere to land.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_controlsVisible) _idleFocus.requestFocus();
+      });
     });
   }
 
-  void _showControls() {
+  void _showControls({bool focusPlay = false}) {
     setState(() => _controlsVisible = true);
     _scheduleHideControls();
+    if (!focusPlay) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _controlsVisible) _playFocus.requestFocus();
+    });
+  }
+
+  /// Any remote key while chrome is hidden re-shows it. Back/Escape still
+  /// bubble to [PopScope] so they exit the player.
+  KeyEventResult _onIdleKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (_controlsVisible) {
+      _scheduleHideControls();
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.goBack ||
+        event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.browserBack) {
+      return KeyEventResult.ignored;
+    }
+    _showControls(focusPlay: true);
+    return KeyEventResult.handled;
+  }
+
+  KeyEventResult _onSeekKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    _scheduleHideControls();
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      unawaited(_seekBy(-_seekBarStep));
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      unawaited(_seekBy(_seekBarStep));
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowDown) {
+      _playFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      _backFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   String? _sourceResolutionForFile(WatchDetail? detail, int fileId) {
@@ -715,191 +797,242 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final backend = _backend;
+    // Directional mode lets arrow keys leave widgets that don't claim them.
+    // Material Slider in traditional mode eats Down as "decrease", which is
+    // why D-pad Down on the seek bar never reached the transport buttons.
+    final media = MediaQuery.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _exit();
       },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: _showControls,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (backend != null) backend.buildSurface(),
-              if (_showStats && backend != null) _buildStatsOverlay(backend),
-              if (_caption != null && _caption!.isNotEmpty)
-                Align(
-                  alignment: Alignment(0, 1 - 2 * subtitleAppearanceBottomFraction(_subtitleAppearance)),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: subtitleAppearanceBackgroundColor(_subtitleAppearance),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
+      child: MediaQuery(
+        data: media.copyWith(navigationMode: NavigationMode.directional),
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: Focus(
+            focusNode: _idleFocus,
+            skipTraversal: true,
+            onKeyEvent: _onIdleKey,
+            child: GestureDetector(
+              onTap: () => _showControls(focusPlay: true),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (backend != null) backend.buildSurface(),
+                  if (_showStats && backend != null) _buildStatsOverlay(backend),
+                  if (_caption != null && _caption!.isNotEmpty)
+                    Align(
+                      alignment: Alignment(0, 1 - 2 * subtitleAppearanceBottomFraction(_subtitleAppearance)),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        child: Text(_caption!, textAlign: TextAlign.center, style: subtitleAppearanceTextStyle(_subtitleAppearance)),
-                      ),
-                    ),
-                  ),
-                ),
-              if (_loading) const Center(child: PrairieLoadingIndicator()),
-              if (_error != null)
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 48),
-                        child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: PrairieColors.danger)),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _exit, child: const Text('Back')),
-                    ],
-                  ),
-                ),
-              if (_controlsVisible && backend != null && !_loading && _error == null)
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.72),
-                          Colors.transparent,
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.88),
-                        ],
-                        stops: const [0.0, 0.22, 0.62, 1.0],
-                      ),
-                    ),
-                    child: SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextButton.icon(
-                                  onPressed: _exit,
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: PrairieColors.ink,
-                                    backgroundColor: const Color(0x590A0C10),
-                                    padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
-                                    shape: const StadiumBorder(),
-                                  ),
-                                  icon: const Icon(Icons.arrow_back, size: 18),
-                                  label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'NOW PLAYING',
-                                        style: TextStyle(color: PrairieColors.amber, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.2),
-                                      ),
-                                      Text(
-                                        widget.launch.title?.trim().isNotEmpty == true
-                                            ? widget.launch.title!
-                                            : 'File ${widget.launch.fileId}',
-                                        style: const TextStyle(fontFamily: 'Fraunces', fontSize: 24, color: PrairieColors.ink),
-                                      ),
-                                      Text(
-                                        _playerMetaLine(backend.isPlaying),
-                                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            Text(
-                              widget.launch.title ?? '',
-                              style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
-                                Expanded(
-                                  child: Slider(
-                                    value: _position.inMilliseconds.toDouble().clamp(0, (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble()),
-                                    max: (backend.duration ?? const Duration(seconds: 1)).inMilliseconds.toDouble().clamp(1, double.infinity),
-                                    activeColor: PrairieColors.amber,
-                                    onChanged: (value) => setState(() => _position = Duration(milliseconds: value.round())),
-                                    onChangeEnd: (value) => backend.seekTo(Duration(milliseconds: value.round())),
-                                  ),
-                                ),
-                                Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
-                              ],
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                TextButton(
-                                  onPressed: () => _seekBy(const Duration(seconds: -15)),
-                                  child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  iconSize: 48,
-                                  color: PrairieColors.amber,
-                                  onPressed: _togglePlayPause,
-                                  icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                                ),
-                                const SizedBox(width: 8),
-                                TextButton(
-                                  onPressed: () => _seekBy(const Duration(seconds: 15)),
-                                  child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
-                                ),
-                                if (_audioTracks.length > 1) ...[
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    iconSize: 28,
-                                    color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
-                                    onPressed: _busyAudio ? null : _pickAudioTrack,
-                                    icon: const Icon(Icons.audiotrack),
-                                    tooltip: 'Audio',
-                                  ),
-                                ],
-                                if (backend.subtitleTracks.isNotEmpty) ...[
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    iconSize: 28,
-                                    color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
-                                    onPressed: _pickSubtitleTrack,
-                                    icon: const Icon(Icons.closed_caption),
-                                    tooltip: 'Subtitles',
-                                  ),
-                                ],
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  iconSize: 28,
-                                  color: _showStats ? PrairieColors.amber : PrairieColors.ink,
-                                  onPressed: () => setState(() => _showStats = !_showStats),
-                                  icon: const Icon(Icons.query_stats),
-                                  tooltip: 'Stats for nerds',
-                                ),
-                              ],
-                            ),
-                          ],
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: subtitleAppearanceBackgroundColor(_subtitleAppearance),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            child: Text(_caption!, textAlign: TextAlign.center, style: subtitleAppearanceTextStyle(_subtitleAppearance)),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-            ],
+                  if (_loading) const Center(child: PrairieLoadingIndicator()),
+                  if (_error != null)
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 48),
+                            child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: PrairieColors.danger)),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(onPressed: _exit, child: const Text('Back')),
+                        ],
+                      ),
+                    ),
+                  if (_controlsVisible && backend != null && !_loading && _error == null)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.72),
+                              Colors.transparent,
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.88),
+                            ],
+                            stops: const [0.0, 0.22, 0.62, 1.0],
+                          ),
+                        ),
+                        child: SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    TextButton.icon(
+                                      focusNode: _backFocus,
+                                      onPressed: _exit,
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: PrairieColors.ink,
+                                        backgroundColor: const Color(0x590A0C10),
+                                        padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                                        shape: const StadiumBorder(),
+                                      ),
+                                      icon: const Icon(Icons.arrow_back, size: 18),
+                                      label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600)),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'NOW PLAYING',
+                                            style: TextStyle(color: PrairieColors.amber, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.2),
+                                          ),
+                                          Text(
+                                            widget.launch.title?.trim().isNotEmpty == true
+                                                ? widget.launch.title!
+                                                : 'File ${widget.launch.fileId}',
+                                            style: const TextStyle(fontFamily: 'Fraunces', fontSize: 24, color: PrairieColors.ink),
+                                          ),
+                                          Text(
+                                            _playerMetaLine(backend.isPlaying),
+                                            style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Spacer(),
+                                Text(
+                                  widget.launch.title ?? '',
+                                  style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
+                                    Expanded(child: _buildSeekBar(backend)),
+                                    Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
+                                  ],
+                                ),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () => _seekBy(const Duration(seconds: -15)),
+                                      child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      focusNode: _playFocus,
+                                      autofocus: true,
+                                      iconSize: 48,
+                                      color: PrairieColors.amber,
+                                      onPressed: _togglePlayPause,
+                                      icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    TextButton(
+                                      onPressed: () => _seekBy(const Duration(seconds: 15)),
+                                      child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                    ),
+                                    if (_audioTracks.length > 1) ...[
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        iconSize: 28,
+                                        color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
+                                        onPressed: _busyAudio ? null : _pickAudioTrack,
+                                        icon: const Icon(Icons.audiotrack),
+                                        tooltip: 'Audio',
+                                      ),
+                                    ],
+                                    if (backend.subtitleTracks.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        iconSize: 28,
+                                        color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
+                                        onPressed: _pickSubtitleTrack,
+                                        icon: const Icon(Icons.closed_caption),
+                                        tooltip: 'Subtitles',
+                                      ),
+                                    ],
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      iconSize: 28,
+                                      color: _showStats ? PrairieColors.amber : PrairieColors.ink,
+                                      onPressed: () => setState(() => _showStats = !_showStats),
+                                      icon: const Icon(Icons.query_stats),
+                                      tooltip: 'Stats for nerds',
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// TV-friendly seek control: own FocusNode claims Left/Right as fixed
+  /// [_seekBarStep] seeks and Down/Up as focus moves. The Material [Slider]
+  /// is excluded from focus so it can't swallow D-pad with its 5%-of-duration
+  /// keyboard steps.
+  Widget _buildSeekBar(VideoBackend backend) {
+    final maxMs = (backend.duration ?? const Duration(seconds: 1))
+        .inMilliseconds
+        .toDouble()
+        .clamp(1.0, double.infinity)
+        .toDouble();
+    final value = _position.inMilliseconds.toDouble().clamp(0.0, maxMs).toDouble();
+    return Focus(
+      focusNode: _seekFocus,
+      onKeyEvent: _onSeekKey,
+      child: Builder(
+        builder: (context) {
+          final focused = Focus.of(context).hasFocus;
+          return SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: focused ? 6 : 4,
+              thumbShape: RoundSliderThumbShape(enabledThumbRadius: focused ? 10 : 8),
+              overlayShape: RoundSliderOverlayShape(overlayRadius: focused ? 18 : 14),
+              activeTrackColor: PrairieColors.amber,
+              inactiveTrackColor: PrairieColors.muted.withValues(alpha: 0.35),
+              thumbColor: PrairieColors.amberBright,
+              overlayColor: PrairieColors.amber.withValues(alpha: 0.25),
+            ),
+            child: ExcludeFocus(
+              child: Slider(
+                value: value,
+                max: maxMs,
+                onChanged: (v) {
+                  _scheduleHideControls();
+                  setState(() => _position = Duration(milliseconds: v.round()));
+                },
+                onChangeEnd: (v) => backend.seekTo(Duration(milliseconds: v.round())),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
