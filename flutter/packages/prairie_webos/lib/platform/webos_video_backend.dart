@@ -50,6 +50,8 @@ class WebosVideoBackend implements VideoBackend {
   bool _initialized = false;
   bool? _lastBuffering;
   bool? _lastIsInitialized;
+  double? _contentAspectRatio;
+  bool _loggedVideoSize = false;
 
   /// Redacts query-param values (session tokens) before a URL hits the log.
   static String _redactQuery(String url) {
@@ -68,7 +70,7 @@ class WebosVideoBackend implements VideoBackend {
       message.replaceAllMapped(_embeddedUrlPattern, (m) => _redactQuery(m.group(0)!));
 
   @override
-  void attach(String url, {String? maxResolution}) {
+  void attach(String url, {String? maxResolution, double? contentAspectRatio}) {
     // maxResolution is accepted for VideoBackend parity with Tizen AVPlay
     // FIXED_MAX_RESOLUTION; video_player_drm has no equivalent adaptive hint yet.
     final hls = isHlsUrl(url);
@@ -79,6 +81,8 @@ class WebosVideoBackend implements VideoBackend {
     final queryParams = Uri.tryParse(url)?.queryParameters.keys.join(',');
     debugPrint('prairie.webos: attach url=${_redactQuery(url)} hls=$hls queryParams=$queryParams');
     reportDiagnostic('attach:hls=$hls:params=$queryParams');
+    _contentAspectRatio = contentAspectRatio != null && contentAspectRatio > 0 ? contentAspectRatio : null;
+    _loggedVideoSize = false;
     _controller = controller;
     controller.addListener(_onControllerUpdate);
   }
@@ -213,9 +217,51 @@ class WebosVideoBackend implements VideoBackend {
   Widget buildSurface() {
     final controller = _controller;
     if (controller == null) return const SizedBox.shrink();
-    // Full-bleed surface: webOS video plane shows through transparent Flutter
-    // (appinfo.json transparent: true). Expand so the hole matches the screen.
-    return SizedBox.expand(child: VideoPlayer(controller));
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final size = value.size;
+        // Full-bleed until prepare reports a real size: the native plane needs a
+        // non-zero laid-out rect before then, and a constrained box would shrink
+        // the hole to nothing (see Tizen videohole history).
+        if (!value.isInitialized) {
+          return SizedBox.expand(child: VideoPlayer(controller));
+        }
+
+        final nativeRatio = size.width > 0 && size.height > 0 ? size.width / size.height : null;
+        if (!_loggedVideoSize) {
+          _loggedVideoSize = true;
+          final fallback = _contentAspectRatio;
+          final path = nativeRatio != null
+              ? 'native'
+              : (fallback != null ? 'fallback' : 'fullbleed');
+          debugPrint(
+            'prairie.webos: videoSize=${size.width}x${size.height} '
+            'fallback=${fallback ?? 'none'} path=$path',
+          );
+          reportDiagnostic(
+            'vsize=${size.width.round()}x${size.height.round()}:'
+            'fb=${fallback?.toStringAsFixed(3) ?? 'none'}:path=$path',
+          );
+        }
+
+        // Native size preferred; server-probed VideoTrack dimensions backstop
+        // players that leave value.size at 0×0 for hole-punched playback.
+        final aspect = nativeRatio ?? _contentAspectRatio;
+        if (aspect == null || aspect <= 0) {
+          return SizedBox.expand(child: VideoPlayer(controller));
+        }
+        // Constraining the widget rect is what produces the bars: the native
+        // plane is positioned to this rect, and the surrounding area stays
+        // Flutter-painted black from the Scaffold.
+        return Center(
+          child: AspectRatio(
+            aspectRatio: aspect,
+            child: VideoPlayer(controller),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -224,6 +270,8 @@ class WebosVideoBackend implements VideoBackend {
     final controller = _controller;
     _controller = null;
     _initialized = false;
+    _contentAspectRatio = null;
+    _loggedVideoSize = false;
     if (controller != null) {
       controller.removeListener(_onControllerUpdate);
       await controller.dispose();

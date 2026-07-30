@@ -215,7 +215,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await oldBackend?.dispose();
 
       final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
-      backend.attach(prepared.streamUrl, maxResolution: deviceCaps.maxResolution);
+      backend.attach(
+        prepared.streamUrl,
+        maxResolution: deviceCaps.maxResolution,
+        contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
+      );
       setState(() {
         _backend = backend;
         _playbackSession = prepared.session;
@@ -394,7 +398,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _activeSessionId = prepared.session.sessionId;
       final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
-      backend.attach(prepared.streamUrl, maxResolution: deviceCaps.maxResolution);
+      backend.attach(
+        prepared.streamUrl,
+        maxResolution: deviceCaps.maxResolution,
+        contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
+      );
       // Mount the hole-punch surface BEFORE initialize — PlusPlayer prepares
       // against the display rect; awaiting init with no VideoPlayer in the
       // tree leaves Direct Play streaming on the server while Flutter spins.
