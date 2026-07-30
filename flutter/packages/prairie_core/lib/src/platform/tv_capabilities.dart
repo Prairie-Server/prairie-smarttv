@@ -135,11 +135,18 @@ TvPlaybackCapabilities applyAudioChannelOverride(TvPlaybackCapabilities caps, {b
 /// available on Tizen ≥ 5.0, we assume UHD (same class of panels that ship
 /// with AVPlay apps).
 ///
-/// [uhd8K] has no auto-detection at all (unlike [uhd], there's no screen-size
-/// heuristic for it — an 8K Neo QLED and a 4K QLED can report the same
-/// Flutter surface size) — it's a manual signal from
-/// `PlaybackSettings.is8KPanel`, since Samsung's model-tier info lives behind
-/// `webapis.*` (Web API only, unreachable here). Defaults to `false`.
+/// [uhd8K] has no auto-detection at all, and unlike [uhd] there's no
+/// screen-size heuristic to fall back on either: Samsung TV apps render at a
+/// fixed 1080p reference surface that the platform then upscales to the
+/// physical panel, so every size signal available to app code — Flutter's
+/// `PlatformDispatcher.displays` and `device_info_plus_tizen`'s
+/// `screenWidth`/`screenHeight` (itself backed by the native
+/// `http://tizen.org/feature/screen.width`/`.height` keys) — reports that
+/// same fixed 1920×1080 regardless of whether the physical panel is 1080p,
+/// 4K, or 8K. Confirmed empirically on a real 8K Neo QLED unit: both APIs
+/// came back 1920×1080-derived. [uhd8K] is therefore a manual signal from
+/// `PlaybackSettings.is8KPanel` — there is no better answer available from
+/// application code on this platform. Defaults to `false`.
 TvPlaybackCapabilities buildTizenCapabilities({
   required double tizenVersion,
   required int screenWidth,

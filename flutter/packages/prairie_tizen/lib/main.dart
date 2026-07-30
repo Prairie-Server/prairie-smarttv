@@ -20,7 +20,8 @@ Future<void> main() async {
       avplayAvailable: true,
     );
     debugPrint(
-      'prairie.tv_capabilities: platformVersion=$rawVersion parsed=$version codecsVideo=${caps.codecsVideo}',
+      'prairie.tv_capabilities: platformVersion=$rawVersion parsed=$version '
+      'codecsVideo=${caps.codecsVideo} maxAudioChannels=${caps.maxAudioChannels}',
     );
   } catch (err, stack) {
     // Probe failed (emulator / missing plugin) — keep defaults without AV1.
