@@ -65,11 +65,13 @@ pass "checked-in default api-version=6.5"
 
 # --- Required Dart entrypoints / scripts exist ---
 for f in \
+  packages/pubspec.yaml \
   packages/prairie_webos/lib/main.dart \
   packages/prairie_webos/lib/platform/webos_video_backend.dart \
   packages/prairie_webos/lib/platform/device_tier_webos.dart \
   packages/prairie_tizen/lib/main.dart \
   packages/prairie_tizen/lib/platform/videohole_video_backend.dart \
+  packages/flutter_secure_storage_webos/lib/flutter_secure_storage_webos.dart \
   scripts/build-tizen.sh \
   scripts/build-webos.sh
 do
@@ -82,6 +84,10 @@ grep -q 'video_player_drm:' "${ROOT}/packages/prairie_webos/pubspec.yaml" \
   || fail "prairie_webos missing video_player_drm"
 grep -q 'device_info_plus_webos:' "${ROOT}/packages/prairie_webos/pubspec.yaml" \
   || fail "prairie_webos missing device_info_plus_webos"
+grep -q 'flutter_secure_storage_webos:' "${ROOT}/packages/prairie_webos/pubspec.yaml" \
+  || fail "prairie_webos missing flutter_secure_storage_webos"
+grep -q 'resolution: workspace' "${ROOT}/packages/flutter_secure_storage_webos/pubspec.yaml" \
+  || fail "flutter_secure_storage_webos missing resolution: workspace"
 grep -q 'video_player_videohole:' "${ROOT}/packages/prairie_tizen/pubspec.yaml" \
   || fail "prairie_tizen missing video_player_videohole"
 if grep -q 'path_provider_tizen:' "${ROOT}/packages/prairie_tizen/pubspec.yaml"; then

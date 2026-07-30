@@ -2,6 +2,7 @@ name: prairie_webos
 description: Prairie Smart TV client for LG webOS (flutter-webos).
 publish_to: 'none'
 version: 1.0.0+1
+resolution: workspace
 
 environment:
   # Pinned to flutter-webos's bundled Dart SDK — see flutter/README.md.

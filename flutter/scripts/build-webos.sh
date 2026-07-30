@@ -34,6 +34,8 @@ if ! command -v flutter-webos >/dev/null 2>&1; then
 fi
 
 mkdir -p "$OUT_DIR"
+# Resolve the pub workspace (prairie_webos + flutter_secure_storage_webos).
+(cd "${ROOT}/packages" && flutter-webos pub get)
 cd "$APP_DIR"
 
 BUILD_ARGS=()

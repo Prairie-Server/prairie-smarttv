@@ -74,7 +74,7 @@ packages:
     source: hosted
     version: "1.0.2"
   device_info_plus:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: device_info_plus
       sha256: "98f28b42168cc509abc92f88518882fd58061ea372d7999aecc424345c7bff6a"
@@ -90,7 +90,7 @@ packages:
     source: hosted
     version: "7.0.3"
   device_info_plus_webos:
-    dependency: "direct main"
+    dependency: transitive
     description:
       path: "packages/device_info_plus"
       ref: main
@@ -139,12 +139,12 @@ packages:
     source: hosted
     version: "7.0.1"
   flutter:
-    dependency: "direct main"
+    dependency: transitive
     description: flutter
     source: sdk
     version: "0.0.0"
   flutter_lints:
-    dependency: "direct dev"
+    dependency: transitive
     description:
       name: flutter_lints
       sha256: "3105dc8492f6183fb076ccf1f351ac3d60564bff92e20bfc4af9cc1651f4e7e1"
@@ -152,7 +152,7 @@ packages:
     source: hosted
     version: "6.0.0"
   flutter_riverpod:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: flutter_riverpod
       sha256: "9532ee6db4a943a1ed8383072a2e3eeda041db5657cdf6d2acecf3c21ecbe7e1"
@@ -199,13 +199,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.1"
-  flutter_secure_storage_webos:
-    dependency: "direct main"
-    description:
-      path: "../flutter_secure_storage_webos"
-      relative: true
-    source: path
-    version: "1.0.0+prairie.1"
   flutter_secure_storage_windows:
     dependency: transitive
     description:
@@ -215,7 +208,7 @@ packages:
     source: hosted
     version: "4.1.0"
   flutter_test:
-    dependency: "direct dev"
+    dependency: transitive
     description: flutter
     source: sdk
     version: "0.0.0"
@@ -252,10 +245,10 @@ packages:
     dependency: transitive
     description:
       name: jni
-      sha256: "5bc9a9daac5ccfbd6a758377600b9f7fdce13d93f26e8012a8941014a5d978d1"
+      sha256: f038e58b4dc2c9037f50e233175086337e0b305e356d28211bf55f21c504cbd3
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.2"
+    version: "1.0.3"
   jni_flutter:
     dependency: transitive
     description:
@@ -356,10 +349,10 @@ packages:
     dependency: transitive
     description:
       name: package_config
-      sha256: f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc
+      sha256: ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.0"
+    version: "3.0.0"
   path:
     dependency: transitive
     description:
@@ -433,9 +426,9 @@ packages:
     source: hosted
     version: "2.1.8"
   prairie_core:
-    dependency: "direct main"
+    dependency: transitive
     description:
-      path: "../prairie_core"
+      path: prairie_core
       relative: true
     source: path
     version: "0.0.1"
@@ -491,10 +484,10 @@ packages:
     dependency: transitive
     description:
       name: shared_preferences_android
-      sha256: e8d4762b1e2e8578fc4d0fd548cebf24afd24f49719c08974df92834565e2c53
+      sha256: "0634e64bd719f89c012f392938e173521f535d3ecaf66558fa94a056d22b5cc7"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.23"
+    version: "2.4.27"
   shared_preferences_foundation:
     dependency: transitive
     description:
@@ -528,7 +521,7 @@ packages:
     source: hosted
     version: "2.4.3"
   shared_preferences_webos:
-    dependency: "direct main"
+    dependency: transitive
     description:
       path: "packages/shared_preferences"
       ref: main
@@ -622,7 +615,7 @@ packages:
     source: hosted
     version: "2.2.0"
   video_player_drm:
-    dependency: "direct main"
+    dependency: transitive
     description:
       path: "packages/video_player_drm"
       ref: main
@@ -679,5 +672,5 @@ packages:
     source: hosted
     version: "3.1.3"
 sdks:
-  dart: ">=3.10.9 <4.0.0"
-  flutter: ">=3.38.4"
+  dart: ">=3.12.0 <4.0.0"
+  flutter: ">=3.44.0"
