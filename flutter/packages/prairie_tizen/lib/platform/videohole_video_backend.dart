@@ -68,6 +68,14 @@ class VideoholeVideoBackend implements VideoBackend {
     return uri.replace(queryParameters: redacted).toString();
   }
 
+  /// Same redaction as [_redactQuery], but for free-form text (plugin error
+  /// descriptions) that may *embed* the failing URL rather than *be* one —
+  /// native player errors routinely echo the URL they failed to open,
+  /// query string (session token) and all.
+  static final _embeddedUrlPattern = RegExp(r'https?://\S+');
+  static String _redactMessage(String message) =>
+      message.replaceAllMapped(_embeddedUrlPattern, (m) => _redactQuery(m.group(0)!));
+
   @override
   void attach(String url, {String? maxResolution}) {
     // video_player_videohole has no equivalent to AVPlay's fixed-max-resolution
@@ -129,8 +137,9 @@ class VideoholeVideoBackend implements VideoBackend {
       final message = (value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
-        debugPrint('prairie.videohole: hasError message=$message');
-        reportDiagnostic('err=$message');
+        final redacted = _redactMessage(message);
+        debugPrint('prairie.videohole: hasError message=$redacted');
+        reportDiagnostic('err=$redacted');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }

@@ -120,6 +120,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
   }
 
+  /// Clears the `_busyAudio`/`_loading` lock set at the top of [_chooseAudio],
+  /// but only when [cancel] is still the current in-flight prepare — if a
+  /// newer `_chooseAudio`/`_start` call already superseded it (via
+  /// `_prepareCancel?.cancel()`), that newer call owns those flags now and
+  /// clearing them here would let a third call slip past the `_busyAudio`
+  /// guard while the newer one is still running.
+  void _clearAudioBusyIfCurrent(CancelToken cancel) {
+    if (!mounted || !identical(_prepareCancel, cancel)) return;
+    setState(() {
+      _busyAudio = false;
+      _loading = false;
+    });
+  }
+
   List<AudioTrackInfo> get _audioTracks {
     final watch = widget.launch.watch;
     final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
@@ -159,7 +173,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       final position = _position.inMilliseconds / 1000.0;
       final updated = await switchPlaybackAudio(client, session, sessionId, index, position);
-      if (!mounted || _exiting || cancel.isCancelled) return;
+      if (!mounted || _exiting || cancel.isCancelled) {
+        _clearAudioBusyIfCurrent(cancel);
+        return;
+      }
 
       final nextSession = PlaybackSessionResponse(
         sessionId: current.sessionId,
@@ -184,6 +201,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
       if (!mounted || _exiting || cancel.isCancelled) {
         await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _clearAudioBusyIfCurrent(cancel);
         return;
       }
 
@@ -206,18 +224,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _caption = null;
       });
       _streamAttachedAt = DateTime.now();
-      _lastProgressAt = _streamAttachedAt;
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || _exiting || cancel.isCancelled) {
         await backend.dispose();
         await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _clearAudioBusyIfCurrent(cancel);
         return;
       }
 
+      // See the matching comment in [_start]: the stall timer must not start
+      // until playback has actually begun, or it preempts [_initializeTimeout].
       await _initializeBackend(
         backend,
         startPosition: prepared.playerStartSeconds > 0
@@ -229,6 +245,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!mounted || _exiting || cancel.isCancelled) {
         await backend.dispose();
         await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _clearAudioBusyIfCurrent(cancel);
         return;
       }
 
@@ -238,6 +255,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
       _lastProgressPosition = _position;
       _lastProgressAt = DateTime.now();
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       _positionSub = backend.positionStream.listen((pos) {
         if (!mounted) return;
         if (pos != _lastProgressPosition) {
@@ -384,11 +405,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
       });
       _streamAttachedAt = DateTime.now();
-      _lastProgressAt = _streamAttachedAt;
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
       await WidgetsBinding.instance.endOfFrame;
 
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -398,6 +414,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
+      // Initialize has its own [_initializeTimeout] budget (matched to the
+      // upstream HLS-readiness wait) — the stall timer below must not start
+      // until playback has actually begun, or it preempts that budget with a
+      // much tighter one (see the "stall timer preempts initialize" bug this
+      // fixed: the 20s stall check used to fire while a 90s-budgeted encode
+      // was still legitimately starting up).
       await _initializeBackend(
         backend,
         startPosition: prepared.playerStartSeconds > 0
@@ -417,6 +439,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       setState(() => _loading = false);
       _lastProgressPosition = _position;
       _lastProgressAt = DateTime.now();
+      if (needsHlsBootstrap(prepared.session.playMethod)) {
+        _stallTimer?.cancel();
+        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+      }
       _positionSub = backend.positionStream.listen((position) {
         if (!mounted) return;
         if (position != _lastProgressPosition) {
@@ -464,15 +490,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (!mounted || _exiting || _error != null) return;
     final backend = _backend;
     if (backend == null) return;
-    // Prefer last media progress; fall back to attach time so hung initialize
-    // (while `_loading`) still fails closed instead of spinning forever.
+    // The timer only ever starts after a successful `play()` (see [_start] /
+    // [_chooseAudio]), so this is purely a post-start "stopped producing
+    // media" detector — not a substitute for [_initializeTimeout]. A user
+    // pause freezes `_lastProgressAt` (it only advances on a position-stream
+    // tick), so a paused stream must not be judged stalled just for sitting
+    // still — resuming refreshes `_lastProgressAt` in [_togglePlayPause].
+    if (!backend.isPlaying) return;
     final lastAt = _lastProgressAt ?? _streamAttachedAt;
     if (lastAt == null) return;
     if (DateTime.now().difference(lastAt) < _hlsStallTimeout) return;
     setState(() {
-      _error = _loading
-          ? 'Playback failed to start — the stream never became ready.'
-          : 'Playback stalled — the stream stopped producing media.';
+      _error = 'Playback stalled — the stream stopped producing media.';
       _loading = false;
     });
     _stallTimer?.cancel();
@@ -594,6 +623,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await backend.pause();
     } else {
       await backend.play();
+      // Resuming after a pause: `_lastProgressAt` was frozen at pause time
+      // (no position-stream tick fires while paused), so without this the
+      // stall check could fire on the very next 2s tick even though playback
+      // just resumed and hasn't had a chance to advance yet.
+      _lastProgressAt = DateTime.now();
     }
     _showControls();
     setState(() {});
