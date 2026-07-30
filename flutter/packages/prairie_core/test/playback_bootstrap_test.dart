@@ -24,6 +24,30 @@ void main() {
     });
   });
 
+  group('probeAudioCodecSupport', () {
+    test('always includes aac', () {
+      expect(probeAudioCodecSupport(tizenVersion: 6.5), contains('aac'));
+      expect(probeAudioCodecSupport(tizenVersion: 0), ['aac']);
+    });
+
+    test('excludes ac3/eac3 on the 2022 model-year confirmed to fail (Tizen 6.5)', () {
+      final codecs = probeAudioCodecSupport(tizenVersion: 6.5);
+      expect(codecs, isNot(contains('ac3')));
+      expect(codecs, isNot(contains('eac3')));
+    });
+
+    test('includes ac3/eac3 from Tizen 7.0 (2023 models) onward', () {
+      final codecs = probeAudioCodecSupport(tizenVersion: 7.0);
+      expect(codecs, containsAll(['aac', 'ac3', 'eac3']));
+    });
+
+    test('never advertises dts or mp3', () {
+      final codecs = probeAudioCodecSupport(tizenVersion: 9.0);
+      expect(codecs, isNot(contains('dts')));
+      expect(codecs, isNot(contains('mp3')));
+    });
+  });
+
   group('buildTizenCapabilities', () {
     test('includes av1 for Tizen 6.5 with AVPlay', () {
       final caps = buildTizenCapabilities(
@@ -36,6 +60,14 @@ void main() {
       expect(caps.codecsVideo, contains('hevc'));
       expect(caps.maxResolution, '2160p');
       expect(caps.containers, contains('mkv'));
+    });
+
+    test('codecsAudio matches probeAudioCodecSupport for the given Tizen version', () {
+      final caps2022 = buildTizenCapabilities(tizenVersion: 6.5, screenWidth: 3840, screenHeight: 2160);
+      expect(caps2022.codecsAudio, ['aac']);
+
+      final caps2023 = buildTizenCapabilities(tizenVersion: 7.0, screenWidth: 3840, screenHeight: 2160);
+      expect(caps2023.codecsAudio, containsAll(['aac', 'ac3', 'eac3']));
     });
 
     test('treats logical 1080p Flutter surface as UHD on modern Tizen', () {
