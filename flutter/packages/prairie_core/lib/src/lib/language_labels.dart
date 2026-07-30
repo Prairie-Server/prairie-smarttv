@@ -34,7 +34,9 @@ const _languageDisplayNames = <String, String>{
 /// "S_HDMV/PGS". Title-casing that verbatim reads as gibberish, not a label.
 const _codecLikeMarkers = <String>['pgs', 'vobsub', 'dvbsub', 'hdmv', 'subtitle', 'subrip'];
 
-bool _looksLikeCodecLabel(String raw) {
+/// Returns true when [raw] looks like a codec/format identifier rather than
+/// a human language or track title (e.g. `HDMV_PGS_SUBTITLE`, `S_HDMV/PGS`).
+bool looksLikeCodecLabel(String raw) {
   if (raw.contains('/')) return true;
   final lower = raw.toLowerCase();
   if (raw.contains('_') && _codecLikeMarkers.any(lower.contains)) return true;
@@ -50,9 +52,17 @@ String humanizeTrackLanguage(String raw) {
   if (trimmed.isEmpty) return 'Unknown';
   final known = _languageDisplayNames[trimmed.toLowerCase()];
   if (known != null) return known;
-  if (_looksLikeCodecLabel(trimmed)) return 'Unknown';
+  if (looksLikeCodecLabel(trimmed)) return 'Unknown';
   return trimmed
       .split(RegExp(r'(\s+)'))
       .map((word) => word.trim().isEmpty ? word : word[0].toUpperCase() + word.substring(1).toLowerCase())
       .join();
+}
+
+/// Returns a display-worthy string from [raw], or null when empty / codec-like.
+String? usefulTrackLabel(String? raw) {
+  final trimmed = raw?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  if (looksLikeCodecLabel(trimmed)) return null;
+  return trimmed;
 }

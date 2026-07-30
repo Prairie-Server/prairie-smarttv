@@ -44,7 +44,10 @@ class ProfilesRoute extends Route {
 }
 
 class HomeRoute extends Route {
-  const HomeRoute();
+  const HomeRoute({this.restoreContentId});
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
 }
 
 class LibrariesRoute extends Route {
@@ -52,9 +55,12 @@ class LibrariesRoute extends Route {
 }
 
 class LibraryRoute extends Route {
-  const LibraryRoute({required this.library});
+  const LibraryRoute({required this.library, this.restoreContentId});
 
   final Library library;
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
 }
 
 class CollectionsRoute extends Route {
@@ -62,13 +68,19 @@ class CollectionsRoute extends Route {
 }
 
 class CollectionRoute extends Route {
-  const CollectionRoute({required this.collection});
+  const CollectionRoute({required this.collection, this.restoreContentId});
 
   final CollectionCard collection;
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
 }
 
 class SearchRoute extends Route {
-  const SearchRoute();
+  const SearchRoute({this.restoreContentId});
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
 }
 
 class LiveTvRoute extends Route {

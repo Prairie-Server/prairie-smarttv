@@ -20,9 +20,10 @@ const _sortOptions = [
 
 /// Mirrors LibraryBrowseScreen.tsx.
 class LibraryBrowseScreen extends ConsumerStatefulWidget {
-  const LibraryBrowseScreen({super.key, required this.library});
+  const LibraryBrowseScreen({super.key, required this.library, this.restoreContentId});
 
   final Library library;
+  final String? restoreContentId;
 
   @override
   ConsumerState<LibraryBrowseScreen> createState() => _LibraryBrowseScreenState();
@@ -170,9 +171,14 @@ class _LibraryBrowseScreenState extends ConsumerState<LibraryBrowseScreen> {
                 : PosterGrid(
                     items: _items,
                     serverUrl: session.serverUrl,
-                    onOpen: (item) => ref
-                        .read(routeProvider.notifier)
-                        .go(DetailRoute(contentId: item.contentId, seed: item, back: LibraryRoute(library: widget.library))),
+                    restoreContentId: widget.restoreContentId,
+                    onOpen: (item) => ref.read(routeProvider.notifier).go(
+                      DetailRoute(
+                        contentId: item.contentId,
+                        seed: item,
+                        back: LibraryRoute(library: widget.library, restoreContentId: item.contentId),
+                      ),
+                    ),
                   ),
           ),
           if (_hasMore && !_loading)

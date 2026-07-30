@@ -8,7 +8,10 @@ import 'package:prairie_core/src/widgets/landscape_card.dart';
 /// Mirrors HomeBrowseScreen.tsx: featured hero carousel, landscape continue-
 /// watching rails, poster rails, and Live TV On now.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.restoreContentId});
+
+  /// Content id to refocus after returning from item details.
+  final String? restoreContentId;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -19,10 +22,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _heroIndex = 0;
   final _heroFocus = FocusNode(debugLabel: 'home-hero-play');
   final _firstItemFocus = FocusNode(debugLabel: 'home-first-item');
-  /// `autofocus:true` races the async section load — by the time the hero
-  /// (or, when there's no hero, the first row's first card) mounts, initial
-  /// D-pad presses may already have landed on the top nav. Explicitly
-  /// requesting focus once, like ItemDetail's hero pin, closes that race.
+  final _restoreFocus = FocusNode(debugLabel: 'home-restore-item');
+  /// `autofocus:true` races the async section load — by the time the first
+  /// row's first card mounts, initial D-pad presses may already have landed
+  /// on the top nav. Explicitly requesting focus once, like ItemDetail's
+  /// hero pin, closes that race.
   bool _initialFocusApplied = false;
 
   @override
@@ -36,6 +40,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _heroFocus.dispose();
     _firstItemFocus.dispose();
+    _restoreFocus.dispose();
     super.dispose();
   }
 
@@ -43,12 +48,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_initialFocusApplied) return;
     _initialFocusApplied = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) node.requestFocus();
+      if (!mounted) return;
+      node.requestFocus();
+      final ctx = node.context;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.35,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
   void _openItem(CatalogItem item) {
-    ref.read(routeProvider.notifier).go(DetailRoute(contentId: item.contentId, seed: item, back: const HomeRoute()));
+    ref.read(routeProvider.notifier).go(
+      DetailRoute(
+        contentId: item.contentId,
+        seed: item,
+        back: HomeRoute(restoreContentId: item.contentId),
+      ),
+    );
   }
 
   @override
@@ -74,18 +95,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               break;
             }
           }
-          final rows = sections.where((s) => s.featured != true).toList();
+          // Skip empty catalog rows so "first row" is always a focusable rail.
+          final rows = sections.where((s) => s.featured != true && s.items.isNotEmpty).toList();
           if (sections.isEmpty && onNow.isEmpty) {
             return const Center(child: Text('Nothing here yet', style: TextStyle(color: PrairieColors.muted)));
           }
-          final heroAutofocus = featured != null;
-          final firstRowAutofocus = !heroAutofocus && rows.isNotEmpty;
-          final firstOnNowAutofocus = !heroAutofocus && rows.isEmpty && onNow.isNotEmpty;
-          if (heroAutofocus) {
-            _applyInitialFocus(_heroFocus);
+
+          // Prefer restoring focus to the just-viewed item when returning from
+          // details; otherwise land on the first card of the first catalog row
+          // (not the featured hero "More Info" button).
+          final restoreId = widget.restoreContentId;
+          int? restoreSectionIndex;
+          int? restoreItemIndex;
+          var restoreHero = false;
+          if (restoreId != null) {
+            for (var s = 0; s < rows.length; s++) {
+              final i = rows[s].items.indexWhere((item) => item.contentId == restoreId);
+              if (i >= 0) {
+                restoreSectionIndex = s;
+                restoreItemIndex = i;
+                break;
+              }
+            }
+            if (restoreSectionIndex == null && featured != null) {
+              restoreHero = featured.items.any((item) => item.contentId == restoreId);
+            }
+          }
+          final restoring = restoreSectionIndex != null && restoreItemIndex != null;
+          final firstRowAutofocus = !restoring && !restoreHero && rows.isNotEmpty;
+          final firstOnNowAutofocus = !restoring && !restoreHero && rows.isEmpty && onNow.isNotEmpty;
+          final heroAutofocus = restoreHero || (!restoring && !firstRowAutofocus && !firstOnNowAutofocus && featured != null);
+
+          if (restoring) {
+            _applyInitialFocus(_restoreFocus);
           } else if (firstRowAutofocus || firstOnNowAutofocus) {
             _applyInitialFocus(_firstItemFocus);
+          } else if (heroAutofocus) {
+            _applyInitialFocus(_heroFocus);
           }
+
           return ListView(
             padding: EdgeInsets.zero,
             children: [
@@ -96,6 +144,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   index: _heroIndex,
                   onIndexChange: (i) => setState(() => _heroIndex = i),
                   onOpenItem: _openItem,
+                  autofocusPlay: heroAutofocus,
                   playFocusNode: _heroFocus,
                 ),
               Padding(
@@ -110,7 +159,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         session: session,
                         section: rows[s],
                         sectionIndex: s,
-                        autofocusFirst: !heroAutofocus && s == 0,
+                        autofocusFirst: firstRowAutofocus && s == 0,
+                        restoreItemIndex: restoring && restoreSectionIndex == s ? restoreItemIndex : null,
                       ),
                     if (onNow.isNotEmpty)
                       MediaRow<OnNowEntry>(
@@ -141,6 +191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required HomeSection section,
     required int sectionIndex,
     required bool autofocusFirst,
+    int? restoreItemIndex,
   }) {
     final landscape = usesLandscapeCards(section.sectionType, section.items);
     if (landscape) {
@@ -155,6 +206,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final subtitle = item.seriesTitle != null
               ? '${item.seriesTitle}${item.seasonNumber != null && item.episodeNumber != null ? ' · S${item.seasonNumber}E${item.episodeNumber}' : ''}'
               : item.subtitle;
+          final isRestore = restoreItemIndex == index;
+          final isFirst = autofocusFirst && index == 0;
           return LandscapeCard(
             title: item.title,
             subtitle: subtitle,
@@ -163,8 +216,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             serverUrl: session.serverUrl,
             progress: item.progress,
             watched: item.userState?.played ?? false,
-            autofocus: autofocusFirst && index == 0,
-            focusNode: autofocusFirst && index == 0 ? _firstItemFocus : null,
+            autofocus: isFirst || isRestore,
+            focusNode: isRestore ? _restoreFocus : (isFirst ? _firstItemFocus : null),
             onTap: () => _openItem(item),
           );
         },
@@ -173,18 +226,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return MediaRow<CatalogItem>(
       title: section.title,
       items: section.items,
-      itemBuilder: (context, item, index) => PosterCard(
-        title: item.title,
-        subtitle: item.subtitle,
-        posterUrl: item.posterUrl,
-        serverUrl: session.serverUrl,
-        watched: item.userState?.played ?? false,
-        favorite: item.userState?.isFavorite ?? false,
-        progress: item.progress,
-        autofocus: autofocusFirst && index == 0,
-        focusNode: autofocusFirst && index == 0 ? _firstItemFocus : null,
-        onTap: () => _openItem(item),
-      ),
+      itemBuilder: (context, item, index) {
+        final isRestore = restoreItemIndex == index;
+        final isFirst = autofocusFirst && index == 0;
+        return PosterCard(
+          title: item.title,
+          subtitle: item.subtitle,
+          posterUrl: item.posterUrl,
+          serverUrl: session.serverUrl,
+          watched: item.userState?.played ?? false,
+          favorite: item.userState?.isFavorite ?? false,
+          progress: item.progress,
+          autofocus: isFirst || isRestore,
+          focusNode: isRestore ? _restoreFocus : (isFirst ? _firstItemFocus : null),
+          onTap: () => _openItem(item),
+        );
+      },
     );
   }
 }

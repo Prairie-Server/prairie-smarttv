@@ -439,7 +439,10 @@ class _FocusableRowState extends State<_FocusableRow> {
   Widget build(BuildContext context) {
     final focused = _focused;
     return Material(
-      color: focused ? PrairieColors.amberDeep.withValues(alpha: 0.4) : PrairieColors.bgElevated.withValues(alpha: 0.72),
+      // Keep the elevated row background on focus — an amber fill (used
+      // briefly here) made Channels look wrong next to Guide/Recordings,
+      // which only add the amber ring/glow.
+      color: PrairieColors.bgElevated.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         autofocus: widget.autofocus,

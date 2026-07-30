@@ -95,16 +95,18 @@ class AppRoot extends ConsumerWidget {
         initialUsername: initialUsername,
       ),
       ProfilesRoute(:final auth) => ProfilesScreen(auth: auth),
-      HomeRoute() => const HomeScreen(),
+      HomeRoute(:final restoreContentId) => HomeScreen(restoreContentId: restoreContentId),
       LibrariesRoute() => const LibrariesScreen(),
-      LibraryRoute(:final library) => LibraryBrowseScreen(library: library),
+      LibraryRoute(:final library, :final restoreContentId) =>
+          LibraryBrowseScreen(library: library, restoreContentId: restoreContentId),
       CollectionsRoute() => const CollectionsScreen(),
-      CollectionRoute(:final collection) => CollectionBrowseScreen(
+      CollectionRoute(:final collection, :final restoreContentId) => CollectionBrowseScreen(
         title: collection.displayTitle,
         collectionId: collection.id,
         libraryId: collection.libraryId,
+        restoreContentId: restoreContentId,
       ),
-      SearchRoute() => const SearchScreen(),
+      SearchRoute(:final restoreContentId) => SearchScreen(restoreContentId: restoreContentId),
       LiveTvRoute() => const LiveTvScreen(),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),

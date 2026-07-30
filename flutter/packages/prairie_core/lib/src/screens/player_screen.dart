@@ -554,22 +554,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               onTap: () => Navigator.of(context).pop<int?>(null),
             ),
             for (final (i, track) in backend.subtitleTracks.indexed)
-              () {
-                final humanized = humanizeTrackLanguage(track.language);
-                // Falls back to a numbered label (not the humanized string)
-                // when the track carries no real language — e.g. PGS tracks
-                // whose "language" field is actually the codec name — so
-                // multiple such tracks stay distinguishable instead of all
-                // reading "Unknown".
-                return ListTile(
-                  title: Text(
-                    humanized == 'Unknown' ? 'Subtitle ${i + 1}' : humanized,
-                    style: const TextStyle(color: PrairieColors.ink),
-                  ),
-                  trailing: _selectedSubtitleTrackId == track.trackId ? const Icon(Icons.check, color: PrairieColors.amber) : null,
-                  onTap: () => Navigator.of(context).pop<int?>(track.trackId),
-                );
-              }(),
+              ListTile(
+                title: Text(
+                  _nativeSubtitleLabel(track.language, i),
+                  style: const TextStyle(color: PrairieColors.ink),
+                ),
+                trailing: _selectedSubtitleTrackId == track.trackId ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                onTap: () => Navigator.of(context).pop<int?>(track.trackId),
+              ),
           ],
         ),
       ),
@@ -903,4 +895,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
   }
+}
+
+/// Label for a native player subtitle track. Rejects codec-like language
+/// values (e.g. `HDMV_PGS_SUBTITLE`) in favor of a numbered fallback.
+String _nativeSubtitleLabel(String language, int index) {
+  return formatSubtitleLabel(language: language, index: index);
 }

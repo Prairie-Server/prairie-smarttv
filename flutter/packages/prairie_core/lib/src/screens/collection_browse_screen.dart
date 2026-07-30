@@ -4,11 +4,18 @@ import 'package:prairie_core/prairie_core.dart';
 
 /// Mirrors CollectionBrowseScreen.tsx.
 class CollectionBrowseScreen extends ConsumerStatefulWidget {
-  const CollectionBrowseScreen({super.key, required this.title, required this.collectionId, this.libraryId});
+  const CollectionBrowseScreen({
+    super.key,
+    required this.title,
+    required this.collectionId,
+    this.libraryId,
+    this.restoreContentId,
+  });
 
   final String title;
   final String collectionId;
   final int? libraryId;
+  final String? restoreContentId;
 
   @override
   ConsumerState<CollectionBrowseScreen> createState() => _CollectionBrowseScreenState();
@@ -117,12 +124,14 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
                 : PosterGrid(
                     items: _items,
                     serverUrl: session.serverUrl,
+                    restoreContentId: widget.restoreContentId,
                     onOpen: (item) => ref.read(routeProvider.notifier).go(
                       DetailRoute(
                         contentId: item.contentId,
                         seed: item,
                         back: CollectionRoute(
                           collection: CollectionCard(id: widget.collectionId, title: widget.title, libraryId: widget.libraryId),
+                          restoreContentId: item.contentId,
                         ),
                       ),
                     ),

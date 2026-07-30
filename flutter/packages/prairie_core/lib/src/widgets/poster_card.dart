@@ -171,31 +171,79 @@ class PosterFallback extends StatelessWidget {
 
 /// A responsive poster grid (Libraries/Collections/Search results). Mirrors
 /// PosterGrid.tsx's CSS grid layout.
-class PosterGrid extends StatelessWidget {
-  const PosterGrid({super.key, required this.items, required this.serverUrl, required this.onOpen});
+class PosterGrid extends StatefulWidget {
+  const PosterGrid({
+    super.key,
+    required this.items,
+    required this.serverUrl,
+    required this.onOpen,
+    this.restoreContentId,
+  });
 
   final List<CatalogItem> items;
   final String serverUrl;
   final void Function(CatalogItem item) onOpen;
 
+  /// When set, focus the matching card after the first frame (returning from
+  /// item details) instead of always autofocusing index 0.
+  final String? restoreContentId;
+
+  @override
+  State<PosterGrid> createState() => _PosterGridState();
+}
+
+class _PosterGridState extends State<PosterGrid> {
+  final _restoreFocus = FocusNode(debugLabel: 'poster-grid-restore');
+  bool _restoreApplied = false;
+
+  @override
+  void dispose() {
+    _restoreFocus.dispose();
+    super.dispose();
+  }
+
+  void _applyRestoreFocus() {
+    if (_restoreApplied) return;
+    _restoreApplied = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _restoreFocus.requestFocus();
+      final ctx = _restoreFocus.context;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.35,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final restoreId = widget.restoreContentId;
+    final restoreIndex = restoreId == null ? -1 : widget.items.indexWhere((item) => item.contentId == restoreId);
+    if (restoreIndex >= 0) _applyRestoreFocus();
+
     return GridView.builder(
       padding: const EdgeInsets.all(24),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, mainAxisExtent: 292, crossAxisSpacing: 16, mainAxisSpacing: 16),
-      itemCount: items.length,
+      itemCount: widget.items.length,
       itemBuilder: (context, index) {
-        final item = items[index];
+        final item = widget.items[index];
+        final isRestore = index == restoreIndex;
         return PosterCard(
           title: item.title,
           subtitle: item.subtitle,
           posterUrl: item.posterUrl,
-          serverUrl: serverUrl,
+          serverUrl: widget.serverUrl,
           watched: item.userState?.played ?? false,
           favorite: item.userState?.isFavorite ?? false,
           progress: item.progress,
-          autofocus: index == 0,
-          onTap: () => onOpen(item),
+          autofocus: isRestore || (restoreIndex < 0 && index == 0),
+          focusNode: isRestore ? _restoreFocus : null,
+          onTap: () => widget.onOpen(item),
         );
       },
     );

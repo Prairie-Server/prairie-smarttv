@@ -55,9 +55,35 @@ String formatAudioLabel(AudioTrackInfo track, int index) {
   return parts.isNotEmpty ? parts.join(' · ') : 'Audio ${index + 1}';
 }
 
-/// Mirrors `formatSubtitleLabel`.
-String formatSubtitleLabel({String? language, String? label, String? title, bool? hearingImpaired, bool? forced}) {
-  final base = label ?? title ?? language ?? 'Subtitle';
+/// Mirrors `formatSubtitleLabel`, but rejects codec-like title/label values
+/// (e.g. `HDMV_PGS_SUBTITLE`) so the UI never surfaces container identifiers.
+String formatSubtitleLabel({
+  String? language,
+  String? label,
+  String? title,
+  bool? hearingImpaired,
+  bool? forced,
+  int? index,
+}) {
+  final usefulTitle = usefulTrackLabel(label) ?? usefulTrackLabel(title);
+  String? usefulLanguage;
+  if (language != null && language.trim().isNotEmpty) {
+    final humanized = humanizeTrackLanguage(language);
+    if (humanized != 'Unknown') usefulLanguage = humanized;
+  }
+  final base = usefulTitle ?? usefulLanguage ?? (index != null ? 'Subtitle ${index + 1}' : 'Subtitle');
   final tags = [if (forced ?? false) 'Forced', if (hearingImpaired ?? false) 'HI'];
   return tags.isNotEmpty ? '$base (${tags.join(', ')})' : base;
+}
+
+/// Formats a server [SubtitleTrackInfo] for pickers — language / title first,
+/// numbered fallback when metadata is missing or codec-like.
+String formatSubtitleTrackLabel(SubtitleTrackInfo track, int index) {
+  return formatSubtitleLabel(
+    language: track.language,
+    title: track.title,
+    hearingImpaired: track.hearingImpaired,
+    forced: track.forced,
+    index: index,
+  );
 }

@@ -5,7 +5,9 @@ import 'package:prairie_core/prairie_core.dart';
 
 /// Mirrors SearchScreen.tsx.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.restoreContentId});
+
+  final String? restoreContentId;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -156,8 +158,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 : PosterGrid(
                     items: _items,
                     serverUrl: session.serverUrl,
-                    onOpen: (item) =>
-                        ref.read(routeProvider.notifier).go(DetailRoute(contentId: item.contentId, seed: item, back: const SearchRoute())),
+                    restoreContentId: widget.restoreContentId,
+                    onOpen: (item) => ref.read(routeProvider.notifier).go(
+                      DetailRoute(
+                        contentId: item.contentId,
+                        seed: item,
+                        back: SearchRoute(restoreContentId: item.contentId),
+                      ),
+                    ),
                   ),
           ),
           if (_hasMore && !_loading)
