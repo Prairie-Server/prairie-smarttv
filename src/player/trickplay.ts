@@ -47,12 +47,16 @@ export function resolveTrickplayTile(
   const local = tileIndex % tilesPerSheet;
   const col = local % columns;
   const row = Math.floor(local / columns);
+  // Percentage sprite math scales with the rendered preview size.
+  const backgroundPosition = `${columns > 1 ? (col / (columns - 1)) * 100 : 0}% ${
+    rows > 1 ? (row / (rows - 1)) * 100 : 0
+  }%`;
   return {
     url: sheet.url,
     width,
     height,
-    backgroundPosition: `-${col * width}px -${row * height}px`,
-    backgroundSize: `${columns * width}px ${rows * height}px`,
+    backgroundPosition,
+    backgroundSize: `${columns * 100}% ${rows * 100}%`,
   };
 }
 

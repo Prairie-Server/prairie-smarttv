@@ -31,8 +31,8 @@ describe("resolveTrickplayTile", () => {
       url: "https://cdn.example/sheet-0.webp",
       width: 320,
       height: 180,
-      backgroundPosition: "-640px -180px",
-      backgroundSize: "3200px 1800px",
+      backgroundPosition: `${(2 / 9) * 100}% ${(1 / 9) * 100}%`,
+      backgroundSize: "1000% 1000%",
     });
 
     // 1050s → tile 105 → sheet 1, col 5, row 0
@@ -41,8 +41,8 @@ describe("resolveTrickplayTile", () => {
       url: "https://cdn.example/sheet-1.webp",
       width: 320,
       height: 180,
-      backgroundPosition: "-1600px -0px",
-      backgroundSize: "3200px 1800px",
+      backgroundPosition: `${(5 / 9) * 100}% 0%`,
+      backgroundSize: "1000% 1000%",
     });
   });
 
@@ -50,7 +50,7 @@ describe("resolveTrickplayTile", () => {
     const tile = resolveTrickplayTile(sampleTrickplay(), 99999);
     expect(tile?.url).toBe("https://cdn.example/sheet-1.webp");
     // last tile index 149 → local 49 → col 9, row 4
-    expect(tile?.backgroundPosition).toBe("-2880px -720px");
+    expect(tile?.backgroundPosition).toBe(`100% ${(4 / 9) * 100}%`);
   });
 });
 
