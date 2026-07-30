@@ -141,6 +141,21 @@ export interface ItemSubtitleTrack {
   hearing_impaired?: boolean;
 }
 
+export interface ItemTrickplaySheet {
+  index: number;
+  url: string;
+}
+
+export interface ItemTrickplay {
+  interval_seconds: number;
+  width: number;
+  height: number;
+  tile_columns: number;
+  tile_rows: number;
+  thumbnail_count: number;
+  sheets: ItemTrickplaySheet[];
+}
+
 export interface ItemVersion {
   file_id: number;
   resolution?: string | null;
@@ -151,6 +166,7 @@ export interface ItemVersion {
   duration?: number | null;
   audio_tracks?: ItemAudioTrack[];
   subtitle_tracks?: ItemSubtitleTrack[];
+  trickplay?: ItemTrickplay | null;
 }
 
 export interface ItemExtra {
