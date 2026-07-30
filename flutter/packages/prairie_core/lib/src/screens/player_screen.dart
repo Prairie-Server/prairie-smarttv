@@ -26,6 +26,9 @@ const _hlsStallTimeout = Duration(seconds: 20);
 /// Matches [transcodeStartupTimeout] (the upstream HLS-readiness wait) so
 /// this timeout isn't the tighter one in the chain.
 const _initializeTimeout = Duration(seconds: 90);
+/// How long remux seeking waits for input to pause before committing to an
+/// actual session restart — see [_PlayerScreenState._seekToPosition].
+const _seekDebounceDelay = Duration(milliseconds: 500);
 
 /// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
 /// heartbeat/stop), transport controls, and subtitle track/appearance.
@@ -53,6 +56,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   StreamSubscription<String?>? _captionSub;
   StreamSubscription<String>? _errorSub;
   Duration _position = Duration.zero;
+  /// Absolute-position anchor for the currently attached backend — see
+  /// [PreparedPlayback.streamOriginSeconds]. Zero for direct/transcode
+  /// (the backend's own position stream is already absolute); for remux,
+  /// each reattach-at-a-new-position resets the native player's own clock
+  /// to 0, so every raw position tick from here on needs this added back
+  /// to read as an absolute position again.
+  Duration _streamOrigin = Duration.zero;
   Duration _lastProgressPosition = Duration.zero;
   DateTime? _lastProgressAt;
   bool _loading = true;
@@ -62,6 +72,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
+  /// Debounce for remux's restart-based seek — see [_seekToPosition].
+  Timer? _seekDebounce;
+  Duration? _pendingRemuxSeek;
   /// When the stream was attached; stall detection runs during prepare too.
   DateTime? _streamAttachedAt;
   bool _exiting = false;
@@ -96,6 +109,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _progressTimer?.cancel();
     _hideControlsTimer?.cancel();
     _stallTimer?.cancel();
+    _seekDebounce?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -130,14 +144,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _scheduleHideControls() {
     _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 5), () {
-      if (!mounted) return;
-      setState(() => _controlsVisible = false);
-      // Controls leave the tree with their FocusNodes — park focus on the
-      // idle catcher so the next D-pad event has somewhere to land.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_controlsVisible) _idleFocus.requestFocus();
-      });
+    _hideControlsTimer = Timer(const Duration(seconds: 5), _hideControlsNow);
+  }
+
+  void _hideControlsNow() {
+    if (!mounted) return;
+    _hideControlsTimer?.cancel();
+    setState(() => _controlsVisible = false);
+    // Controls leave the tree with their FocusNodes — park focus on the
+    // idle catcher so the next D-pad event has somewhere to land.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_controlsVisible) _idleFocus.requestFocus();
     });
   }
 
@@ -226,9 +243,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _chooseAudio(int index) async {
     final current = _playbackSession;
+    if (current == null || index == current.audioTrackIndex) return;
+    await _restartSessionAt(audioTrackIndex: index, positionSeconds: _position.inMilliseconds / 1000.0);
+  }
+
+  /// Restarts the active playback session at [audioTrackIndex] /
+  /// [positionSeconds] via PATCH `/playback/{id}/audio` + a fresh
+  /// [preparePlayableSession] — the same server round trip whether the
+  /// track actually changes or not, since the endpoint's job is "give me a
+  /// stream for this track starting at this position." Used both for
+  /// explicit audio-track switches and, in [_seekToPosition], as the seek
+  /// fallback for streams whose native player can't seek in place.
+  Future<void> _restartSessionAt({required int audioTrackIndex, required double positionSeconds}) async {
+    final current = _playbackSession;
     final sessionId = _activeSessionId ?? current?.sessionId;
     if (current == null || sessionId == null || _busyAudio || _exiting) return;
-    if (index == current.audioTrackIndex) return;
 
     setState(() {
       _busyAudio = true;
@@ -253,8 +282,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         is8KPanel: settings.is8KPanel,
       );
 
-      final position = _position.inMilliseconds / 1000.0;
-      final updated = await switchPlaybackAudio(client, session, sessionId, index, position);
+      final position = positionSeconds < 0 ? 0.0 : positionSeconds;
+      final updated = await switchPlaybackAudio(client, session, sessionId, audioTrackIndex, position);
       if (!mounted || _exiting || cancel.isCancelled) {
         _clearAudioBusyIfCurrent(cancel);
         return;
@@ -302,10 +331,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         maxResolution: deviceCaps.maxResolution,
         contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
       );
+      final origin = Duration(milliseconds: (prepared.streamOriginSeconds * 1000).round());
       setState(() {
         _backend = backend;
         _playbackSession = prepared.session;
-        _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
+        _streamOrigin = origin;
+        _position = origin + Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
         _selectedSubtitleTrackId = null;
         _caption = null;
       });
@@ -347,11 +378,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       _positionSub = backend.positionStream.listen((pos) {
         if (!mounted) return;
-        if (pos != _lastProgressPosition) {
-          _lastProgressPosition = pos;
+        final absolute = _streamOrigin + pos;
+        if (absolute != _lastProgressPosition) {
+          _lastProgressPosition = absolute;
           _lastProgressAt = DateTime.now();
         }
-        setState(() => _position = pos);
+        setState(() => _position = absolute);
       });
       _captionSub = backend.captionStream.listen((text) {
         if (mounted) setState(() => _caption = text);
@@ -365,10 +397,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       });
       unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
       _showControls();
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('prairie.player_screen: _restartSessionAt failed: $e\n$stack');
       if (mounted && !_exiting) {
         setState(() {
-          _error = e is ApiError ? e.message : 'Could not switch audio';
+          _error = e is ApiError ? e.message : 'Could not restart playback';
           _loading = false;
           _busyAudio = false;
         });
@@ -488,11 +521,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // Mount the hole-punch surface BEFORE initialize — PlusPlayer prepares
       // against the display rect; awaiting init with no VideoPlayer in the
       // tree leaves Direct Play streaming on the server while Flutter spins.
+      final origin = Duration(milliseconds: (prepared.streamOriginSeconds * 1000).round());
       setState(() {
         _backend = backend;
         _playbackSession = prepared.session;
         _subtitleAppearance = settings.subtitleAppearance;
-        _position = Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
+        _streamOrigin = origin;
+        _position = origin + Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
       });
       _streamAttachedAt = DateTime.now();
       await WidgetsBinding.instance.endOfFrame;
@@ -535,11 +570,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       _positionSub = backend.positionStream.listen((position) {
         if (!mounted) return;
-        if (position != _lastProgressPosition) {
-          _lastProgressPosition = position;
+        final absolute = _streamOrigin + position;
+        if (absolute != _lastProgressPosition) {
+          _lastProgressPosition = absolute;
           _lastProgressAt = DateTime.now();
         }
-        setState(() => _position = position);
+        setState(() => _position = absolute);
       });
       _captionSub = backend.captionStream.listen((text) {
         if (mounted) setState(() => _caption = text);
@@ -693,6 +729,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _playbackSession = null;
     _progressTimer?.cancel();
     _stallTimer?.cancel();
+    _seekDebounce?.cancel();
     await _errorSub?.cancel();
     _errorSub = null;
     if (sessionId != null) {
@@ -726,17 +763,87 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {});
   }
 
-  Future<void> _seekBy(Duration delta) async {
+  Future<void> _seekBy(Duration delta) => _seekToPosition(_position + delta);
+
+  /// Total media duration for display/clamping. Prefers the session's own
+  /// [PlaybackSessionResponse.durationSeconds] (the original file's actual
+  /// runtime, stable across reattaches) over the backend's own reported
+  /// duration — for remux, each reattach-at-a-new-position pipes from a
+  /// fresh `-ss` offset to EOF, so the native player's own duration is only
+  /// the *remaining* runtime from that anchor, not the total. Falls back to
+  /// the backend when the session doesn't know the duration up front.
+  Duration? get _totalDuration {
+    final sessionSeconds = _playbackSession?.durationSeconds;
+    if (sessionSeconds != null && sessionSeconds > 0) {
+      return Duration(milliseconds: (sessionSeconds * 1000).round());
+    }
+    return _backend?.duration;
+  }
+
+  /// Remux is copy-mode video piped live over plain progressive HTTP with
+  /// no in-place seek support at all — confirmed on-device:
+  /// `video_player_videohole` throws `PlatformException(SeekTo, Player seek
+  /// to failed, ...)` unconditionally for this content, both mid-playback
+  /// and on resume-to-position. The server's stream handler instead reads a
+  /// `?seek=` query param and respawns ffmpeg with `-ss` before `-i` — see
+  /// [preparePlayableSession] — so every remux seek goes straight to a full
+  /// session restart at the target position, without wasting a doomed
+  /// native seekTo call first. Direct/transcode still try the cheap
+  /// in-place native seek, which works for them.
+  ///
+  /// Restarting is expensive enough (network round trip, fresh ffmpeg, a new
+  /// `initialize()`) that firing one per D-pad repeat tick or ±15s mash
+  /// drops every seek after the first behind [_restartSessionAt]'s
+  /// `_busyAudio` guard — the stream never advances past whatever the first
+  /// tick asked for. Debounced: the displayed position updates immediately
+  /// on every call for responsive visual feedback, but the actual restart
+  /// only fires once input has paused, using the latest target.
+  Future<void> _seekToPosition(Duration target) async {
     final backend = _backend;
     if (backend == null) return;
-    final duration = backend.duration ?? Duration.zero;
-    var next = _position + delta;
-    if (next < Duration.zero) next = Duration.zero;
+    final duration = _totalDuration ?? Duration.zero;
+    var next = target < Duration.zero ? Duration.zero : target;
     if (duration > Duration.zero && next > duration) next = duration;
-    await backend.seekTo(next);
-    setState(() => _position = next);
+
+    final isRemux = (_playbackSession?.playMethod ?? '').trim().toLowerCase() == 'remux';
+    if (isRemux) {
+      setState(() => _position = next);
+      _showControls();
+      _pendingRemuxSeek = next;
+      _seekDebounce?.cancel();
+      _seekDebounce = Timer(_seekDebounceDelay, () {
+        final pending = _pendingRemuxSeek;
+        _pendingRemuxSeek = null;
+        if (pending == null || !mounted) return;
+        final audioIndex = _playbackSession?.audioTrackIndex ?? 0;
+        unawaited(_restartSessionAt(audioTrackIndex: audioIndex, positionSeconds: pending.inMilliseconds / 1000.0));
+      });
+      return;
+    }
+
+    try {
+      await backend.seekTo(next);
+      if (mounted) setState(() => _position = next);
+    } on PlatformException catch (err) {
+      debugPrint('prairie.player_screen: native seekTo failed: $err');
+    }
     _showControls();
   }
+
+  /// Overrides the app theme's flat `IconButton`/`TextButton` foreground:
+  /// passing a plain `color:` locks the icon/text color for every state,
+  /// but the shared theme still flips these buttons' *background* to
+  /// [PrairieColors.ink] on D-pad focus — combined, that made the
+  /// audio/subtitle/stats controls (which pass `color: PrairieColors.ink`)
+  /// paint an ink-colored icon on an ink-colored background when focused,
+  /// i.e. invisible. This keeps [color] unfocused and flips to
+  /// [PrairieColors.bg] focused, matching the background flip everywhere
+  /// else in the app.
+  ButtonStyle _transportForegroundStyle(Color color) => ButtonStyle(
+    foregroundColor: WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.focused) ? PrairieColors.bg : color,
+    ),
+  );
 
   String _formatDuration(Duration d) {
     final h = d.inHours;
@@ -766,7 +873,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       'isInitialized: ${backend.isInitialized}',
       'isPlaying: ${backend.isPlaying}',
       'isBuffering: ${backend.isBuffering}',
-      'position: ${_formatDuration(_position)} / ${_formatDuration(backend.duration ?? Duration.zero)}',
+      'position: ${_formatDuration(_position)} / ${_formatDuration(_totalDuration ?? Duration.zero)}',
+      'streamOrigin: ${_formatDuration(_streamOrigin)}',
       if (_error != null) 'error: $_error',
     ];
     return Positioned(
@@ -804,7 +912,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _exit();
+        if (didPop) return;
+        // First Back dismisses the overlay chrome; only exits the stream
+        // when it's already hidden — mirrors [_onIdleKey]'s Back/Escape
+        // bubble-through, which only applies once idle focus already owns
+        // the key (i.e. controls are already hidden).
+        if (_controlsVisible) {
+          _hideControlsNow();
+        } else {
+          _exit();
+        }
       },
       child: MediaQuery(
         data: media.copyWith(navigationMode: NavigationMode.directional),
@@ -849,7 +966,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                             child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: PrairieColors.danger)),
                           ),
                           const SizedBox(height: 16),
-                          ElevatedButton(onPressed: _exit, child: const Text('Back')),
+                          // Autofocus: this button mounts fresh the moment an
+                          // error occurs, at which point the transport row
+                          // (holding whatever previously had focus) has just
+                          // been removed from the tree — without this, focus
+                          // has nowhere reliable to land and the D-pad OK
+                          // button does nothing, stranding the viewer on the
+                          // error screen.
+                          ElevatedButton(autofocus: true, onPressed: _exit, child: const Text('Back')),
                         ],
                       ),
                     ),
@@ -924,35 +1048,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                   children: [
                                     Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
                                     Expanded(child: _buildSeekBar(backend)),
-                                    Text(_formatDuration(backend.duration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
+                                    Text(_formatDuration(_totalDuration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
                                   ],
                                 ),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     TextButton(
+                                      style: _transportForegroundStyle(PrairieColors.ink),
                                       onPressed: () => _seekBy(const Duration(seconds: -15)),
-                                      child: const Text('-15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                      child: const Text('-15s', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                                     ),
                                     const SizedBox(width: 8),
                                     IconButton(
                                       focusNode: _playFocus,
                                       autofocus: true,
                                       iconSize: 48,
-                                      color: PrairieColors.amber,
+                                      style: _transportForegroundStyle(PrairieColors.amber),
                                       onPressed: _togglePlayPause,
                                       icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
                                     ),
                                     const SizedBox(width: 8),
                                     TextButton(
+                                      style: _transportForegroundStyle(PrairieColors.ink),
                                       onPressed: () => _seekBy(const Duration(seconds: 15)),
-                                      child: const Text('+15s', style: TextStyle(color: PrairieColors.ink, fontSize: 16, fontWeight: FontWeight.w600)),
+                                      child: const Text('+15s', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                                     ),
                                     if (_audioTracks.length > 1) ...[
                                       const SizedBox(width: 8),
                                       IconButton(
                                         iconSize: 28,
-                                        color: _busyAudio ? PrairieColors.muted : PrairieColors.ink,
+                                        style: _transportForegroundStyle(_busyAudio ? PrairieColors.muted : PrairieColors.ink),
                                         onPressed: _busyAudio ? null : _pickAudioTrack,
                                         icon: const Icon(Icons.audiotrack),
                                         tooltip: 'Audio',
@@ -962,7 +1088,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                       const SizedBox(width: 8),
                                       IconButton(
                                         iconSize: 28,
-                                        color: _selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink,
+                                        style: _transportForegroundStyle(_selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink),
                                         onPressed: _pickSubtitleTrack,
                                         icon: const Icon(Icons.closed_caption),
                                         tooltip: 'Subtitles',
@@ -971,7 +1097,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                     const SizedBox(width: 8),
                                     IconButton(
                                       iconSize: 28,
-                                      color: _showStats ? PrairieColors.amber : PrairieColors.ink,
+                                      style: _transportForegroundStyle(_showStats ? PrairieColors.amber : PrairieColors.ink),
                                       onPressed: () => setState(() => _showStats = !_showStats),
                                       icon: const Icon(Icons.query_stats),
                                       tooltip: 'Stats for nerds',
@@ -998,7 +1124,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// is excluded from focus so it can't swallow D-pad with its 5%-of-duration
   /// keyboard steps.
   Widget _buildSeekBar(VideoBackend backend) {
-    final maxMs = (backend.duration ?? const Duration(seconds: 1))
+    final maxMs = (_totalDuration ?? const Duration(seconds: 1))
         .inMilliseconds
         .toDouble()
         .clamp(1.0, double.infinity)
@@ -1028,7 +1154,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   _scheduleHideControls();
                   setState(() => _position = Duration(milliseconds: v.round()));
                 },
-                onChangeEnd: (v) => backend.seekTo(Duration(milliseconds: v.round())),
+                onChangeEnd: (v) => _seekToPosition(Duration(milliseconds: v.round())),
               ),
             ),
           );

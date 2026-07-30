@@ -132,6 +132,20 @@ String buildStreamUrl(String serverUrl, String streamPath, String? token, [Strin
   return '$base$separator${Uri(queryParameters: params).query}';
 }
 
+/// Sets/replaces the `seek` query parameter Prairie's progressive remux
+/// stream endpoint reads to respawn ffmpeg with `-ss <seconds>` before `-i`
+/// — the only mechanism that can reposition a remux stream; the native
+/// player's own in-place seek is rejected outright for this content (no
+/// known length / Range support). Video is copy-mode, so playback actually
+/// begins at the keyframe at or before [seekSeconds], not the exact second
+/// — an approximation, not a bug.
+String appendStreamSeekParam(String url, double seekSeconds) {
+  final clamped = seekSeconds < 0 ? 0.0 : seekSeconds;
+  final uri = Uri.parse(url);
+  final params = Map<String, String>.from(uri.queryParameters)..['seek'] = clamped.toStringAsFixed(3);
+  return uri.replace(queryParameters: params).toString();
+}
+
 /// Dart port of src/api/client.ts's `apiRequest` + `refreshAccessToken`
 /// (from src/api/auth.ts — consolidated here to avoid a client/auth import
 /// cycle; the raw refresh call intentionally bypasses [request] so a failed

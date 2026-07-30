@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:prairie_core/prairie_core.dart';
 
 /// Mirrors ShellNav.tsx: brand mark, main tabs, and a profile avatar that
@@ -14,6 +15,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
     required this.onProfiles,
     required this.onSettings,
     required this.onDisconnect,
+    this.escapeDownFocus,
   });
 
   final ShellTab active;
@@ -24,6 +26,17 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onProfiles;
   final VoidCallback onSettings;
   final VoidCallback onDisconnect;
+
+  /// Resolves the body's topmost focusable node, called fresh on every
+  /// D-pad Down press from the nav row. On real hardware, Flutter's default
+  /// directional focus search (`focusInDirection`) can rank a farther-below
+  /// row as a better candidate than the nearer one directly under the
+  /// header and jump straight to it — same class of unreliability
+  /// `MediaRow.escapeUpFocusNode` already works around for exiting a row
+  /// upward. A resolver (not a fixed `FocusNode`) because which widget is
+  /// "the first thing below the header" changes across builds (hero vs.
+  /// no hero, restoring a specific item, etc).
+  final FocusNode? Function()? escapeDownFocus;
 
   static const _tabs = <(ShellTab, String, IconData)>[
     (ShellTab.home, 'Home', Icons.home_outlined),
@@ -50,7 +63,17 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
         ),
         child: SafeArea(
           bottom: false,
-          child: SizedBox(
+          child: Focus(
+            canRequestFocus: false,
+            onKeyEvent: (node, event) {
+              if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+              if (event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
+              final target = escapeDownFocus?.call();
+              if (target == null) return KeyEventResult.ignored;
+              target.requestFocus();
+              return KeyEventResult.handled;
+            },
+            child: SizedBox(
             height: preferredSize.height,
             child: Row(
               children: [
@@ -143,6 +166,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                 const SizedBox(width: 16),
               ],
             ),
+          ),
           ),
         ),
       ),

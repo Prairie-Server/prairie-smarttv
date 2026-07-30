@@ -124,6 +124,24 @@ const transcodeStartupTimeout = Duration(seconds: 90);
 /// concern, not the client's — it never calls the transcode endpoint either
 /// way. Only `transcode` (genuine re-encode) needs the HLS transport and
 /// waits for the first segment to exist so the native player doesn't time out.
+///
+/// `direct` and `remux` diverge on how [seekSeconds] gets applied, because
+/// only `direct` serves a real, complete, Range-seekable file:
+/// - `direct`: native in-place seek works (confirmed on-device), so the
+///   player itself seeks after attaching — [PreparedPlayback.playerStartSeconds]
+///   carries the offset, [PreparedPlayback.streamOriginSeconds] stays 0.
+/// - `remux`: video is a straight copy piped live; the native player
+///   rejects `player_set_play_position` outright (confirmed on-device:
+///   `PlatformException(SeekTo, Player seek to failed)` on every attempt,
+///   scrub or resume). The server's stream handler instead reads a `?seek=`
+///   query param and respawns ffmpeg with `-ss` before `-i` — every remux
+///   seek is really "attach a fresh stream at a new position," so the seek
+///   goes into the URL itself (via [appendStreamSeekParam]) and
+///   [PreparedPlayback.playerStartSeconds] stays 0 (no further native seek
+///   attempted); [PreparedPlayback.streamOriginSeconds] carries the
+///   requested offset as the position anchor for on-screen position/duration
+///   math, since copy-mode seeking lands on the keyframe at-or-before it,
+///   not the exact second.
 Future<PreparedPlayback> preparePlayableSession(
   ApiClient client,
   PrairieSession session,
@@ -135,11 +153,17 @@ Future<PreparedPlayback> preparePlayableSession(
   Dio? probeDio,
 }) async {
   if (!needsHlsBootstrap(started.playMethod)) {
+    final isRemux = started.playMethod.trim().toLowerCase() == 'remux';
+    final clampedSeek = seekSeconds < 0 ? 0.0 : seekSeconds;
+    var url = resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken);
+    if (isRemux && clampedSeek > 0) {
+      url = appendStreamSeekParam(url, clampedSeek);
+    }
     return PreparedPlayback(
       session: started,
-      streamUrl: resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken),
-      playerStartSeconds: seekSeconds,
-      streamOriginSeconds: 0,
+      streamUrl: url,
+      playerStartSeconds: isRemux ? 0 : clampedSeek,
+      streamOriginSeconds: isRemux ? clampedSeek : 0,
     );
   }
 

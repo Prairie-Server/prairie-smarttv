@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:video_player_videohole/video_player.dart';
@@ -104,7 +105,19 @@ class VideoholeVideoBackend implements VideoBackend {
     await controller.initialize();
     _initialized = true;
     if (startPosition != null && startPosition > Duration.zero) {
-      await controller.seekTo(startPosition);
+      try {
+        await controller.seekTo(startPosition);
+      } on PlatformException catch (err) {
+        // Same native "seek to failed" as the mid-playback scrub fallback
+        // (see player_screen._seekToPosition) — some sources (remux
+        // progressive HTTP) reject player_set_play_position outright. Left
+        // uncaught here, this threw out of initialize() and surfaced as an
+        // unrecoverable player error on every non-zero-position resume.
+        // Graceful degradation: keep playing from wherever the native
+        // player actually started rather than crash the whole session.
+        debugPrint('prairie.videohole: seekTo(startPosition) failed, continuing without it: $err');
+        reportDiagnostic('init:seekTo-failed:$err');
+      }
     }
     try {
       final tracks = await controller.textTracks ?? const <TextTrack>[];

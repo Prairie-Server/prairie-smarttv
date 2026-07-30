@@ -6,10 +6,14 @@ import 'package:prairie_core/prairie_core.dart';
 /// to supply its [active] tab and [body] rather than repeating the
 /// navigate/profiles/settings/disconnect wiring.
 class ShellScaffold extends ConsumerWidget {
-  const ShellScaffold({super.key, required this.active, required this.body});
+  const ShellScaffold({super.key, required this.active, required this.body, this.escapeDownFocus});
 
   final ShellTab active;
   final Widget body;
+
+  /// Forwarded to [ShellNav.escapeDownFocus] — see its doc for why this is a
+  /// resolver rather than a fixed [FocusNode].
+  final FocusNode? Function()? escapeDownFocus;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -48,6 +52,7 @@ class ShellScaffold extends ConsumerWidget {
           if (!context.mounted) return;
           ref.read(routeProvider.notifier).goServers();
         },
+        escapeDownFocus: escapeDownFocus,
       ),
       body: body,
       ),

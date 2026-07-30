@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:video_player_drm/video_player.dart';
@@ -96,7 +97,15 @@ class WebosVideoBackend implements VideoBackend {
     await controller.initialize();
     _initialized = true;
     if (startPosition != null && startPosition > Duration.zero) {
-      await controller.seekTo(startPosition);
+      try {
+        await controller.seekTo(startPosition);
+      } on PlatformException catch (err) {
+        // Parity with the Tizen videohole backend's same fix: don't let a
+        // rejected native seek (e.g. a remux-style progressive source) crash
+        // the whole session on resume-from-position.
+        debugPrint('prairie.webos: seekTo(startPosition) failed, continuing without it: $err');
+        reportDiagnostic('init:seekTo-failed:$err');
+      }
     }
     _refreshSubtitleTracks();
     _positionTimer?.cancel();

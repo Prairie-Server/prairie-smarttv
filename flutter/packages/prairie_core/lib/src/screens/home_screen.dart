@@ -28,6 +28,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// on the top nav. Explicitly requesting focus once, like ItemDetail's
   /// hero pin, closes that race.
   bool _initialFocusApplied = false;
+  /// Flutter's default focus-follows-scroll (`RenderObject.showOnScreen`)
+  /// only scrolls the minimum distance to bring the newly-focused card
+  /// within the viewport — after navigating down several rows and back up
+  /// with the D-pad, that minimal-scroll behavior can leave the ListView a
+  /// few pixels short of offset 0, so the first row renders partly behind
+  /// ShellNav's header even though it's the topmost content. Forcing a
+  /// hard scroll-to-0 whenever the first row gains focus (below) fixes it.
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -41,7 +49,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _heroFocus.dispose();
     _firstItemFocus.dispose();
     _restoreFocus.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onFirstRowFocusChange(bool hasFocus) {
+    if (!hasFocus || !_scrollController.hasClients) return;
+    _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+  }
+
+  /// Explicit D-pad-Down target from [ShellNav] — the topmost currently
+  /// mounted body focus target, in the same preference order the page
+  /// itself would autofocus in. `.context` on a [FocusNode] is non-null
+  /// only while its widget is actually in the tree, which is what makes
+  /// this reliable across the hero/no-hero and restoring/fresh-load builds.
+  FocusNode? _resolveEscapeDownFocus() {
+    if (_heroFocus.context != null) return _heroFocus;
+    if (_restoreFocus.context != null) return _restoreFocus;
+    if (_firstItemFocus.context != null) return _firstItemFocus;
+    return null;
   }
 
   void _applyInitialFocus(FocusNode node) {
@@ -78,6 +104,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final onNow = ref.watch(onNowLiveTvProvider).valueOrNull ?? const <OnNowEntry>[];
     return ShellScaffold(
       active: ShellTab.home,
+      escapeDownFocus: _resolveEscapeDownFocus,
       body: FutureBuilder<List<HomeSection>>(
         future: _sections,
         builder: (context, snapshot) {
@@ -135,6 +162,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
 
           return ListView(
+            controller: _scrollController,
             clipBehavior: Clip.none,
             padding: EdgeInsets.zero,
             children: [
@@ -147,7 +175,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onOpenItem: _openItem,
                   autofocusPlay: heroAutofocus,
                   playFocusNode: _heroFocus,
-                ),
+                )
+              else
+                // No featured hero: the first row (often Continue Watching)
+                // would otherwise sit right under ShellNav's header with only
+                // the rows Column's 24px top padding — not enough clearance
+                // once the focused card's box-shadow blur (28px radius) and
+                // 1.03x focus scale are accounted for, so it read as clipped
+                // behind the header.
+                const SizedBox(height: 24),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Column(
@@ -194,6 +230,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required bool autofocusFirst,
     int? restoreItemIndex,
   }) {
+    final row = _buildSectionRowContent(
+      session: session,
+      section: section,
+      sectionIndex: sectionIndex,
+      autofocusFirst: autofocusFirst,
+      restoreItemIndex: restoreItemIndex,
+    );
+    if (sectionIndex != 0) return row;
+    // Only the first row needs the forced scroll-to-top — see
+    // [_onFirstRowFocusChange].
+    return Focus(canRequestFocus: false, skipTraversal: true, onFocusChange: _onFirstRowFocusChange, child: row);
+  }
+
+  Widget _buildSectionRowContent({
+    required PrairieSession session,
+    required HomeSection section,
+    required int sectionIndex,
+    required bool autofocusFirst,
+    int? restoreItemIndex,
+  }) {
     final landscape = usesLandscapeCards(section.sectionType, section.items);
     if (landscape) {
       return MediaRow<CatalogItem>(
@@ -208,7 +264,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? '${item.seriesTitle}${item.seasonNumber != null && item.episodeNumber != null ? ' · S${item.seasonNumber}E${item.episodeNumber}' : ''}'
               : item.subtitle;
           final isRestore = restoreItemIndex == index;
-          final isFirst = autofocusFirst && index == 0;
+          // Row 0's card 0 always wears [_firstItemFocus] — not just when
+          // [autofocusFirst] requests the initial grab — so it's a stable,
+          // always-attached target for [_onEscapeDownFromNav] regardless of
+          // whether this particular Home build happens to autofocus it.
+          final isFirstCard = sectionIndex == 0 && index == 0;
           return LandscapeCard(
             title: item.title,
             subtitle: subtitle,
@@ -217,8 +277,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             serverUrl: session.serverUrl,
             progress: item.progress,
             watched: item.userState?.played ?? false,
-            autofocus: isFirst || isRestore,
-            focusNode: isRestore ? _restoreFocus : (isFirst ? _firstItemFocus : null),
+            autofocus: (autofocusFirst && isFirstCard) || isRestore,
+            focusNode: isRestore ? _restoreFocus : (isFirstCard ? _firstItemFocus : null),
             onTap: () => _openItem(item),
           );
         },
@@ -229,7 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       items: section.items,
       itemBuilder: (context, item, index) {
         final isRestore = restoreItemIndex == index;
-        final isFirst = autofocusFirst && index == 0;
+        final isFirstCard = sectionIndex == 0 && index == 0;
         return PosterCard(
           title: item.title,
           subtitle: item.subtitle,
@@ -238,8 +298,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           watched: item.userState?.played ?? false,
           favorite: item.userState?.isFavorite ?? false,
           progress: item.progress,
-          autofocus: isFirst || isRestore,
-          focusNode: isRestore ? _restoreFocus : (isFirst ? _firstItemFocus : null),
+          autofocus: (autofocusFirst && isFirstCard) || isRestore,
+          focusNode: isRestore ? _restoreFocus : (isFirstCard ? _firstItemFocus : null),
           onTap: () => _openItem(item),
         );
       },
