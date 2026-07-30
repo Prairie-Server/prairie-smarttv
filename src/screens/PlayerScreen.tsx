@@ -29,6 +29,7 @@ import { humanizePlaybackError } from "../player/humanizePlaybackError";
 import { toMediaTime, toPlayerTime } from "../player/mediaTimeline";
 import { filterClientRenderableSubtitles } from "../player/subtitleFormats";
 import { formatPlaybackClock } from "../player/timeFormat";
+import { prefetchTrickplaySheets, resolveTrickplayTile } from "../player/trickplay";
 import type { MediaPlayer, PlaybackSessionResponse, SubtitleUrlEntry } from "../player/types";
 import {
   loadPlaybackSettings,
@@ -148,8 +149,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState(-1);
   const [busyAudio, setBusyAudio] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [seekPreviewTime, setSeekPreviewTime] = useState<number | null>(null);
   const controlsVisibleRef = useRef(controlsVisible);
   controlsVisibleRef.current = controlsVisible;
+  const seekPreviewHideTimer = useRef<number | null>(null);
 
   const audioTracks = useMemo(() => {
     if (!watch || !playback) return [];
@@ -178,6 +181,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     return () => {
       if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
       if (backgroundStopTimer.current != null) window.clearTimeout(backgroundStopTimer.current);
+      if (seekPreviewHideTimer.current != null) window.clearTimeout(seekPreviewHideTimer.current);
     };
   }, []);
 
@@ -409,7 +413,10 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     if (loading || !streamUrl) return;
     hideTimer.current = window.setTimeout(() => {
       setMenu((m) => {
-        if (m === "none") setControlsVisible(false);
+        if (m === "none") {
+          setControlsVisible(false);
+          setSeekPreviewTime(null);
+        }
         return m;
       });
     }, 4000);
@@ -660,6 +667,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     const current = playbackRef.current;
     if (!current || reanchoringRef.current || exitedRef.current) return;
     reanchoringRef.current = true;
+    showSeekPreview(mediaSeconds);
     setLoading(true);
     setError(null);
     setBuffering(true);
@@ -717,7 +725,11 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     bumpControls();
     const player = playerRef.current;
     if (!player || reanchoringRef.current) return;
-    const mediaNext = Math.max(0, mediaPositionSeconds() + delta);
+    const mediaNext = Math.max(
+      0,
+      Math.min(duration > 0 ? duration : Number.POSITIVE_INFINITY, mediaPositionSeconds() + delta),
+    );
+    showSeekPreview(mediaNext);
     const playerNext = toPlayerTime(mediaNext, streamOriginRef.current);
     if (playerNext < 0) {
       // Before the current window — Jellyfin/Plex-style seek = new manifest.
@@ -727,6 +739,17 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
     void player.seekTo(playerNext);
     setCurrentTime(mediaNext);
     void reportProgress(true);
+  }
+
+  function showSeekPreview(mediaSeconds: number) {
+    setSeekPreviewTime(mediaSeconds);
+    if (seekPreviewHideTimer.current != null) {
+      window.clearTimeout(seekPreviewHideTimer.current);
+    }
+    seekPreviewHideTimer.current = window.setTimeout(() => {
+      setSeekPreviewTime(null);
+      seekPreviewHideTimer.current = null;
+    }, 1800);
   }
 
   useEffect(() => {
@@ -834,6 +857,25 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
   ]);
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const previewPct =
+    seekPreviewTime != null && duration > 0
+      ? Math.min(100, (seekPreviewTime / duration) * 100)
+      : progressPct;
+  const activeTrickplay = useMemo(() => {
+    if (!watch) return null;
+    const fileId = playback?.media_file_id ?? launch.fileId;
+    return selectFileVersion(watch, fileId)?.trickplay ?? watch.versions[0]?.trickplay ?? null;
+  }, [watch, playback?.media_file_id, launch.fileId]);
+  const seekPreviewTile = useMemo(
+    () => (seekPreviewTime == null ? null : resolveTrickplayTile(activeTrickplay, seekPreviewTime)),
+    [activeTrickplay, seekPreviewTime],
+  );
+
+  useEffect(() => {
+    if (!activeTrickplay) return;
+    prefetchTrickplaySheets(activeTrickplay, seekPreviewTime ?? currentTime);
+  }, [activeTrickplay, currentTime, seekPreviewTime]);
+
   const title = launch.title?.trim() || watch?.title || `File ${launch.fileId}`;
   const streamMimeType = useMemo(() => {
     const streamType = (playback?.playback_info?.stream_type ?? "").toLowerCase();
@@ -951,8 +993,35 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
 
           <div className="player-chrome__bottom">
             <div className="player-scrub">
+              {seekPreviewTime != null ? (
+                <div
+                  className="player-scrub-preview"
+                  style={{ left: `clamp(4.5rem, ${previewPct}%, calc(100% - 4.5rem))` }}
+                >
+                  {seekPreviewTile ? (
+                    <div
+                      className="player-scrub-preview__thumb"
+                      style={{
+                        width: Math.min(seekPreviewTile.width, 280),
+                        height: Math.min(seekPreviewTile.height, 158),
+                        backgroundImage: `url(${seekPreviewTile.url})`,
+                        backgroundPosition: seekPreviewTile.backgroundPosition,
+                        backgroundSize: seekPreviewTile.backgroundSize,
+                        backgroundRepeat: "no-repeat",
+                      }}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <div className="player-scrub-preview__time">
+                    {formatPlaybackClock(seekPreviewTime)}
+                  </div>
+                </div>
+              ) : null}
               <div className="player-scrub-track">
                 <div className="player-scrub-fill" style={{ width: `${progressPct}%` }} />
+                {seekPreviewTime != null ? (
+                  <div className="player-scrub-preview-mark" style={{ left: `${previewPct}%` }} />
+                ) : null}
               </div>
               <div className="player-time-row">
                 <span>{formatPlaybackClock(currentTime)}</span>

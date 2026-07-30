@@ -25,6 +25,22 @@ export interface SubtitleTrackInfo {
   external?: boolean;
 }
 
+export interface TrickplaySheet {
+  index: number;
+  url: string;
+}
+
+/** Interval sprite sheets for seek scrubbing previews (server FileVersion.trickplay). */
+export interface TrickplayInfo {
+  interval_seconds: number;
+  width: number;
+  height: number;
+  tile_columns: number;
+  tile_rows: number;
+  thumbnail_count: number;
+  sheets: TrickplaySheet[];
+}
+
 export interface FileVersion {
   file_id: number;
   resolution?: string | null;
@@ -34,6 +50,7 @@ export interface FileVersion {
   duration?: number | null;
   audio_tracks?: AudioTrackInfo[];
   subtitle_tracks?: SubtitleTrackInfo[];
+  trickplay?: TrickplayInfo | null;
 }
 
 export interface WatchUserData {
@@ -98,6 +115,7 @@ export function watchDetailFromItemDetail(detail: ItemDetail): WatchDetail | nul
       duration: version.duration,
       audio_tracks: version.audio_tracks,
       subtitle_tracks: version.subtitle_tracks,
+      trickplay: version.trickplay ?? null,
     })),
     user_data: detail.user_data ?? undefined,
     series_id: detail.series_id,
