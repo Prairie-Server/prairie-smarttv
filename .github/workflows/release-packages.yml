@@ -102,6 +102,12 @@ jobs:
           flutter analyze --fatal-infos
           flutter test
 
+      - name: prairie_webos workspace analyze
+        working-directory: flutter/packages
+        run: |
+          flutter pub get
+          flutter analyze --fatal-infos prairie_webos flutter_secure_storage_webos
+
       - name: Validate 4-variant package layout
         run: bash flutter/scripts/validate-package-layout.sh
 

@@ -1,0 +1,15 @@
+name: prairie_smarttv_webos_workspace
+description: >-
+  Pub workspace for prairie_webos and its path-forked webOS plugins.
+  Keeps a single package_config so flutter_secure_storage_webos analyzes
+  correctly in IDEs and CI (avoids "package:flutter/services.dart" missing
+  when the path package is opened as its own analysis root).
+publish_to: "none"
+
+environment:
+  # Match prairie_webos / flutter-webos bundled Dart (see flutter/README.md).
+  sdk: ^3.10.9
+
+workspace:
+  - prairie_webos
+  - flutter_secure_storage_webos

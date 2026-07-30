@@ -5,10 +5,12 @@ description: >-
   against flutter_secure_storage ^10 used by prairie_core / Tizen.
 version: 1.0.0+prairie.1
 publish_to: "none"
+resolution: workspace
 
 environment:
-  sdk: ">=3.3.0 <4.0.0"
-  flutter: ">=3.3.0"
+  # Align with flutter_secure_storage_platform_interface ^2 and prairie_webos.
+  sdk: ^3.10.9
+  flutter: ">=3.19.0"
 
 dependencies:
   flutter:
@@ -18,10 +20,11 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   plugin:
+    implements: flutter_secure_storage
     platforms:
       webos:
         dartPluginClass: FlutterSecureStorageWebos

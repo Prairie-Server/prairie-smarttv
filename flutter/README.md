@@ -8,9 +8,11 @@ tree — the former TypeScript/React app under `src/` has been removed.
 ```
 flutter/
   packages/
+    pubspec.yaml     # pub workspace root (prairie_webos + flutter_secure_storage_webos)
     prairie_core/    # shared Dart: routing, models, performance-tier, VideoBackend
     prairie_tizen/   # Samsung Tizen app (flutter-tizen) + AVPlay backend
     prairie_webos/   # LG webOS app (flutter-webos) + video_player_drm backend
+    flutter_secure_storage_webos/  # path fork: platform_interface ^2 for secure storage
   scripts/
     stamp-tizen-api-version.sh   # stamp api-version for Store variants
     build-tizen.sh               # build one Tizen TPK variant
@@ -94,9 +96,13 @@ cd flutter/packages/prairie_core
 flutter analyze
 flutter test
 
-# Platform packages (Dart analyze only without TV SDKs):
-cd ../prairie_tizen && flutter pub get && flutter analyze
-cd ../prairie_webos && flutter pub get && flutter analyze
+# webOS app + secure_storage path fork share a pub workspace:
+cd ../..   # flutter/packages
+flutter pub get
+flutter analyze prairie_webos flutter_secure_storage_webos
+
+# Tizen (Dart analyze only without TV SDKs):
+cd prairie_tizen && flutter pub get && flutter analyze
 
 # Manifest / variant layout (no SDKs required):
 bash flutter/scripts/validate-package-layout.sh

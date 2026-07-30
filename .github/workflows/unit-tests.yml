@@ -7,7 +7,8 @@ name: Unit Tests
 #   - flutter analyze + flutter test for prairie_core (fully supported)
 #   - flutter analyze for prairie_tizen Dart sources (pub.dev plugins resolve;
 #     native Tizen linking is NOT exercised here)
-#   - flutter analyze for prairie_webos when git plugin deps resolve (Dart only;
+#   - flutter analyze for the webOS pub workspace (prairie_webos +
+#     flutter_secure_storage_webos) when git plugin deps resolve (Dart only;
 #     flutter-webos / NDK are NOT installed on runners)
 #
 # What it cannot do without custom runners / cached SDKs:
@@ -85,7 +86,8 @@ jobs:
     needs: flutter-core
     defaults:
       run:
-        working-directory: flutter/packages/prairie_webos
+        # Workspace root for prairie_webos + flutter_secure_storage_webos.
+        working-directory: flutter/packages
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
@@ -97,11 +99,12 @@ jobs:
           cache: true
 
       # lg-flutter-webos plugins are git deps; needs network egress to GitHub.
+      # Resolves the pub workspace (prairie_webos + flutter_secure_storage_webos).
       - name: Pub get
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze --fatal-infos
+        run: flutter analyze --fatal-infos prairie_webos flutter_secure_storage_webos
 
   package-layout:
     name: Validate 4-variant package layout
