@@ -1,0 +1,55 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:prairie_core/prairie_core.dart';
+
+void main() {
+  group('formatSubtitleLabel', () {
+    test('prefers a real language over a codec-like title', () {
+      expect(
+        formatSubtitleLabel(language: 'eng', title: 'HDMV_PGS_SUBTITLE', index: 0),
+        'English',
+      );
+    });
+
+    test('rejects codec-like titles and languages for a numbered fallback', () {
+      expect(
+        formatSubtitleLabel(language: 'hdmv_pgs_subtitle', title: 'HDMV_PGS_SUBTITLE', index: 1),
+        'Subtitle 2',
+      );
+      expect(
+        formatSubtitleLabel(title: 'S_HDMV/PGS', index: 0),
+        'Subtitle 1',
+      );
+    });
+
+    test('keeps useful titles and Forced/HI tags', () {
+      expect(
+        formatSubtitleLabel(language: 'spa', title: 'Spanish SDH', hearingImpaired: true),
+        'Spanish SDH (HI)',
+      );
+      expect(
+        formatSubtitleLabel(language: 'fra', forced: true),
+        'French (Forced)',
+      );
+    });
+  });
+
+  group('formatSubtitleTrackLabel', () {
+    test('formats a server track without exposing codec identifiers', () {
+      const track = SubtitleTrackInfo(
+        language: 'eng',
+        title: 'HDMV_PGS_SUBTITLE',
+        hearingImpaired: true,
+      );
+      expect(formatSubtitleTrackLabel(track, 0), 'English (HI)');
+    });
+  });
+
+  group('looksLikeCodecLabel', () {
+    test('detects common image-subtitle codec strings', () {
+      expect(looksLikeCodecLabel('HDMV_PGS_SUBTITLE'), isTrue);
+      expect(looksLikeCodecLabel('S_HDMV/PGS'), isTrue);
+      expect(looksLikeCodecLabel('English'), isFalse);
+      expect(looksLikeCodecLabel('eng'), isFalse);
+    });
+  });
+}

@@ -930,7 +930,7 @@ class _Hero extends StatelessWidget {
                                         ? 'Off'
                                         : selectedSubtitleLanguage == null
                                             ? 'Auto'
-                                            : humanizeTrackLanguage(selectedSubtitleLanguage!),
+                                            : _selectedSubtitleValueLabel(selectedSubtitleLanguage!, subtitleTracks),
                                     onTap: () async {
                                       final choice = await showModalBottomSheet<String?>(
                                         context: context,
@@ -949,23 +949,11 @@ class _Hero extends StatelessWidget {
                                                 trailing: selectedSubtitleLanguage == null ? const Icon(Icons.check, color: PrairieColors.amber) : null,
                                                 onTap: () => Navigator.pop(context, null),
                                               ),
-                                              for (final track in subtitleTracks)
+                                              for (final (i, track) in subtitleTracks.indexed)
                                                 if ((track.language ?? '').isNotEmpty)
                                                   ListTile(
                                                     title: Text(
-                                                      formatSubtitleLabel(
-                                                        // Some tracks (e.g. PGS) carry a codec name where the
-                                                        // language belongs — humanizeTrackLanguage maps that to
-                                                        // 'Unknown', which reads worse than just falling through
-                                                        // to formatSubtitleLabel's own generic 'Subtitle' default.
-                                                        language: switch (humanizeTrackLanguage(track.language!)) {
-                                                          'Unknown' => null,
-                                                          final label => label,
-                                                        },
-                                                        label: track.title,
-                                                        hearingImpaired: track.hearingImpaired,
-                                                        forced: track.forced,
-                                                      ),
+                                                      formatSubtitleTrackLabel(track, i),
                                                       style: const TextStyle(color: PrairieColors.ink),
                                                     ),
                                                     trailing: selectedSubtitleLanguage == track.language ? const Icon(Icons.check, color: PrairieColors.amber) : null,
@@ -1238,4 +1226,15 @@ class _EpisodeCardState extends State<_EpisodeCard> {
       ),
     );
   }
+}
+
+/// Button label for the currently selected subtitle language — prefers a
+/// human language name, then the matching track's formatted label, never a
+/// raw codec identifier like `HDMV_PGS_SUBTITLE`.
+String _selectedSubtitleValueLabel(String language, List<SubtitleTrackInfo> tracks) {
+  final humanized = humanizeTrackLanguage(language);
+  if (humanized != 'Unknown') return humanized;
+  final index = tracks.indexWhere((t) => t.language == language);
+  if (index >= 0) return formatSubtitleTrackLabel(tracks[index], index);
+  return 'Subtitle';
 }
