@@ -1003,7 +1003,7 @@ export function PlayerScreen({ session, launch, onExit }: PlayerScreenProps) {
                       className="player-scrub-preview__thumb"
                       style={{
                         width: Math.min(seekPreviewTile.width, 280),
-                        height: Math.min(seekPreviewTile.height, 158),
+                        aspectRatio: `${seekPreviewTile.width} / ${seekPreviewTile.height}`,
                         backgroundImage: `url(${seekPreviewTile.url})`,
                         backgroundPosition: seekPreviewTile.backgroundPosition,
                         backgroundSize: seekPreviewTile.backgroundSize,
