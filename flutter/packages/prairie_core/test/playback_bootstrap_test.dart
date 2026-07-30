@@ -25,20 +25,12 @@ void main() {
   });
 
   group('probeAudioCodecSupport', () {
-    test('always includes aac', () {
-      expect(probeAudioCodecSupport(tizenVersion: 6.5), contains('aac'));
-      expect(probeAudioCodecSupport(tizenVersion: 0), ['aac']);
-    });
-
-    test('excludes ac3/eac3 on the 2022 model-year confirmed to fail (Tizen 6.5)', () {
-      final codecs = probeAudioCodecSupport(tizenVersion: 6.5);
-      expect(codecs, isNot(contains('ac3')));
-      expect(codecs, isNot(contains('eac3')));
-    });
-
-    test('includes ac3/eac3 from Tizen 7.0 (2023 models) onward', () {
-      final codecs = probeAudioCodecSupport(tizenVersion: 7.0);
-      expect(codecs, containsAll(['aac', 'ac3', 'eac3']));
+    test('includes aac/ac3/eac3 unconditionally, matching Moonfin/Samsung docs', () {
+      // Matches Moonfin's testAc3Support/testEac3Support (deviceProfile.js):
+      // unconditional true for every Tizen version, no per-year gating.
+      expect(probeAudioCodecSupport(tizenVersion: 6.5), containsAll(['aac', 'ac3', 'eac3']));
+      expect(probeAudioCodecSupport(tizenVersion: 7.0), containsAll(['aac', 'ac3', 'eac3']));
+      expect(probeAudioCodecSupport(tizenVersion: 0), containsAll(['aac', 'ac3', 'eac3']));
     });
 
     test('never advertises dts or mp3', () {
@@ -62,9 +54,9 @@ void main() {
       expect(caps.containers, contains('mkv'));
     });
 
-    test('codecsAudio matches probeAudioCodecSupport for the given Tizen version', () {
+    test('codecsAudio matches probeAudioCodecSupport regardless of Tizen version', () {
       final caps2022 = buildTizenCapabilities(tizenVersion: 6.5, screenWidth: 3840, screenHeight: 2160);
-      expect(caps2022.codecsAudio, ['aac']);
+      expect(caps2022.codecsAudio, containsAll(['aac', 'ac3', 'eac3']));
 
       final caps2023 = buildTizenCapabilities(tizenVersion: 7.0, screenWidth: 3840, screenHeight: 2160);
       expect(caps2023.codecsAudio, containsAll(['aac', 'ac3', 'eac3']));

@@ -18,16 +18,15 @@ class TvPlaybackCapabilities {
   final String maxResolution;
   final bool hdr;
 
-  /// Conservative defaults used when no platform probe has run yet.
-  /// Matches `DEFAULT_TV_CAPABILITIES` — note: does **not** include `av1`.
+  /// Conservative defaults used when no platform probe has run yet (unknown
+  /// platform, or webOS — see [buildWebosCapabilities], which has no
+  /// Moonfin-equivalent research behind it yet). Matches
+  /// `DEFAULT_TV_CAPABILITIES` — note: does **not** include `av1`.
   ///
-  /// `codecsAudio` is deliberately just `aac`: there is no audio-codec probe
-  /// (unlike [probeAv1Support] for video), and `codecsAudio`/`containers` are
-  /// advertised as independent lists with no way to say "ac3 works in ts but
-  /// not mp4." AC3/EAC3/MP3 support varies by container in practice on this
-  /// platform, so claiming them at all risks a codec the server picks for a
-  /// container this player can't decode it in (e.g. AC3-in-MP4) — cheaper to
-  /// eat an always-safe AAC re-encode than guess wrong on an unprobed codec.
+  /// `codecsAudio` is just `aac` here specifically because we don't know the
+  /// platform. Tizen has its own audio codec table — see
+  /// [probeAudioCodecSupport] — used by [buildTizenCapabilities] instead of
+  /// this fallback.
   static const defaults = TvPlaybackCapabilities(
     codecsVideo: ['h264', 'hevc'],
     codecsAudio: ['aac'],
@@ -71,34 +70,26 @@ bool probeAv1Support({
   return systemInfoAv1 || canPlayAv1;
 }
 
-/// AC3/EAC3 supported above this Tizen version. Deliberately **above** 6.5,
-/// not at/below it: a real AC3-in-MP4 remux failed on a QN700B — a confirmed
-/// 2022 model, Tizen 6.5 — with "unsupported audio codec," despite Samsung's
-/// general 2025 TV spec page documenting AC-3 as supported "regardless of
-/// container type, including MP4." That contradiction means the published
-/// spec isn't sufficient proof for this codec on its own — this threshold is
-/// a conservative placeholder that excludes the one model-year with a
-/// confirmed failure (2022 / Tizen 6.5), not a verified-safe floor for 2023
-/// (Tizen 7.0) onward. Tighten or loosen only against a real per-version
-/// field report, same discipline as [av1MinTizenVersion].
-const ac3MinTizenVersion = 7.0;
-
-/// Audio codec support, by Tizen version — mirrors [probeAv1Support]'s shape
-/// (a documented-support floor) rather than a live query: `webapis.systeminfo
-/// .isSupportedAudioCodec` is a real per-device Samsung API, but it's a Tizen
-/// **Web** API (WebKit/JS runtime only) — unreachable from a native
-/// Flutter/Tizen app without a WebView bridge, which is its own project (not
-/// built here). `aac` never varies; it's the one codec with no observed
-/// container-dependent failure. DTS is never included: Samsung's own 2025 and
-/// 2026 TV spec pages state plainly, identically, "The DTS Audio codec is not
-/// supported on 20XX TVs." MP3 is left out too — same container-dependent risk
-/// profile as AC3, with no field data either way yet.
+/// Matches the Jellyfin Tizen client Moonfin's shipped codec mapping
+/// (`platform-tizen/src/deviceProfile.js`, `testAc3Support`/`testEac3Support`/
+/// `testDtsSupport`), which in turn matches Samsung's published per-year TV
+/// media specs (developer.samsung.com/smarttv/develop/specifications/
+/// media-specifications/20XX-tv-video-specifications.html — checked 2021
+/// through 2025 directly): AC3 and EAC3/DD+ are listed as supported,
+/// unconditionally, every year, with no Tizen-version gate and no
+/// container-specific carve-out — Moonfin puts both straight into its
+/// general MP4/MKV/TS/MOV/AVI direct-play audio codec list. DTS is the one
+/// codec every year's page explicitly excludes ("The DTS Audio codec is not
+/// supported on 20XX TVs"), matching `testDtsSupport() => false`.
+///
+/// TrueHD is left out: Moonfin only advertises it behind an explicit
+/// "experimental" settings toggle plus a live `webapis.systeminfo
+/// .isSupportedAudioCodec('TrueHD')` query — a Tizen **Web** API (WebKit/JS
+/// runtime only), unreachable from this native Flutter/Tizen app without a
+/// WebView bridge. That bridge is deliberately not built here; revisit
+/// TrueHD once/if it is.
 List<String> probeAudioCodecSupport({required double tizenVersion}) {
-  final codecs = <String>['aac'];
-  if (tizenVersion >= ac3MinTizenVersion) {
-    codecs.addAll(['ac3', 'eac3']);
-  }
-  return codecs;
+  return const ['aac', 'ac3', 'eac3'];
 }
 
 /// Apply user Advertise/Disable AV1 overrides on top of a probe result.
