@@ -18,5 +18,6 @@
         <privilege>http://developer.samsung.com/privilege/network.public</privilege>
         <privilege>http://tizen.org/privilege/mediastorage</privilege>
         <privilege>http://tizen.org/privilege/externalstorage</privilege>
+        <privilege>http://developer.samsung.com/privilege/avplay</privilege>
     </privileges>
 </manifest>
