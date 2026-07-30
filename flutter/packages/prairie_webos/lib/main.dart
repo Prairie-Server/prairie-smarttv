@@ -22,8 +22,15 @@ Future<void> main() async {
       uhd: info.uhd,
       nativePlayerAvailable: true,
     );
-  } catch (_) {
+    debugPrint(
+      'prairie.tv_capabilities: versionMajor=$major versionMinor=$minor parsed=$version '
+      'codecsVideo=${caps.codecsVideo} maxAudioChannels=${caps.maxAudioChannels}',
+    );
+  } catch (err, stack) {
     // Probe failed (emulator / missing plugin) — keep defaults without AV1.
+    // Logged (not swallowed) so a failed probe is distinguishable from a
+    // genuinely AV1-incapable TV when diagnosing an unexpected transcode.
+    debugPrint('prairie.tv_capabilities: capability probe failed — falling back to defaults (no AV1): $err\n$stack');
   }
 
   runApp(

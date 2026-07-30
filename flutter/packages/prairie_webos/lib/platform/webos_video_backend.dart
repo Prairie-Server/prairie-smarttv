@@ -51,11 +51,6 @@ class WebosVideoBackend implements VideoBackend {
   bool? _lastBuffering;
   bool? _lastIsInitialized;
 
-  static bool _isHls(String url) {
-    final path = url.split('?').first.toLowerCase();
-    return path.endsWith('.m3u8') || path.contains('/hls') || path.contains('master.m3u8');
-  }
-
   /// Redacts query-param values (session tokens) before a URL hits the log.
   static String _redactQuery(String url) {
     final uri = Uri.tryParse(url);
@@ -64,11 +59,19 @@ class WebosVideoBackend implements VideoBackend {
     return uri.replace(queryParameters: redacted).toString();
   }
 
+  /// Same redaction as [_redactQuery], but for free-form text (plugin error
+  /// descriptions) that may *embed* the failing URL rather than *be* one —
+  /// native player errors routinely echo the URL they failed to open, query
+  /// string (session token) and all.
+  static final _embeddedUrlPattern = RegExp(r'https?://\S+');
+  static String _redactMessage(String message) =>
+      message.replaceAllMapped(_embeddedUrlPattern, (m) => _redactQuery(m.group(0)!));
+
   @override
   void attach(String url, {String? maxResolution}) {
     // maxResolution is accepted for VideoBackend parity with Tizen AVPlay
     // FIXED_MAX_RESOLUTION; video_player_drm has no equivalent adaptive hint yet.
-    final hls = _isHls(url);
+    final hls = isHlsUrl(url);
     final controller = VideoPlayerController.network(
       Uri.parse(url),
       formatHint: hls ? VideoFormat.hls : null,
@@ -136,8 +139,9 @@ class WebosVideoBackend implements VideoBackend {
       final message = (controller.value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
         _lastError = message;
-        debugPrint('prairie.webos: hasError message=$message');
-        reportDiagnostic('err=$message');
+        final redacted = _redactMessage(message);
+        debugPrint('prairie.webos: hasError message=$redacted');
+        reportDiagnostic('err=$redacted');
         if (!_errorController.isClosed) _errorController.add(message);
       }
     }
