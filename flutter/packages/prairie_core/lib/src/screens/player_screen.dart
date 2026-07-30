@@ -83,6 +83,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _caption;
   CancelToken? _prepareCancel;
   bool _busyAudio = false;
+  bool _busyQuality = false;
+
+  /// Session returned by `/playback/start` — kept so "Original" on a direct
+  /// base can drop HLS and reattach the progressive stream_url.
+  PlaybackSessionResponse? _basePlaybackSession;
+
+  /// Active quality menu selection, keyed by id (`auto` / `original` / rung id).
+  String _activeQualityId = 'original';
+  /// Rung id of the encode currently playing under Auto (for advice dedupe).
+  String? _autoPlayingRungId;
+  List<QualityLadderRung> _qualityLadder = fallbackQualityLadder;
+  String? _qualityError;
 
   /// Receives D-pad keys while chrome is hidden so nav can bring it back.
   final FocusNode _idleFocus = FocusNode(debugLabel: 'player.idle');
@@ -219,6 +231,32 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return detail.versions.isNotEmpty ? detail.versions.first.resolution : null;
   }
 
+  int _sourceHeightForFile(WatchDetail? detail, int fileId) {
+    final version = detail == null ? null : selectFileVersion(detail, fileId);
+    final probed = version?.videoTracks.isNotEmpty == true ? version!.videoTracks.first.height : null;
+    return sourceHeightForFile(
+      ladder: _qualityLadder,
+      resolution: version?.resolution ?? _sourceResolutionForFile(detail, fileId),
+      probedHeight: probed,
+    );
+  }
+
+  int _deviceMaxHeight() {
+    final maxRes = ref.read(tvCapabilitiesProvider).maxResolution;
+    return resolveNativeHeight(maxRes, _qualityLadder);
+  }
+
+  List<QualityOption> get _qualityOptions {
+    final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
+    final nativeHeight = _sourceHeightForFile(widget.launch.watch, fileId);
+    return buildQualityOptions(
+      ladder: qualityLadderForSourceHeight(_qualityLadder, nativeHeight),
+      nativeHeight: nativeHeight,
+      playMethod: _basePlaybackSession?.playMethod ?? _playbackSession?.playMethod,
+      sourceResolutionLabel: _sourceResolutionForFile(widget.launch.watch, fileId),
+    );
+  }
+
   /// Clears the `_busyAudio`/`_loading` lock set at the top of [_chooseAudio],
   /// but only when [cancel] is still the current in-flight prepare — if a
   /// newer `_chooseAudio`/`_start` call already superseded it (via
@@ -247,6 +285,332 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _restartSessionAt(audioTrackIndex: index, positionSeconds: _position.inMilliseconds / 1000.0);
   }
 
+  Future<void> _pickQuality() async {
+    final options = _qualityOptions;
+    if (options.isEmpty) return;
+    final activeId = _activeQualityId;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: PrairieColors.bgElevated,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_qualityError != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Text(_qualityError!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+              ),
+            for (final opt in options)
+              ListTile(
+                title: Text(opt.label, style: const TextStyle(color: PrairieColors.ink)),
+                subtitle: opt.sublabel.isEmpty
+                    ? null
+                    : Text(opt.sublabel, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
+                trailing: opt.id == activeId ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                onTap: () => Navigator.of(context).pop<String>(opt.id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || choice == activeId) return;
+    await _switchQuality(choice);
+  }
+
+  Future<void> _applyAdvice(PlaybackQualityAdvice advice) async {
+    if (_activeQualityId != 'auto' || _busyQuality || _exiting) return;
+    if (advice.rungId.isEmpty || advice.rungId == _autoPlayingRungId) return;
+    // Prefer the server-provided targets so we don't need a local ladder copy
+    // to act — Advice carries resolution + bitrate for exactly this reason.
+    if (advice.resolution.isNotEmpty && advice.bitrateKbps > 0) {
+      await _switchQualityToTargets(
+        menuId: 'auto',
+        playingRungId: advice.rungId,
+        resolution: advice.resolution,
+        bitrateKbps: advice.bitrateKbps,
+        copyVideo: false,
+        fromAdvice: true,
+      );
+      return;
+    }
+    await _switchQuality(advice.rungId, fromAdvice: true);
+  }
+
+  Future<void> _switchQuality(String qualityId, {bool fromAdvice = false}) async {
+    final current = _playbackSession;
+    final base = _basePlaybackSession;
+    if (current == null || base == null || _busyQuality || _busyAudio || _exiting) return;
+    if (!fromAdvice && qualityId == _activeQualityId) return;
+
+    final fileId = current.mediaFileId;
+    final nativeHeight = _sourceHeightForFile(widget.launch.watch, fileId);
+    final ladder = qualityLadderForSourceHeight(_qualityLadder, nativeHeight);
+    final options = _qualityOptions;
+    final deviceMax = _deviceMaxHeight();
+    // Auto is capped by both source and device so we don't start a 4K encode
+    // on a 1080p panel.
+    final autoCap = nativeHeight > 0 && deviceMax > 0
+        ? (nativeHeight < deviceMax ? nativeHeight : deviceMax)
+        : (nativeHeight > 0 ? nativeHeight : deviceMax);
+    final autoLadder = [
+      for (final r in ladder)
+        if (nativeHeight <= 0 || r.height < nativeHeight) r,
+    ];
+    final targets = resolveQualityTargets(
+      qualityId: qualityId,
+      options: options,
+      playMethod: base.playMethod,
+      ladder: qualityId == 'auto' ? (autoLadder.isEmpty ? ladder : autoLadder) : ladder,
+      deviceMaxHeight: qualityId == 'auto' ? autoCap : deviceMax,
+    );
+
+    final playingRungId = qualityId == 'auto'
+        ? bestAutoRung(autoLadder.isEmpty ? ladder : autoLadder, autoCap)?.id
+        : (qualityId == 'original' ? null : qualityId);
+
+    await _switchQualityToTargets(
+      menuId: fromAdvice ? 'auto' : qualityId,
+      playingRungId: playingRungId,
+      resolution: targets?.resolution,
+      bitrateKbps: targets?.bitrateKbps,
+      copyVideo: targets?.copyVideo ?? false,
+      dropToOriginalDirect: targets == null,
+      fromAdvice: fromAdvice,
+    );
+  }
+
+  Future<void> _switchQualityToTargets({
+    required String menuId,
+    String? playingRungId,
+    String? resolution,
+    int? bitrateKbps,
+    bool copyVideo = false,
+    bool dropToOriginalDirect = false,
+    bool fromAdvice = false,
+  }) async {
+    final current = _playbackSession;
+    final base = _basePlaybackSession;
+    if (current == null || base == null || _busyQuality || _busyAudio || _exiting) return;
+
+    setState(() {
+      _busyQuality = true;
+      _qualityError = null;
+      // Advice steps the encode under Auto — the menu selection stays Auto so
+      // further advice keeps applying. Manual picks commit the chosen id.
+      if (!fromAdvice) _activeQualityId = menuId;
+      _loading = true;
+    });
+
+    final cancel = CancelToken();
+    _prepareCancel?.cancel();
+    _prepareCancel = cancel;
+    final position = _position.inMilliseconds / 1000.0;
+    final fileId = current.mediaFileId;
+
+    try {
+      final client = ref.read(apiClientProvider);
+      final session = ref.read(sessionProvider)!;
+      final settings = await loadPlaybackSettings(SharedPreferencesAsync());
+      final deviceCaps = applyAudioChannelOverride(
+        applyAv1AdvertiseOverrides(
+          ref.read(tvCapabilitiesProvider),
+          forceAv1: settings.forceAv1,
+          disableAv1: settings.disableAv1,
+        ),
+        is8KPanel: settings.is8KPanel,
+      );
+
+      // Direct-play Original: drop HLS and reattach the progressive stream.
+      if (dropToOriginalDirect) {
+        final prepared = await preparePlayableSession(
+          client,
+          session,
+          base,
+          position,
+          sourceResolution: _sourceResolutionForFile(widget.launch.watch, fileId),
+          maxResolution: deviceCaps.maxResolution,
+          cancelToken: cancel,
+        );
+        if (!mounted || _exiting || cancel.isCancelled) {
+          await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+          _clearQualityBusyIfCurrent(cancel);
+          return;
+        }
+        final previousId = _activeSessionId;
+        if (previousId != null && previousId != prepared.session.sessionId && previousId != base.sessionId) {
+          unawaited(stopPlaybackSession(client, session, previousId).catchError((_) {}));
+        }
+        _autoPlayingRungId = null;
+        await _attachPrepared(
+          prepared: prepared,
+          client: client,
+          session: session,
+          cancel: cancel,
+          settings: settings,
+          deviceCaps: deviceCaps,
+          clearBusy: _clearQualityBusyIfCurrent,
+        );
+        return;
+      }
+
+      // Flutter sessions are legacy start/transcode — quality changes restart
+      // the encode with the rung's resolution + bitrate (same as web). Protocol
+      // v3 replan is the long-term path once this client adopts attempt IDs.
+      final startFrom = PlaybackSessionResponse(
+        sessionId: base.sessionId,
+        mediaFileId: base.mediaFileId,
+        playMethod: base.playMethod,
+        position: position,
+        isPaused: current.isPaused,
+        streamUrl: base.streamUrl,
+        audioTrackIndex: current.audioTrackIndex,
+        durationSeconds: current.durationSeconds ?? base.durationSeconds,
+        playbackInfo: current.playbackInfo ?? base.playbackInfo,
+      );
+
+      final prepared = await preparePlayableSession(
+        client,
+        session,
+        startFrom,
+        position,
+        sourceResolution: _sourceResolutionForFile(widget.launch.watch, fileId),
+        maxResolution: deviceCaps.maxResolution,
+        targetResolution: resolution,
+        targetBitrateKbps: bitrateKbps,
+        copyVideo: copyVideo,
+        forceTranscode: !copyVideo,
+        cancelToken: cancel,
+      );
+      if (!mounted || _exiting || cancel.isCancelled) {
+        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+        _clearQualityBusyIfCurrent(cancel);
+        return;
+      }
+
+      final previousId = _activeSessionId;
+      if (previousId != null && previousId != prepared.session.sessionId && previousId != base.sessionId) {
+        unawaited(stopPlaybackSession(client, session, previousId).catchError((_) {}));
+      }
+
+      _autoPlayingRungId = playingRungId;
+      await _attachPrepared(
+        prepared: prepared,
+        client: client,
+        session: session,
+        cancel: cancel,
+        settings: settings,
+        deviceCaps: deviceCaps,
+        clearBusy: _clearQualityBusyIfCurrent,
+      );
+    } catch (e, stack) {
+      debugPrint('prairie.player_screen: _switchQuality failed: $e\n$stack');
+      if (mounted && !_exiting) {
+        setState(() {
+          _qualityError = e is ApiError ? e.message : 'Could not switch quality';
+          _busyQuality = false;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  void _clearQualityBusyIfCurrent([CancelToken? cancel]) {
+    if (!mounted) return;
+    if (cancel != null && !identical(_prepareCancel, cancel)) return;
+    setState(() {
+      _busyQuality = false;
+      _loading = false;
+    });
+  }
+
+  Future<void> _attachPrepared({
+    required PreparedPlayback prepared,
+    required ApiClient client,
+    required PrairieSession session,
+    required CancelToken cancel,
+    required PlaybackSettings settings,
+    required TvPlaybackCapabilities deviceCaps,
+    required void Function([CancelToken?]) clearBusy,
+  }) async {
+    _activeSessionId = prepared.session.sessionId;
+    await _positionSub?.cancel();
+    await _captionSub?.cancel();
+    await _errorSub?.cancel();
+    _stallTimer?.cancel();
+    final oldBackend = _backend;
+    _backend = null;
+    await oldBackend?.dispose();
+
+    final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
+    backend.attach(
+      prepared.streamUrl,
+      maxResolution: deviceCaps.maxResolution,
+      contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
+    );
+    final origin = Duration(milliseconds: (prepared.streamOriginSeconds * 1000).round());
+    setState(() {
+      _backend = backend;
+      _playbackSession = prepared.session;
+      _streamOrigin = origin;
+      _position = origin + Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
+      _selectedSubtitleTrackId = null;
+      _caption = null;
+    });
+    _streamAttachedAt = DateTime.now();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || _exiting || cancel.isCancelled) {
+      await backend.dispose();
+      await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+      clearBusy(cancel);
+      return;
+    }
+
+    await _initializeBackend(
+      backend,
+      startPosition: prepared.playerStartSeconds > 0
+          ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
+          : null,
+      playMethod: prepared.session.playMethod,
+    );
+    await backend.play();
+    if (!mounted || _exiting || cancel.isCancelled) {
+      await backend.dispose();
+      await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+      clearBusy(cancel);
+      return;
+    }
+
+    clearBusy(cancel);
+    _lastProgressPosition = _position;
+    _lastProgressAt = DateTime.now();
+    if (needsHlsBootstrap(prepared.session.playMethod)) {
+      _stallTimer?.cancel();
+      _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
+    }
+    _positionSub = backend.positionStream.listen((pos) {
+      if (!mounted) return;
+      final absolute = _streamOrigin + pos;
+      if (absolute != _lastProgressPosition) {
+        _lastProgressPosition = absolute;
+        _lastProgressAt = DateTime.now();
+      }
+      setState(() => _position = absolute);
+    });
+    _captionSub = backend.captionStream.listen((text) {
+      if (mounted) setState(() => _caption = text);
+    });
+    _errorSub = backend.errorStream.listen((message) {
+      if (!mounted || _exiting || _error != null) return;
+      setState(() {
+        _error = message;
+        _loading = false;
+      });
+    });
+    unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
+    _showControls();
+  }
+
   /// Restarts the active playback session at [audioTrackIndex] /
   /// [positionSeconds] via PATCH `/playback/{id}/audio` + a fresh
   /// [preparePlayableSession] — the same server round trip whether the
@@ -257,7 +621,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _restartSessionAt({required int audioTrackIndex, required double positionSeconds}) async {
     final current = _playbackSession;
     final sessionId = _activeSessionId ?? current?.sessionId;
-    if (current == null || sessionId == null || _busyAudio || _exiting) return;
+    if (current == null || sessionId == null || _busyAudio || _busyQuality || _exiting) return;
 
     setState(() {
       _busyAudio = true;
@@ -480,6 +844,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
       startedSessionId = started.sessionId;
       _activeSessionId = started.sessionId;
+      _basePlaybackSession = started;
+      prefetchQualityLadder(client, session);
+      unawaited(
+        fetchQualityLadder(client, session).then((ladder) {
+          if (!mounted) return;
+          setState(() => _qualityLadder = ladder.isEmpty ? fallbackQualityLadder : ladder);
+        }),
+      );
 
       if (!mounted || _exiting || cancel.isCancelled) {
         await stopPlaybackSession(client, session, started.sessionId).catchError((_) {});
@@ -705,14 +1077,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _reportProgress({bool paused = false}) async {
     final sessionId = _activeSessionId ?? _playbackSession?.sessionId;
     if (sessionId == null) return;
+    final backend = _backend;
+    final wantAdvice = _activeQualityId == 'auto' && !paused && !_busyQuality;
     try {
-      await reportPlaybackProgress(
+      final advice = await reportPlaybackProgress(
         ref.read(apiClientProvider),
         ref.read(sessionProvider)!,
         sessionId,
         _position.inSeconds.toDouble(),
         paused,
+        isBuffering: backend?.isBuffering,
+        requestAdvice: wantAdvice,
       );
+      if (advice == null || !mounted || _exiting || _busyQuality) return;
+      if (_activeQualityId != 'auto') return;
+      // Honor automatic stepping while Auto is selected. Key on rung id so
+      // High variants stay distinct from their same-height siblings.
+      if (advice.rungId.isEmpty) return;
+      unawaited(_applyAdvice(advice));
     } catch (_) {
       // Best-effort — a missed heartbeat isn't worth surfacing to the viewer.
     }
@@ -859,6 +1241,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (method == 'direct') bits.add('Direct');
     if (method == 'remux') bits.add('Remux');
     if (method == 'transcode') bits.add('Transcode');
+    String? qualityLabel;
+    for (final opt in _qualityOptions) {
+      if (opt.id == _activeQualityId) {
+        qualityLabel = opt.label;
+        break;
+      }
+    }
+    if (qualityLabel != null) bits.add(qualityLabel);
+    if (_busyQuality) bits.add('Switching…');
     if (!isPlaying) bits.add('Paused');
     return bits.join(' · ');
   }
@@ -1079,7 +1470,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                       IconButton(
                                         iconSize: 28,
                                         style: _transportForegroundStyle(_busyAudio ? PrairieColors.muted : PrairieColors.ink),
-                                        onPressed: _busyAudio ? null : _pickAudioTrack,
+                                        onPressed: _busyAudio || _busyQuality ? null : _pickAudioTrack,
                                         icon: const Icon(Icons.audiotrack),
                                         tooltip: 'Audio',
                                       ),
@@ -1089,9 +1480,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                       IconButton(
                                         iconSize: 28,
                                         style: _transportForegroundStyle(_selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink),
-                                        onPressed: _pickSubtitleTrack,
+                                        onPressed: _busyQuality ? null : _pickSubtitleTrack,
                                         icon: const Icon(Icons.closed_caption),
                                         tooltip: 'Subtitles',
+                                      ),
+                                    ],
+                                    if (_qualityOptions.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        iconSize: 28,
+                                        style: _transportForegroundStyle(
+                                          _busyQuality
+                                              ? PrairieColors.muted
+                                              : (_activeQualityId != 'original' ? PrairieColors.amber : PrairieColors.ink),
+                                        ),
+                                        onPressed: _busyQuality || _busyAudio ? null : _pickQuality,
+                                        icon: const Icon(Icons.high_quality),
+                                        tooltip: 'Quality',
                                       ),
                                     ],
                                     const SizedBox(width: 8),
