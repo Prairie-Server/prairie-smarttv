@@ -90,14 +90,72 @@ Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession s
 String resolvePlaybackStreamUrl(String serverUrl, PlaybackSessionResponse session, String accessToken) =>
     buildStreamUrl(serverUrl, session.streamUrl, accessToken);
 
+/// Optional recommendation from `POST .../progress?advice=1`.
+///
+/// Absent in the steady state by design — acting on one costs a rebuffer.
+class PlaybackQualityAdvice {
+  const PlaybackQualityAdvice({
+    required this.rungId,
+    required this.resolution,
+    required this.bitrateKbps,
+    required this.direction,
+    this.reason = '',
+    this.observedKbps = 0,
+  });
+
+  final String rungId;
+  final String resolution;
+  final int bitrateKbps;
+  final String direction;
+  final String reason;
+  final int observedKbps;
+
+  factory PlaybackQualityAdvice.fromJson(Map<String, dynamic> json) => PlaybackQualityAdvice(
+    rungId: json['rung_id'] as String? ?? '',
+    resolution: json['resolution'] as String? ?? '',
+    bitrateKbps: (json['bitrate_kbps'] as num?)?.toInt() ?? 0,
+    direction: json['direction'] as String? ?? '',
+    reason: json['reason'] as String? ?? '',
+    observedKbps: (json['observed_kbps'] as num?)?.toInt() ?? 0,
+  );
+}
+
 /// Mirrors `reportPlaybackProgress` from src/api/playbackSession.ts.
-Future<void> reportPlaybackProgress(ApiClient client, PrairieSession session, String playbackSessionId, double position, bool isPaused) =>
-    client.request<dynamic>(
-      _sessionOptions(session),
-      '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}/progress',
-      method: 'POST',
-      body: {'position': position, 'is_paused': isPaused},
-    );
+///
+/// [throughputKbps] and [isBuffering] are optional client-only signals for the
+/// quality advice engine. Pass [requestAdvice] to opt into `?advice=1`; without
+/// it the server keeps answering 204 with no body.
+Future<PlaybackQualityAdvice?> reportPlaybackProgress(
+  ApiClient client,
+  PrairieSession session,
+  String playbackSessionId,
+  double position,
+  bool isPaused, {
+  int? throughputKbps,
+  bool? isBuffering,
+  bool requestAdvice = false,
+}) async {
+  final body = <String, dynamic>{
+    'position': position,
+    'is_paused': isPaused,
+    if (throughputKbps != null && throughputKbps > 0) 'throughput_kbps': throughputKbps,
+    'is_buffering': ?isBuffering,
+  };
+  final path = requestAdvice
+      ? '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}/progress?advice=1'
+      : '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}/progress';
+  final json = await client.request<dynamic>(
+    _sessionOptions(session),
+    path,
+    method: 'POST',
+    body: body,
+  );
+  if (!requestAdvice || json is! Map) return null;
+  final advice = json['advice'];
+  if (advice is! Map) return null;
+  final parsed = PlaybackQualityAdvice.fromJson(Map<String, dynamic>.from(advice));
+  return parsed.rungId.isEmpty ? null : parsed;
+}
 
 /// True when DELETE/progress hit a session the server already reaped
 /// (ffmpeg failure, idle timeout, prior stop, superseded transcode id).

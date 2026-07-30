@@ -24,6 +24,9 @@ class TranscodeStartInput {
     this.transcodeAudio = false,
     this.sourceResolution,
     this.maxResolution,
+    this.targetResolution,
+    this.targetBitrateKbps,
+    this.copyVideo = false,
   });
 
   final String sessionId;
@@ -32,21 +35,32 @@ class TranscodeStartInput {
   final bool transcodeAudio;
   final String? sourceResolution;
   final String? maxResolution;
+
+  /// Explicit ladder targets. When set, these win over [sourceResolution] /
+  /// [maxResolution] / the hardcoded bitrate table — quality switches must
+  /// send the server's rung values so High variants stay distinct.
+  final String? targetResolution;
+  final int? targetBitrateKbps;
+  final bool copyVideo;
 }
 
 Map<String, dynamic> buildTranscodeStartRequest(TranscodeStartInput input) {
   final isRemux = input.playMethod.trim().toLowerCase() == 'remux';
   final remuxAudio = input.transcodeAudio ? 'aac' : 'copy';
-  final targetResolution = isRemux ? '' : resolveTargetResolution(input.sourceResolution, input.maxResolution);
+  final copyVideo = input.copyVideo || isRemux;
+  final targetResolution = input.targetResolution ??
+      (copyVideo ? '' : resolveTargetResolution(input.sourceResolution, input.maxResolution));
+  final targetBitrate = input.targetBitrateKbps ??
+      (copyVideo ? 0 : targetBitrateKbpsForResolution(targetResolution));
   return {
     'session_id': input.sessionId,
     'seek_seconds': input.seekSeconds < 0 ? 0 : input.seekSeconds,
     'target_resolution': targetResolution,
-    if (isRemux) 'target_codec_video': 'copy',
+    if (copyVideo) 'target_codec_video': 'copy',
     // Omit target_codec_video on encode so the server picks the best of
     // client ∩ encodable (av1 → hevc → h264). Smart TV usually lands on hevc.
-    'target_codec_audio': isRemux ? remuxAudio : 'aac',
-    'target_bitrate_kbps': isRemux ? 0 : targetBitrateKbpsForResolution(targetResolution),
+    'target_codec_audio': copyVideo && isRemux ? remuxAudio : 'aac',
+    'target_bitrate_kbps': targetBitrate,
     'segment_duration': 2,
     'subtitle_track_index': -1,
     'subtitle_burn_in': false,
@@ -149,10 +163,17 @@ Future<PreparedPlayback> preparePlayableSession(
   double seekSeconds, {
   String? sourceResolution,
   String? maxResolution,
+  String? targetResolution,
+  int? targetBitrateKbps,
+  bool copyVideo = false,
+  /// When true, force the HLS/transcode path even for a direct-play base —
+  /// used when the viewer picks a lower quality rung.
+  bool forceTranscode = false,
   CancelToken? cancelToken,
   Dio? probeDio,
 }) async {
-  if (!needsHlsBootstrap(started.playMethod)) {
+  final forceHls = forceTranscode || copyVideo || (targetResolution != null && targetResolution.isNotEmpty);
+  if (!needsHlsBootstrap(started.playMethod) && !forceHls) {
     final isRemux = started.playMethod.trim().toLowerCase() == 'remux';
     final clampedSeek = seekSeconds < 0 ? 0.0 : seekSeconds;
     var url = resolvePlaybackStreamUrl(session.serverUrl, started, session.accessToken);
@@ -167,6 +188,10 @@ Future<PreparedPlayback> preparePlayableSession(
     );
   }
 
+  final playMethod = forceHls && started.playMethod.trim().toLowerCase() == 'direct'
+      ? 'transcode'
+      : (copyVideo ? 'remux' : started.playMethod);
+
   final transcode = await startTranscode(
     client,
     session,
@@ -174,10 +199,13 @@ Future<PreparedPlayback> preparePlayableSession(
       TranscodeStartInput(
         sessionId: started.sessionId,
         seekSeconds: seekSeconds,
-        playMethod: 'transcode',
+        playMethod: playMethod,
         transcodeAudio: true,
         sourceResolution: sourceResolution,
         maxResolution: maxResolution,
+        targetResolution: targetResolution,
+        targetBitrateKbps: targetBitrateKbps,
+        copyVideo: copyVideo,
       ),
     ),
   );
