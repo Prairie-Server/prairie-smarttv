@@ -227,8 +227,9 @@ class _PosterGridState extends State<PosterGrid> {
     if (restoreIndex >= 0) _applyRestoreFocus();
 
     return GridView.builder(
-      padding: const EdgeInsets.all(24),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, mainAxisExtent: 292, crossAxisSpacing: 16, mainAxisSpacing: 16),
+      clipBehavior: Clip.none,
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 32),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, mainAxisExtent: 300, crossAxisSpacing: 16, mainAxisSpacing: 20),
       itemCount: widget.items.length,
       itemBuilder: (context, index) {
         final item = widget.items[index];

@@ -27,10 +27,11 @@ class MediaRow<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
     // Must fit card art + title/subtitle below — 240px clipped poster titles
-    // (2:3 art alone is ~210px on a 140-wide card).
-    final height = variant == MediaRowVariant.landscape ? 268.0 : 292.0;
+    // (2:3 art alone is ~210px on a 140-wide card). Extra vertical padding
+    // leaves room for the focused card's scale + amber ring without clipping.
+    final height = variant == MediaRowVariant.landscape ? 284.0 : 308.0;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 32),
+      padding: const EdgeInsets.only(bottom: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -67,7 +68,8 @@ class MediaRow<T> extends StatelessWidget {
                 return handled ? KeyEventResult.handled : KeyEventResult.ignored;
               },
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                clipBehavior: Clip.none,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 scrollDirection: Axis.horizontal,
                 itemCount: items.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 16),

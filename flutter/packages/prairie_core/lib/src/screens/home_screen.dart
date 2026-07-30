@@ -135,6 +135,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
 
           return ListView(
+            clipBehavior: Clip.none,
             padding: EdgeInsets.zero,
             children: [
               if (featured != null)

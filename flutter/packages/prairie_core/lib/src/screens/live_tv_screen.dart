@@ -232,7 +232,7 @@ class _LiveTvTabPillState extends State<_LiveTvTabPill> {
     final active = widget.active;
     return Material(
       color: focused
-          ? PrairieColors.amberDeep
+          ? PrairieColors.focusFill
           : active
               ? PrairieColors.amber
               : PrairieColors.bgElevated.withValues(alpha: 0.72),
@@ -439,10 +439,8 @@ class _FocusableRowState extends State<_FocusableRow> {
   Widget build(BuildContext context) {
     final focused = _focused;
     return Material(
-      // Keep the elevated row background on focus — an amber fill (used
-      // briefly here) made Channels look wrong next to Guide/Recordings,
-      // which only add the amber ring/glow.
-      color: PrairieColors.bgElevated.withValues(alpha: 0.72),
+      // Settings-style darker focus fill — bright amberDeep washed out text.
+      color: focused ? PrairieColors.focusFill : PrairieColors.bgElevated.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         autofocus: widget.autofocus,
@@ -457,8 +455,10 @@ class _FocusableRowState extends State<_FocusableRow> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: focused ? PrairieColors.ring : Colors.transparent, width: focused ? 3 : 1),
-            boxShadow: focused ? prairieFocusRing(width: 2) : null,
+            border: Border.all(
+              color: focused ? PrairieColors.ink.withValues(alpha: 0.85) : Colors.transparent,
+              width: focused ? 3 : 1,
+            ),
           ),
           child: widget.child,
         ),
@@ -504,99 +504,93 @@ class _GuideList extends StatelessWidget {
         final hdSuffix = channel.hd ? ' HD' : '';
         final recordingBusy = recordingBusyId != null;
         final shell = _GuideRowShell(
-            child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: PrairieColors.bgElevated.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 900;
-                  final channelCol = Row(
-                    children: [
-                      _ChannelBadge(channel: channel, serverUrl: serverUrl),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 60,
-                        child: Text(
-                          '$number$hdSuffix',
-                          style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
-                        ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                final channelCol = Row(
+                  children: [
+                    _ChannelBadge(channel: channel, serverUrl: serverUrl),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 60,
+                      child: Text(
+                        '$number$hdSuffix',
+                        style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
                       ),
-                      Expanded(
-                        child: Text(
-                          channelDisplayLabel(channel),
-                          style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600, fontSize: 16),
-                        ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        channelDisplayLabel(channel),
+                        style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600, fontSize: 16),
                       ),
-                    ],
-                  );
-                  final programsCol = wide
-                      ? Row(
-                          children: [
-                            Expanded(child: _NowNextBlock(label: 'Now', line: _programLine(now, 'Nothing listed'))),
-                            const SizedBox(width: 16),
-                            Expanded(child: _NowNextBlock(label: 'Next', line: _programLine(next, 'Nothing listed'))),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _NowNextBlock(label: 'Now', line: _programLine(now, 'Nothing listed')),
-                            const SizedBox(height: 12),
-                            _NowNextBlock(label: 'Next', line: _programLine(next, 'Nothing listed')),
-                          ],
-                        );
-                  final actions = Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ElevatedButton.icon(
-                        autofocus: i == 0,
-                        onPressed: () => onTune(channel),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Watch'),
+                    ),
+                  ],
+                );
+                final programsCol = wide
+                    ? Row(
+                        children: [
+                          Expanded(child: _NowNextBlock(label: 'Now', line: _programLine(now, 'Nothing listed'))),
+                          const SizedBox(width: 16),
+                          Expanded(child: _NowNextBlock(label: 'Next', line: _programLine(next, 'Nothing listed'))),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _NowNextBlock(label: 'Now', line: _programLine(now, 'Nothing listed')),
+                          const SizedBox(height: 12),
+                          _NowNextBlock(label: 'Next', line: _programLine(next, 'Nothing listed')),
+                        ],
+                      );
+                final actions = Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      autofocus: i == 0,
+                      onPressed: () => onTune(channel),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Watch'),
+                    ),
+                    if (now?.id.trim().isNotEmpty == true)
+                      OutlinedButton.icon(
+                        onPressed: recordingBusy ? null : () => onRecord(now!),
+                        icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger, size: 18),
+                        label: Text(recordingBusyId == now!.id ? 'Scheduling…' : 'Record now'),
                       ),
-                      if (now?.id.trim().isNotEmpty == true)
-                        OutlinedButton.icon(
-                          onPressed: recordingBusy ? null : () => onRecord(now!),
-                          icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger, size: 18),
-                          label: Text(recordingBusyId == now!.id ? 'Scheduling…' : 'Record now'),
-                        ),
-                      if (next?.id.trim().isNotEmpty == true)
-                        OutlinedButton.icon(
-                          onPressed: recordingBusy ? null : () => onRecord(next!),
-                          icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger, size: 18),
-                          label: Text(recordingBusyId == next!.id ? 'Scheduling…' : 'Record next'),
-                        ),
-                    ],
-                  );
-                  if (wide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(flex: 9, child: channelCol),
-                        const SizedBox(width: 16),
-                        Expanded(flex: 14, child: programsCol),
-                        const SizedBox(width: 16),
-                        actions,
-                      ],
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    if (next?.id.trim().isNotEmpty == true)
+                      OutlinedButton.icon(
+                        onPressed: recordingBusy ? null : () => onRecord(next!),
+                        icon: const Icon(Icons.fiber_manual_record, color: PrairieColors.danger, size: 18),
+                        label: Text(recordingBusyId == next!.id ? 'Scheduling…' : 'Record next'),
+                      ),
+                  ],
+                );
+                if (wide) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      channelCol,
-                      const SizedBox(height: 12),
-                      programsCol,
-                      const SizedBox(height: 12),
+                      Expanded(flex: 9, child: channelCol),
+                      const SizedBox(width: 16),
+                      Expanded(flex: 14, child: programsCol),
+                      const SizedBox(width: 16),
                       actions,
                     ],
                   );
-                },
-              ),
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    channelCol,
+                    const SizedBox(height: 12),
+                    programsCol,
+                    const SizedBox(height: 12),
+                    actions,
+                  ],
+                );
+              },
             ),
           ),
         );
@@ -655,9 +649,12 @@ class _GuideRowShellState extends State<_GuideRowShell> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         decoration: BoxDecoration(
+          color: _focused ? PrairieColors.focusFill : PrairieColors.bgElevated.withValues(alpha: 0.72),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: _focused ? 3 : 1),
-          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
+          border: Border.all(
+            color: _focused ? PrairieColors.ink.withValues(alpha: 0.85) : Colors.transparent,
+            width: _focused ? 3 : 1,
+          ),
         ),
         child: widget.child,
       ),
@@ -739,43 +736,37 @@ class _RecordingsList extends StatelessWidget {
   Widget _recordingTile(LiveTvRecording recording, {required bool canCancel, bool isFirst = false}) {
     final busy = cancelBusyId == recording.id;
     final shell = _GuideRowShell(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: PrairieColors.bgElevated.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        recording.title.trim().isNotEmpty ? recording.title : 'Untitled recording',
-                        style: const TextStyle(fontFamily: 'Fraunces', fontSize: 17, color: PrairieColors.ink),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_formatGuideClock(recording.start)} – ${_formatGuideClock(recording.stop)}',
-                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                      ),
-                      Text(_recordingStatusLabel(recording.status), style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
-                    ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recording.title.trim().isNotEmpty ? recording.title : 'Untitled recording',
+                    style: const TextStyle(fontFamily: 'Fraunces', fontSize: 17, color: PrairieColors.ink),
                   ),
-                ),
-                if (canCancel)
-                  TextButton.icon(
-                    onPressed: busy ? null : () => onCancel(recording),
-                    icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
-                    label: Text(busy ? 'Cancelling…' : 'Cancel', style: const TextStyle(color: PrairieColors.muted)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_formatGuideClock(recording.start)} – ${_formatGuideClock(recording.stop)}',
+                    style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
                   ),
-              ],
+                  Text(_recordingStatusLabel(recording.status), style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
+                ],
+              ),
             ),
-          ),
+            if (canCancel)
+              TextButton.icon(
+                onPressed: busy ? null : () => onCancel(recording),
+                icon: Icon(busy ? Icons.hourglass_top : Icons.close, color: PrairieColors.muted),
+                label: Text(busy ? 'Cancelling…' : 'Cancel', style: const TextStyle(color: PrairieColors.muted)),
+              ),
+          ],
         ),
-      );
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: isFirst ? _EscapeUpToTab(target: escapeUpFocusNode, child: shell) : shell,
