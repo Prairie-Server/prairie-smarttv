@@ -148,10 +148,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
-      final deviceCaps = applyAv1AdvertiseOverrides(
-        ref.read(tvCapabilitiesProvider),
-        forceAv1: settings.forceAv1,
-        disableAv1: settings.disableAv1,
+      final deviceCaps = applyAudioChannelOverride(
+        applyAv1AdvertiseOverrides(
+          ref.read(tvCapabilitiesProvider),
+          forceAv1: settings.forceAv1,
+          disableAv1: settings.disableAv1,
+        ),
+        is8KPanel: settings.is8KPanel,
       );
 
       final position = _position.inMilliseconds / 1000.0;
@@ -305,10 +308,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
-      final deviceCaps = applyAv1AdvertiseOverrides(
-        ref.read(tvCapabilitiesProvider),
-        forceAv1: settings.forceAv1,
-        disableAv1: settings.disableAv1,
+      final deviceCaps = applyAudioChannelOverride(
+        applyAv1AdvertiseOverrides(
+          ref.read(tvCapabilitiesProvider),
+          forceAv1: settings.forceAv1,
+          disableAv1: settings.disableAv1,
+        ),
+        is8KPanel: settings.is8KPanel,
       );
       final forcedMethod = switch (resolveForcedPlayMethod(settings)) {
         'direct' => PlayMethod.direct,
@@ -329,6 +335,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           containers: deviceCaps.containers,
           maxResolution: deviceCaps.maxResolution,
           hdr: deviceCaps.hdr,
+          maxAudioChannels: deviceCaps.maxAudioChannels,
         ),
       );
       startedSessionId = started.sessionId;

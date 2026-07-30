@@ -17,6 +17,7 @@ class PlaybackSettings {
     this.subtitleAppearance = const SubtitleAppearance(),
     this.preferredSubtitleLanguage = '',
     this.enableDiagnosticsBeacon = false,
+    this.is8KPanel = false,
   });
 
   final bool forceDirectPlay;
@@ -29,6 +30,14 @@ class PlaybackSettings {
   /// on every playback session, which is extra network traffic in normal use
   /// and only useful while actively diagnosing a TV playback issue.
   final bool enableDiagnosticsBeacon;
+  /// Manual override: no reliable way to detect an 8K panel from this native
+  /// Flutter/Tizen app (Samsung's model-tier info lives behind `webapis.*`,
+  /// a Web-API-only surface — same reachability wall as everything else in
+  /// this file). Off by default (conservative: 5.1/6-channel audio cap);
+  /// Samsung's 8K-tier spec documents 7.1/8-channel support that 4K-tier
+  /// TVs don't have, so this directly raises [maxAudioChannels] sent to
+  /// `/playback/start` — see `TvPlaybackCapabilities.maxAudioChannels`.
+  final bool is8KPanel;
 
   PlaybackSettings copyWith({
     bool? forceDirectPlay,
@@ -38,6 +47,7 @@ class PlaybackSettings {
     SubtitleAppearance? subtitleAppearance,
     String? preferredSubtitleLanguage,
     bool? enableDiagnosticsBeacon,
+    bool? is8KPanel,
   }) {
     var next = PlaybackSettings(
       forceDirectPlay: forceDirectPlay ?? this.forceDirectPlay,
@@ -47,6 +57,7 @@ class PlaybackSettings {
       subtitleAppearance: subtitleAppearance ?? this.subtitleAppearance,
       preferredSubtitleLanguage: preferredSubtitleLanguage ?? this.preferredSubtitleLanguage,
       enableDiagnosticsBeacon: enableDiagnosticsBeacon ?? this.enableDiagnosticsBeacon,
+      is8KPanel: is8KPanel ?? this.is8KPanel,
     );
     // Direct wins when both are somehow set; disable wins over force av1.
     if (next.forceDirectPlay && next.forceTranscode) next = next.copyWithRaw(forceTranscode: false);
@@ -62,6 +73,7 @@ class PlaybackSettings {
     subtitleAppearance: subtitleAppearance,
     preferredSubtitleLanguage: preferredSubtitleLanguage,
     enableDiagnosticsBeacon: enableDiagnosticsBeacon,
+    is8KPanel: is8KPanel,
   );
 
   Map<String, dynamic> toJson() => {
@@ -72,6 +84,7 @@ class PlaybackSettings {
     'subtitleAppearance': subtitleAppearance.toJson(),
     'preferredSubtitleLanguage': preferredSubtitleLanguage,
     'enableDiagnosticsBeacon': enableDiagnosticsBeacon,
+    'is8KPanel': is8KPanel,
   };
 
   factory PlaybackSettings.fromJson(Map<String, dynamic>? json) {
@@ -84,6 +97,7 @@ class PlaybackSettings {
       subtitleAppearance: SubtitleAppearance.fromJson(json['subtitleAppearance'] as Map<String, dynamic>?),
       preferredSubtitleLanguage: (json['preferredSubtitleLanguage'] as String?)?.trim().toLowerCase() ?? '',
       enableDiagnosticsBeacon: json['enableDiagnosticsBeacon'] == true,
+      is8KPanel: json['is8KPanel'] == true,
     );
   }
 }

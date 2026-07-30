@@ -10,6 +10,7 @@ class TvPlaybackCapabilities {
     required this.containers,
     required this.maxResolution,
     required this.hdr,
+    this.maxAudioChannels = 6,
   });
 
   final List<String> codecsVideo;
@@ -17,6 +18,12 @@ class TvPlaybackCapabilities {
   final List<String> containers;
   final String maxResolution;
   final bool hdr;
+  /// Caps transcode-audio channel layout. `6` (5.1) is Samsung's documented
+  /// ceiling for non-8K TVs — Moonfin's own reference client caps identically
+  /// (`caps.uhd8K ? 8 : 6`); 7.1/8-channel is only documented on the 8K tier.
+  /// We have no 8K-panel detection yet (see [buildTizenCapabilities]), so
+  /// this is always `6` until that's wired up.
+  final int maxAudioChannels;
 
   /// Conservative defaults used when no platform probe has run yet (unknown
   /// platform, or webOS — see [buildWebosCapabilities], which has no
@@ -41,6 +48,7 @@ class TvPlaybackCapabilities {
     List<String>? containers,
     String? maxResolution,
     bool? hdr,
+    int? maxAudioChannels,
   }) =>
       TvPlaybackCapabilities(
         codecsVideo: codecsVideo ?? this.codecsVideo,
@@ -48,6 +56,7 @@ class TvPlaybackCapabilities {
         containers: containers ?? this.containers,
         maxResolution: maxResolution ?? this.maxResolution,
         hdr: hdr ?? this.hdr,
+        maxAudioChannels: maxAudioChannels ?? this.maxAudioChannels,
       );
 }
 
@@ -107,6 +116,12 @@ TvPlaybackCapabilities applyAv1AdvertiseOverrides(
   return caps.copyWith(codecsVideo: codecs);
 }
 
+/// Apply the user's manual 8K-panel override (`PlaybackSettings.is8KPanel`)
+/// to the base capabilities' audio channel cap — see [buildTizenCapabilities]
+/// `uhd8K` doc for why this can't be auto-detected instead.
+TvPlaybackCapabilities applyAudioChannelOverride(TvPlaybackCapabilities caps, {bool is8KPanel = false}) =>
+    is8KPanel ? caps.copyWith(maxAudioChannels: 8) : caps;
+
 /// Build capabilities from a known Tizen platform version + panel size.
 ///
 /// Native Flutter has no HTML5 `canPlayType` / `webapis.systeminfo` bridge, so
@@ -119,6 +134,12 @@ TvPlaybackCapabilities applyAv1AdvertiseOverrides(
 /// forced 1080p HEVC encodes of native 4K. When [uhd] is null and AVPlay is
 /// available on Tizen ≥ 5.0, we assume UHD (same class of panels that ship
 /// with AVPlay apps).
+///
+/// [uhd8K] has no auto-detection at all (unlike [uhd], there's no screen-size
+/// heuristic for it — an 8K Neo QLED and a 4K QLED can report the same
+/// Flutter surface size) — it's a manual signal from
+/// `PlaybackSettings.is8KPanel`, since Samsung's model-tier info lives behind
+/// `webapis.*` (Web API only, unreachable here). Defaults to `false`.
 TvPlaybackCapabilities buildTizenCapabilities({
   required double tizenVersion,
   required int screenWidth,
@@ -126,6 +147,7 @@ TvPlaybackCapabilities buildTizenCapabilities({
   bool avplayAvailable = true,
   bool? systemInfoAv1,
   bool? uhd,
+  bool uhd8K = false,
 }) {
   final codecsVideo = <String>['h264'];
   final major = tizenVersion.floor();
@@ -156,6 +178,10 @@ TvPlaybackCapabilities buildTizenCapabilities({
     containers: containers,
     maxResolution: maxRes,
     hdr: major >= 4,
+    // Samsung's 8K-tier spec documents 7.1/8-channel audio; the general
+    // (4K Premium/Standard/Basic) tier docs cap at 5.1/6, per Moonfin's
+    // identical uhd8K ? 8 : 6 split.
+    maxAudioChannels: uhd8K ? 8 : 6,
   );
 }
 

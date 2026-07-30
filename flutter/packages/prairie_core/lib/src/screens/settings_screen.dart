@@ -237,6 +237,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         value: _settings.disableAv1,
         onChanged: (v) => _updateSettings((s) => s.copyWith(disableAv1: v, forceAv1: v ? false : s.forceAv1)),
       ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: '8K panel',
+        hint: 'This TV is an 8K model — raises the audio channel cap sent to the server from 5.1/6 to 7.1/8. No way to detect this automatically.',
+        value: _settings.is8KPanel,
+        onChanged: (v) => _updateSettings((s) => s.copyWith(is8KPanel: v)),
+      ),
       const SizedBox(height: 24),
       const Text('Diagnostics', style: TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600)),
       const SizedBox(height: 10),
@@ -251,7 +258,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Audio / display',
-        hint: '${_codecListLabel(caps.codecsAudio)} · Max ${caps.maxResolution} · HDR ${caps.hdr ? 'Yes' : 'No'}',
+        hint: '${_codecListLabel(caps.codecsAudio)} (max ${caps.maxAudioChannels}ch) · Max ${caps.maxResolution} · HDR ${caps.hdr ? 'Yes' : 'No'}',
       ),
       const SizedBox(height: 10),
       _SettingsToggleRow(

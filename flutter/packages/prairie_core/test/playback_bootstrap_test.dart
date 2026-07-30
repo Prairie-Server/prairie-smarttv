@@ -147,12 +147,48 @@ void main() {
     });
   });
 
+  group('maxAudioChannels', () {
+    test('buildTizenCapabilities defaults to 6 (5.1) without the 8K override', () {
+      final caps = buildTizenCapabilities(tizenVersion: 6.5, screenWidth: 3840, screenHeight: 2160);
+      expect(caps.maxAudioChannels, 6);
+    });
+
+    test('buildTizenCapabilities reports 8 when uhd8K is passed', () {
+      final caps = buildTizenCapabilities(tizenVersion: 6.5, screenWidth: 7680, screenHeight: 4320, uhd8K: true);
+      expect(caps.maxAudioChannels, 8);
+    });
+
+    test('applyAudioChannelOverride raises the cap to 8 when is8KPanel is set', () {
+      final caps = applyAudioChannelOverride(TvPlaybackCapabilities.defaults, is8KPanel: true);
+      expect(caps.maxAudioChannels, 8);
+    });
+
+    test('applyAudioChannelOverride leaves the cap alone when is8KPanel is false', () {
+      final caps = applyAudioChannelOverride(TvPlaybackCapabilities.defaults);
+      expect(caps.maxAudioChannels, TvPlaybackCapabilities.defaults.maxAudioChannels);
+    });
+  });
+
   group('needsHlsBootstrap', () {
     test('true for transcode only — remux and direct both play stream_url progressive', () {
       expect(needsHlsBootstrap('direct'), isFalse);
       expect(needsHlsBootstrap('remux'), isFalse);
       expect(needsHlsBootstrap('TRANSCODE'), isTrue);
       expect(needsHlsBootstrap(null), isFalse);
+    });
+  });
+
+  group('buildPlaybackStartRequest', () {
+    test('sends max_audio_channels, defaulting to 6', () {
+      final body = buildPlaybackStartRequest(const BuildPlaybackStartInput(fileId: 1, profileId: 'p1'));
+      expect(body['max_audio_channels'], 6);
+    });
+
+    test('sends the caller-provided max_audio_channels', () {
+      final body = buildPlaybackStartRequest(
+        const BuildPlaybackStartInput(fileId: 1, profileId: 'p1', maxAudioChannels: 8),
+      );
+      expect(body['max_audio_channels'], 8);
     });
   });
 

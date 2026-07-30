@@ -13,6 +13,7 @@ class TvCapabilities {
   static const containers = ['mp4', 'mpegts', 'hls', 'mkv'];
   static const maxResolution = '2160p';
   static const hdr = true;
+  static const maxAudioChannels = 6;
 }
 
 /// Mirrors `BuildPlaybackStartInput` from src/api/playback.ts.
@@ -27,6 +28,7 @@ class BuildPlaybackStartInput {
     this.containers,
     this.maxResolution,
     this.hdr,
+    this.maxAudioChannels,
   });
 
   final int fileId;
@@ -38,6 +40,7 @@ class BuildPlaybackStartInput {
   final List<String>? containers;
   final String? maxResolution;
   final bool? hdr;
+  final int? maxAudioChannels;
 }
 
 /// Mirrors `buildPlaybackStartRequest`: builds the POST /api/v1/playback/start
@@ -51,6 +54,7 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
     'containers': input.containers ?? TvCapabilities.containers,
     'max_resolution': input.maxResolution ?? TvCapabilities.maxResolution,
     'hdr': input.hdr ?? TvCapabilities.hdr,
+    'max_audio_channels': input.maxAudioChannels ?? TvCapabilities.maxAudioChannels,
     'supports_bitmap_subtitle_burn_in': false,
   };
 
