@@ -26,7 +26,12 @@ class SubtitleTrackChoice {
 abstract class VideoBackend {
   /// Creates the native player for [url] without waiting for prepare.
   /// After this returns, [buildSurface] is valid to mount.
-  void attach(String url, {String? maxResolution});
+  ///
+  /// [contentAspectRatio] is the server-probed display aspect (width÷height)
+  /// used as a backstop when the native player reports a 0×0 video size for
+  /// hole-punched playback — without it, the plane would fill the screen and
+  /// stretch non-16:9 content.
+  void attach(String url, {String? maxResolution, double? contentAspectRatio});
 
   /// Completes once the first frame/duration is known. Must only be called
   /// after [attach], ideally after [buildSurface] has been laid out for at

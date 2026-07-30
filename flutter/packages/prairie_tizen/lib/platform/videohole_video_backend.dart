@@ -59,6 +59,8 @@ class VideoholeVideoBackend implements VideoBackend {
   bool _initialized = false;
   bool? _lastBuffering;
   bool? _lastIsInitialized;
+  double? _contentAspectRatio;
+  bool _loggedVideoSize = false;
 
   /// Redacts query-param values (session tokens) before a URL hits the log.
   static String _redactQuery(String url) {
@@ -77,7 +79,7 @@ class VideoholeVideoBackend implements VideoBackend {
       message.replaceAllMapped(_embeddedUrlPattern, (m) => _redactQuery(m.group(0)!));
 
   @override
-  void attach(String url, {String? maxResolution}) {
+  void attach(String url, {String? maxResolution, double? contentAspectRatio}) {
     // video_player_videohole has no equivalent to AVPlay's fixed-max-resolution
     // knob (no DRM/ABR-cap parameter on the plugin's network constructor), so
     // maxResolution is accepted for interface parity but unused here.
@@ -87,6 +89,8 @@ class VideoholeVideoBackend implements VideoBackend {
     debugPrint('prairie.videohole: attach url=${_redactQuery(url)} transport=$transport');
     reportDiagnostic('attach:backend=videohole:transport=$transport');
 
+    _contentAspectRatio = contentAspectRatio != null && contentAspectRatio > 0 ? contentAspectRatio : null;
+    _loggedVideoSize = false;
     _controller = controller;
     controller.addListener(_onControllerUpdate);
   }
@@ -213,11 +217,51 @@ class VideoholeVideoBackend implements VideoBackend {
   Widget buildSurface() {
     final controller = _controller;
     if (controller == null) return const SizedBox.shrink();
-    // Full-bleed surface: the native player's video plane needs a non-zero
-    // laid-out size before prepare completes, same constraint as AVPlay's
-    // hole-punch. AspectRatio(1.0) before init shrinks the hole and leaves
-    // the Flutter loading spinner covering a blank plane.
-    return SizedBox.expand(child: VideoPlayer(controller));
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final size = value.size;
+        // Full-bleed until prepare reports a real size: the native plane needs a
+        // non-zero laid-out rect before then, and a constrained box would shrink
+        // the hole to nothing (see history above).
+        if (!value.isInitialized) {
+          return SizedBox.expand(child: VideoPlayer(controller));
+        }
+
+        final nativeRatio = size.width > 0 && size.height > 0 ? size.width / size.height : null;
+        if (!_loggedVideoSize) {
+          _loggedVideoSize = true;
+          final fallback = _contentAspectRatio;
+          final path = nativeRatio != null
+              ? 'native'
+              : (fallback != null ? 'fallback' : 'fullbleed');
+          debugPrint(
+            'prairie.videohole: videoSize=${size.width}x${size.height} '
+            'fallback=${fallback ?? 'none'} path=$path',
+          );
+          reportDiagnostic(
+            'vsize=${size.width.round()}x${size.height.round()}:'
+            'fb=${fallback?.toStringAsFixed(3) ?? 'none'}:path=$path',
+          );
+        }
+
+        // Native size preferred; server-probed VideoTrack dimensions backstop
+        // Tizen players that leave value.size at 0×0 for hole-punched playback.
+        final aspect = nativeRatio ?? _contentAspectRatio;
+        if (aspect == null || aspect <= 0) {
+          return SizedBox.expand(child: VideoPlayer(controller));
+        }
+        // Constraining the widget rect is what produces the bars: the native
+        // plane is positioned to this rect, and the surrounding area stays
+        // Flutter-painted black from the Scaffold.
+        return Center(
+          child: AspectRatio(
+            aspectRatio: aspect,
+            child: VideoPlayer(controller),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -226,6 +270,8 @@ class VideoholeVideoBackend implements VideoBackend {
     final controller = _controller;
     _controller = null;
     _initialized = false;
+    _contentAspectRatio = null;
+    _loggedVideoSize = false;
     if (controller != null) {
       controller.removeListener(_onControllerUpdate);
       await controller.dispose();

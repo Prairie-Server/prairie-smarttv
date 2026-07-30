@@ -18,6 +18,62 @@ class AudioTrackInfo {
   );
 }
 
+/// Minimal video-track fields from the watch/detail `video_tracks` payload —
+/// enough for native-plane aspect layout when the player reports 0×0 size.
+class VideoTrackInfo {
+  const VideoTrackInfo({this.width, this.height, this.aspectRatio});
+
+  final int? width;
+  final int? height;
+  /// Probed display ratio string, e.g. `"16:9"`, `"2.39:1"`, `"239:100"`.
+  final String? aspectRatio;
+
+  factory VideoTrackInfo.fromJson(Map<String, dynamic> json) => VideoTrackInfo(
+    width: json['width'] as int?,
+    height: json['height'] as int?,
+    aspectRatio: json['aspect_ratio'] as String?,
+  );
+}
+
+/// Display aspect from a probed [VideoTrackInfo], preferring pixel dimensions
+/// (exact) over the rounded `aspect_ratio` string.
+double? contentAspectRatioFromVideoTrack(VideoTrackInfo? track) {
+  if (track == null) return null;
+  final w = track.width;
+  final h = track.height;
+  if (w != null && h != null && w > 0 && h > 0) return w / h;
+  return parseAspectRatioString(track.aspectRatio);
+}
+
+/// Parses `"16:9"` / `"2.39:1"` / `"239:100"` into a width÷height double.
+double? parseAspectRatioString(String? raw) {
+  if (raw == null) return null;
+  final s = raw.trim();
+  if (s.isEmpty) return null;
+  final parts = s.split(':');
+  if (parts.length != 2) return null;
+  final num = double.tryParse(parts[0].trim());
+  final den = double.tryParse(parts[1].trim());
+  if (num == null || den == null || den == 0) return null;
+  final ratio = num / den;
+  return ratio > 0 ? ratio : null;
+}
+
+/// First video track's aspect for [fileId], or null when unknown.
+double? contentAspectRatioForFile(WatchDetail? detail, int fileId) {
+  if (detail == null) return null;
+  FileVersion? version;
+  for (final v in detail.versions) {
+    if (v.fileId == fileId) {
+      version = v;
+      break;
+    }
+  }
+  version ??= detail.versions.isNotEmpty ? detail.versions.first : null;
+  if (version == null || version.videoTracks.isEmpty) return null;
+  return contentAspectRatioFromVideoTrack(version.videoTracks.first);
+}
+
 /// Mirrors `SubtitleTrackInfo` from src/api/watch.ts.
 class SubtitleTrackInfo {
   const SubtitleTrackInfo({
@@ -61,6 +117,7 @@ class FileVersion {
     this.codecAudio,
     this.container,
     this.duration,
+    this.videoTracks = const [],
     this.audioTracks = const [],
     this.subtitleTracks = const [],
   });
@@ -71,6 +128,7 @@ class FileVersion {
   final String? codecAudio;
   final String? container;
   final int? duration;
+  final List<VideoTrackInfo> videoTracks;
   final List<AudioTrackInfo> audioTracks;
   final List<SubtitleTrackInfo> subtitleTracks;
 
@@ -81,6 +139,7 @@ class FileVersion {
     codecAudio: json['codec_audio'] as String?,
     container: json['container'] as String?,
     duration: json['duration'] as int?,
+    videoTracks: (json['video_tracks'] as List<dynamic>? ?? []).map((j) => VideoTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     audioTracks: (json['audio_tracks'] as List<dynamic>? ?? []).map((j) => AudioTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     subtitleTracks: (json['subtitle_tracks'] as List<dynamic>? ?? []).map((j) => SubtitleTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
   );
