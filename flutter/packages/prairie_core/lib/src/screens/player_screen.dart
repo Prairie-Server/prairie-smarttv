@@ -247,6 +247,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   List<QualityOption> get _qualityOptions {
+    // Every option but `original` requires an actual re-encode, which goes
+    // out over HLS — unsupported on this backend (see
+    // TvPlaybackCapabilities.supportsHlsTranscode). `original` alone is a
+    // no-op (you're already playing it), so there's nothing meaningful left
+    // to offer; hide the menu entirely rather than show a picker with one
+    // inert entry.
+    if (!ref.read(tvCapabilitiesProvider).supportsHlsTranscode) return const [];
     final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
     final nativeHeight = _sourceHeightForFile(widget.launch.watch, fileId);
     return buildQualityOptions(
@@ -293,8 +300,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       context: context,
       backgroundColor: PrairieColors.bgElevated,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: ListView(
+          shrinkWrap: true,
           children: [
             if (_qualityError != null)
               Padding(

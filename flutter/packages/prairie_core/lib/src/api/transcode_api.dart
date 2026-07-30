@@ -237,13 +237,14 @@ Future<PreparedPlayback> preparePlayableSession(
     ),
   );
 
-  final streamUrl = buildStreamUrl(session.serverUrl, transcode.manifestUrl, session.accessToken);
+  final manifestUrl = buildStreamUrl(session.serverUrl, transcode.manifestUrl, session.accessToken);
 
+  HlsManifestProbeResult probe;
   try {
     // Prefer an explicit probe Dio; otherwise reuse ApiClient's Dio so HLS
     // readiness polls advertise Prairie-SmartTV/… instead of Dart/x.y.
-    await waitForHlsManifest(
-      streamUrl,
+    probe = await waitForHlsManifest(
+      manifestUrl,
       dio: probeDio ?? client.dio,
       timeout: transcodeStartupTimeout,
       requireSegment: true,
@@ -262,7 +263,12 @@ Future<PreparedPlayback> preparePlayableSession(
 
   return PreparedPlayback(
     session: next,
-    streamUrl: streamUrl,
+    // Attach the URL the probe actually confirmed ready, not the raw
+    // manifestUrl — see [HlsManifestProbeResult.resolvedUrl]: when
+    // manifestUrl is a master playlist, video_player_videohole cannot
+    // resolve it into a variant itself and fails with "Not supported
+    // format" if handed it directly.
+    streamUrl: probe.resolvedUrl,
     playerStartSeconds: playerStartSeconds,
     streamOriginSeconds: streamOriginSeconds,
   );

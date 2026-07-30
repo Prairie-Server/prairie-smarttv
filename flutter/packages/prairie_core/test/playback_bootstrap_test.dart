@@ -54,6 +54,11 @@ void main() {
       expect(caps.containers, contains('mkv'));
     });
 
+    test('never advertises HLS transcode support — video_player_videohole cannot play it', () {
+      final caps = buildTizenCapabilities(tizenVersion: 6.5, screenWidth: 3840, screenHeight: 2160);
+      expect(caps.supportsHlsTranscode, isFalse);
+    });
+
     test('codecsAudio matches probeAudioCodecSupport regardless of Tizen version', () {
       final caps2022 = buildTizenCapabilities(tizenVersion: 6.5, screenWidth: 3840, screenHeight: 2160);
       expect(caps2022.codecsAudio, containsAll(['aac', 'ac3', 'eac3']));

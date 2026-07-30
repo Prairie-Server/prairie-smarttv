@@ -83,7 +83,18 @@ bool isHlsUrl(String url) {
 /// the first media segment is fetchable. Opening AVPlay/PlusPlayer on a
 /// not-yet-written remux/transcode pipeline fails with
 /// "streaming connection timed out".
-Future<bool> waitForHlsManifest(
+///
+/// [HlsManifestProbeResult.resolvedUrl] is the URL actually confirmed ready —
+/// the followed *media* playlist when [url] was a master, or [url] itself
+/// otherwise. Callers must attach the player to this, not the original
+/// [url]: `video_player_videohole` (unlike AVPlay/PlusPlayer) does not
+/// resolve an HLS master playlist into a variant on its own — handed one
+/// directly, it fails immediately with "Not supported format" (confirmed
+/// on-device), even though this probe's own master-following already found
+/// and verified the correct variant.
+typedef HlsManifestProbeResult = ({bool ready, String resolvedUrl});
+
+Future<HlsManifestProbeResult> waitForHlsManifest(
   String url, {
   Dio? dio,
   Duration interval = const Duration(milliseconds: 500),
@@ -102,7 +113,7 @@ Future<bool> waitForHlsManifest(
   var followedVariant = false;
 
   while (DateTime.now().isBefore(deadline)) {
-    if (cancelToken?.isCancelled == true) return false;
+    if (cancelToken?.isCancelled == true) return (ready: false, resolvedUrl: probeUrl);
 
     if (onKeepAlive != null && !DateTime.now().isBefore(nextKeepAliveAt)) {
       try {
@@ -110,12 +121,12 @@ Future<bool> waitForHlsManifest(
       } catch (_) {
         // Keepalive is best-effort.
       }
-      if (cancelToken?.isCancelled == true) return false;
+      if (cancelToken?.isCancelled == true) return (ready: false, resolvedUrl: probeUrl);
       nextKeepAliveAt = DateTime.now().add(keepAliveEvery);
     }
 
     final body = await _fetchText(client, probeUrl, cancelToken);
-    if (cancelToken?.isCancelled == true) return false;
+    if (cancelToken?.isCancelled == true) return (ready: false, resolvedUrl: probeUrl);
 
     if (body != null && body.contains('#EXTM3U')) {
       // A master playlist carries #EXT-X-STREAM-INF and a variant URI, never
@@ -130,31 +141,31 @@ Future<bool> waitForHlsManifest(
         }
         // No URI line yet — fall through to the normal backoff and retry.
       }
-      if (!requireSegment) return true;
+      if (!requireSegment) return (ready: true, resolvedUrl: probeUrl);
       if (body.contains('#EXTINF')) {
         final initUrl = initSegmentUrl(probeUrl, body);
         final initReady = initUrl == null || await _segmentReady(client, initUrl, cancelToken);
-        if (cancelToken?.isCancelled == true) return false;
+        if (cancelToken?.isCancelled == true) return (ready: false, resolvedUrl: probeUrl);
 
         if (initReady) {
           final segmentUrl = firstUriLine(probeUrl, body);
           if (segmentUrl != null) {
             final ready = await _segmentReady(client, segmentUrl, cancelToken);
-            if (cancelToken?.isCancelled == true) return false;
-            if (ready) return true;
+            if (cancelToken?.isCancelled == true) return (ready: false, resolvedUrl: probeUrl);
+            if (ready) return (ready: true, resolvedUrl: probeUrl);
           }
         }
       }
     }
 
     await Future<void>.delayed(delay);
-    if (cancelToken?.isCancelled == true) return false;
+    if (cancelToken?.isCancelled == true) return (ready: false, resolvedUrl: probeUrl);
     final nextMs = (delay.inMilliseconds * 1.5).round().clamp(interval.inMilliseconds, 4000);
     delay = Duration(milliseconds: nextMs);
   }
 
   if (throwOnTimeout) throw TranscodeStartupTimeoutError();
-  return false;
+  return (ready: false, resolvedUrl: probeUrl);
 }
 
 /// Fetches [url] for the readiness poll. Returns the body when ready, `null`

@@ -11,6 +11,7 @@ class TvPlaybackCapabilities {
     required this.maxResolution,
     required this.hdr,
     this.maxAudioChannels = 6,
+    this.supportsHlsTranscode = true,
   });
 
   final List<String> codecsVideo;
@@ -24,6 +25,25 @@ class TvPlaybackCapabilities {
   /// We have no 8K-panel detection yet (see [buildTizenCapabilities]), so
   /// this is always `6` until that's wired up.
   final int maxAudioChannels;
+  /// Whether the active video backend can play an HLS stream at all —
+  /// distinct from [codecsVideo]/[containers] (which describe the *source*
+  /// codec/container, not the transport used to deliver a genuine re-encode).
+  /// `false` on Tizen's `video_player_videohole`: confirmed on-device that
+  /// its native `player_set_uri` + `player_prepare_async` call has no
+  /// HLS-specific setup at all (no streaming-type/format hint is ever read —
+  /// `formatHint` is parsed into the plugin's native message struct but never
+  /// consumed) and fails every attempt with `PLAYER_ERROR_NOT_SUPPORTED_FORMAT`
+  /// ("Not supported format"), master-playlist-resolution and format-hint
+  /// bugs notwithstanding — this is a basic `player.h` capability gap, not a
+  /// client bug. Real HLS/DASH needs the PlusPlayer/ESPlusPlayer pipeline,
+  /// which this app deliberately avoids (its GStreamer HLS demux hard-links
+  /// `libclearkey.so.0`, blocked by Smack on a retail cert — the reason this
+  /// backend was chosen over AVPlay in the first place). Any quality-menu
+  /// option that requires an actual re-encode (anything but `original`) goes
+  /// through `/playback/transcode/start`'s HLS transport, so the quality
+  /// picker must not offer those options when this is `false` — see
+  /// `_qualityOptions` in `player_screen.dart`.
+  final bool supportsHlsTranscode;
 
   /// Conservative defaults used when no platform probe has run yet (unknown
   /// platform, or webOS — see [buildWebosCapabilities], which has no
@@ -49,6 +69,7 @@ class TvPlaybackCapabilities {
     String? maxResolution,
     bool? hdr,
     int? maxAudioChannels,
+    bool? supportsHlsTranscode,
   }) =>
       TvPlaybackCapabilities(
         codecsVideo: codecsVideo ?? this.codecsVideo,
@@ -57,6 +78,7 @@ class TvPlaybackCapabilities {
         maxResolution: maxResolution ?? this.maxResolution,
         hdr: hdr ?? this.hdr,
         maxAudioChannels: maxAudioChannels ?? this.maxAudioChannels,
+        supportsHlsTranscode: supportsHlsTranscode ?? this.supportsHlsTranscode,
       );
 }
 
@@ -189,6 +211,9 @@ TvPlaybackCapabilities buildTizenCapabilities({
     // (4K Premium/Standard/Basic) tier docs cap at 5.1/6, per Moonfin's
     // identical uhd8K ? 8 : 6 split.
     maxAudioChannels: uhd8K ? 8 : 6,
+    // See TvPlaybackCapabilities.supportsHlsTranscode doc — confirmed
+    // on-device that video_player_videohole cannot play HLS at all.
+    supportsHlsTranscode: false,
   );
 }
 

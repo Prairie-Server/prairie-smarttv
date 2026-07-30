@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:video_player_videohole/video_player.dart';
+import 'package:video_player_videohole/video_player_platform_interface.dart' show VideoFormat;
 
 /// [VideoBackend] implementation over `video_player_videohole`, wrapping
 /// Tizen's system Media Player (`player.h` capi / MMPlayer).
@@ -84,9 +85,17 @@ class VideoholeVideoBackend implements VideoBackend {
     // video_player_videohole has no equivalent to AVPlay's fixed-max-resolution
     // knob (no DRM/ABR-cap parameter on the plugin's network constructor), so
     // maxResolution is accepted for interface parity but unused here.
-    final controller = VideoPlayerController.network(url);
+    final hls = isHlsUrl(url);
+    // Without an explicit hint, the native player is left to auto-detect the
+    // container from the URL/response — confirmed on-device: an HLS media
+    // playlist attached with no hint fails immediately with "Not supported
+    // format" (zero buffering, never initializes), even though the same
+    // plugin's formatHint is genuinely threaded to the native side (it's not
+    // the no-op the upstream video_player doc comment claims — that comment
+    // is stale, inherited from the non-Tizen fork this package started from).
+    final controller = VideoPlayerController.network(url, formatHint: hls ? VideoFormat.hls : null);
 
-    final transport = isHlsUrl(url) ? 'hls' : 'progressive';
+    final transport = hls ? 'hls' : 'progressive';
     debugPrint('prairie.videohole: attach url=${_redactQuery(url)} transport=$transport');
     reportDiagnostic('attach:backend=videohole:transport=$transport');
 

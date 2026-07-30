@@ -103,14 +103,14 @@ void main() {
       });
       final dio = Dio()..httpClientAdapter = adapter;
 
-      final ready = await waitForHlsManifest(
+      final result = await waitForHlsManifest(
         'https://prairie.example/master.m3u8',
         dio: dio,
         timeout: const Duration(seconds: 5),
         interval: const Duration(milliseconds: 10),
       );
 
-      expect(ready, isTrue);
+      expect(result.ready, isTrue);
     });
   });
 
@@ -129,14 +129,15 @@ void main() {
       });
       final dio = Dio()..httpClientAdapter = adapter;
 
-      final ready = await waitForHlsManifest(
+      final result = await waitForHlsManifest(
         'https://prairie.example/master.m3u8',
         dio: dio,
         timeout: const Duration(seconds: 5),
         interval: const Duration(milliseconds: 10),
       );
 
-      expect(ready, isTrue);
+      expect(result.ready, isTrue);
+      expect(result.resolvedUrl, contains('media.m3u8'));
       expect(adapter.requests.any((r) => r.path.contains('media.m3u8')), isTrue);
     });
 
