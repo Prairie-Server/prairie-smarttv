@@ -137,17 +137,53 @@ class _LibraryBrowseScreenState extends ConsumerState<LibraryBrowseScreen> {
                 for (var i = 0; i < _sortOptions.length; i++)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: ChoiceChip(label: Text(_sortOptions[i].label), selected: _sortIndex == i, onSelected: (_) => _reload(sortIndex: i)),
+                    child: ChoiceChip(
+                      label: Text(
+                        _sortOptions[i].label,
+                        style: TextStyle(
+                          color: _sortIndex == i ? Colors.white : PrairieColors.ink,
+                          fontWeight: _sortIndex == i ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      selected: _sortIndex == i,
+                      selectedColor: PrairieColors.amber,
+                      backgroundColor: PrairieColors.bgElevated.withValues(alpha: 0.72),
+                      onSelected: (_) => _reload(sortIndex: i),
+                    ),
                   ),
                 if (_showTypeFilter) ...[
                   const VerticalDivider(),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: ChoiceChip(label: const Text('Series'), selected: _typeFilter == 'series', onSelected: (_) => _reload(typeFilter: 'series')),
+                    child: ChoiceChip(
+                      label: Text(
+                        'Series',
+                        style: TextStyle(
+                          color: _typeFilter == 'series' ? Colors.white : PrairieColors.ink,
+                          fontWeight: _typeFilter == 'series' ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      selected: _typeFilter == 'series',
+                      selectedColor: PrairieColors.amber,
+                      backgroundColor: PrairieColors.bgElevated.withValues(alpha: 0.72),
+                      onSelected: (_) => _reload(typeFilter: 'series'),
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: ChoiceChip(label: const Text('Episodes'), selected: _typeFilter == 'episode', onSelected: (_) => _reload(typeFilter: 'episode')),
+                    child: ChoiceChip(
+                      label: Text(
+                        'Episodes',
+                        style: TextStyle(
+                          color: _typeFilter == 'episode' ? Colors.white : PrairieColors.ink,
+                          fontWeight: _typeFilter == 'episode' ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      selected: _typeFilter == 'episode',
+                      selectedColor: PrairieColors.amber,
+                      backgroundColor: PrairieColors.bgElevated.withValues(alpha: 0.72),
+                      onSelected: (_) => _reload(typeFilter: 'episode'),
+                    ),
                   ),
                 ],
               ],

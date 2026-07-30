@@ -492,8 +492,16 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                     children: [
                       for (final version in detail.versions)
                         ChoiceChip(
-                          label: Text(_versionLabel(version)),
+                          label: Text(
+                            _versionLabel(version),
+                            style: TextStyle(
+                              color: _selectedFileId == version.fileId ? Colors.white : PrairieColors.ink,
+                              fontWeight: _selectedFileId == version.fileId ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
                           selected: _selectedFileId == version.fileId,
+                          selectedColor: PrairieColors.amber,
+                          backgroundColor: PrairieColors.bgElevated.withValues(alpha: 0.72),
                           onSelected: (_) => setState(() {
                             _selectedFileId = version.fileId;
                             // Track lists differ per file version.
@@ -1080,7 +1088,7 @@ class _SeasonChipState extends State<_SeasonChip> {
     final selected = widget.selected;
     return Material(
       color: focused
-          ? PrairieColors.amberDeep
+          ? PrairieColors.focusFill
           : selected
               ? PrairieColors.amber.withValues(alpha: 0.18)
               : PrairieColors.bgElevated.withValues(alpha: 0.72),
@@ -1105,7 +1113,6 @@ class _SeasonChipState extends State<_SeasonChip> {
                       : PrairieColors.ink.withValues(alpha: 0.12),
               width: focused ? 3 : selected ? 2 : 1,
             ),
-            boxShadow: focused ? prairieFocusRing(width: 2) : null,
           ),
           child: Text(
             widget.label,

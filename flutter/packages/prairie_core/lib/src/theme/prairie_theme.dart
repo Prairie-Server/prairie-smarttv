@@ -173,6 +173,9 @@ ThemeData buildPrairieTheme() {
     surface: PrairieColors.bg,
     primary: PrairieColors.amber,
     secondary: PrairieColors.amberDeep,
+    onSecondary: Colors.white,
+    secondaryContainer: PrairieColors.amber,
+    onSecondaryContainer: Colors.white,
     onSurface: PrairieColors.ink,
     error: PrairieColors.danger,
   );
@@ -218,10 +221,16 @@ ThemeData buildPrairieTheme() {
       ),
     ),
     chipTheme: base.chipTheme.copyWith(
-      selectedColor: PrairieColors.amber.withValues(alpha: 0.22),
-      checkmarkColor: PrairieColors.amber,
-      labelStyle: const TextStyle(color: PrairieColors.ink),
-      secondaryLabelStyle: const TextStyle(color: PrairieColors.bg),
+      // Solid amber so selected chips carry white label text clearly on TV.
+      selectedColor: PrairieColors.amber,
+      backgroundColor: PrairieColors.bgElevated.withValues(alpha: 0.72),
+      checkmarkColor: Colors.white,
+      // Unselected
+      labelStyle: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w500),
+      // Selected — Material ChoiceChip uses secondaryLabelStyle for the
+      // selected label; previously this was PrairieColors.bg (near-black),
+      // which made library/collection sort chips unreadable.
+      secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
       side: BorderSide(color: PrairieColors.ink.withValues(alpha: 0.16)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
@@ -235,8 +244,10 @@ ThemeData buildPrairieTheme() {
       ),
     ),
     listTileTheme: const ListTileThemeData(textColor: PrairieColors.ink, iconColor: PrairieColors.muted),
-    focusColor: PrairieColors.ring,
-    highlightColor: PrairieColors.amber.withValues(alpha: 0.14),
-    hoverColor: PrairieColors.amber.withValues(alpha: 0.1),
+    // Prefer the darker settings focus fill for Material overlays too —
+    // bright ring-as-fill washes out text on solid controls.
+    focusColor: PrairieColors.focusFill.withValues(alpha: 0.85),
+    highlightColor: PrairieColors.focusFill.withValues(alpha: 0.35),
+    hoverColor: PrairieColors.focusFill.withValues(alpha: 0.2),
   );
 }
