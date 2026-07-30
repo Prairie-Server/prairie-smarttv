@@ -6,13 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum _Section { servers, playback, display, subtitles, about }
 
-/// Focus fill for settings rows/sidebar — noticeably darker than
-/// [PrairieColors.amberDeep] (which is a fairly bright orange used elsewhere
-/// as a border/accent color, not meant to fill a large area behind text) and
-/// used without the amber glow shadow, which stacked with the fill to read
-/// as "obnoxiously bright."
-const _focusFill = Color(0xFF6C4D19);
-
 /// Common ISO 639-2/B subtitle language codes for the preferred-language picker.
 const _subtitleLanguageChoices = <(String code, String label)>[
   ('', 'Off / none'),
@@ -496,7 +489,7 @@ class _SettingsRowState extends State<_SettingsRow> {
       // Solid (not washed-out) when focused — light ink text needs a genuinely
       // dark-orange fill behind it, not a pale amber tint, to stay readable.
       color: focused
-          ? _focusFill
+          ? PrairieColors.focusFill
           : widget.isOn
               ? PrairieColors.amber.withValues(alpha: 0.14)
               : PrairieColors.bgElevated.withValues(alpha: 0.72),
@@ -506,6 +499,11 @@ class _SettingsRowState extends State<_SettingsRow> {
         onTap: widget.onTap ?? () {},
         borderRadius: BorderRadius.circular(14),
         onFocusChange: (value) => setState(() => _focused = value),
+        // The theme's default focusColor (light amber) would otherwise wash
+        // out over PrairieColors.focusFill — _OpacitySettingsRow uses a bare Focus (no
+        // InkWell) so it never had this overlay, which is why it alone read
+        // as "clean" dark orange.
+        focusColor: Colors.transparent,
         splashFactory: NoSplash.splashFactory,
         highlightColor: Colors.transparent,
         child: AnimatedContainer(
@@ -646,7 +644,7 @@ class _OpacitySettingsRowState extends State<_OpacitySettingsRow> {
         constraints: const BoxConstraints(minHeight: 68),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
-          color: focused ? _focusFill : PrairieColors.bgElevated.withValues(alpha: 0.72),
+          color: focused ? PrairieColors.focusFill : PrairieColors.bgElevated.withValues(alpha: 0.72),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: focused ? PrairieColors.ink.withValues(alpha: 0.85) : PrairieColors.ink.withValues(alpha: 0.1),
@@ -725,7 +723,7 @@ class _SectionButtonState extends State<_SectionButton> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: focused
-            ? _focusFill
+            ? PrairieColors.focusFill
             : selected
                 ? PrairieColors.amber.withValues(alpha: 0.14)
                 : Colors.transparent,
@@ -735,6 +733,9 @@ class _SectionButtonState extends State<_SectionButton> {
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(12),
           onFocusChange: (value) => setState(() => _focused = value),
+          // See _SettingsRow: without this, the theme's default light-amber
+          // focusColor washes out over PrairieColors.focusFill.
+          focusColor: Colors.transparent,
           splashFactory: NoSplash.splashFactory,
           highlightColor: Colors.transparent,
           child: AnimatedContainer(

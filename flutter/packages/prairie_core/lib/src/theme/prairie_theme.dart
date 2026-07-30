@@ -20,6 +20,13 @@ class PrairieColors {
   static const muted = Color(0xFF9AA3B2);
   static const danger = Color(0xFFE07070);
   static const ring = Color(0xFFF0C574);
+
+  /// Focus fill for solid TV focus chrome (Settings rows/sidebar, the
+  /// profile/settings menu) — noticeably darker than [amberDeep] (a fairly
+  /// bright orange used elsewhere as a border/accent, not meant to fill a
+  /// large area behind text) and used without the amber glow shadow, which
+  /// stacked with the fill to read as "obnoxiously bright."
+  static const focusFill = Color(0xFF6C4D19);
 }
 
 /// Ported 1:1 from `body`'s layered background in src/styles.css: a dark

@@ -18,6 +18,7 @@ class PosterCard extends StatefulWidget {
     this.favorite = false,
     this.progress,
     this.autofocus = false,
+    this.focusNode,
   });
 
   final String title;
@@ -29,6 +30,7 @@ class PosterCard extends StatefulWidget {
   final bool favorite;
   final double? progress;
   final bool autofocus;
+  final FocusNode? focusNode;
 
   @override
   State<PosterCard> createState() => _PosterCardState();
@@ -43,6 +45,7 @@ class _PosterCardState extends State<PosterCard> {
       width: 140,
       child: InkWell(
         onTap: widget.onTap,
+        focusNode: widget.focusNode,
         autofocus: widget.autofocus,
         onFocusChange: (value) => setState(() => _focused = value),
         borderRadius: BorderRadius.circular(16),

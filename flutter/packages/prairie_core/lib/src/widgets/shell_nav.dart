@@ -74,7 +74,17 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                     ],
                   ),
                 ),
-                PopupMenuButton<_ProfileAction>(
+                // Themed locally so the captured ambient Theme (PopupMenuButton
+                // reapplies it around the overlay route) gives each item's
+                // InkWell the same solid dark-orange TV focus fill as
+                // Settings' rows/sidebar, instead of the app-wide light-amber
+                // focusColor/highlightColor washing out on D-pad focus.
+                Theme(
+                  data: Theme.of(context).copyWith(
+                    focusColor: PrairieColors.focusFill,
+                    highlightColor: PrairieColors.focusFill,
+                  ),
+                  child: PopupMenuButton<_ProfileAction>(
                   tooltip: profileName != null ? 'Profile menu for $profileName' : 'Profile menu',
                   offset: const Offset(0, 12),
                   color: const Color(0xFA10151C),
@@ -127,6 +137,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                               child: Icon(Icons.person, size: 18, color: PrairieColors.muted),
                             ),
                     ),
+                  ),
                   ),
                 ),
                 const SizedBox(width: 16),

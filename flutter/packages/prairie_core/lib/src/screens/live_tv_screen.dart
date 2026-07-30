@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
@@ -24,11 +25,24 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   String? _recordingBusyId;
   String? _cancelBusyId;
   _LiveTvTab _tab = _LiveTvTab.guide;
+  /// One node per tab pill — the first row of each list explicitly hands
+  /// Up off to its tab's node (see [_EscapeUpToTab]) rather than trusting
+  /// geometric directional search, which on real hardware skips right past
+  /// this pill row and lands on the ShellNav header above it instead.
+  final _tabFocusNodes = {for (final t in _LiveTvTab.values) t: FocusNode()};
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    for (final node in _tabFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -141,6 +155,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                     child: _LiveTvTabPill(
                       label: label,
                       active: _tab == tab,
+                      focusNode: _tabFocusNodes[tab],
                       onTap: () {
                         setState(() => _tab = tab);
                         if (tab == _LiveTvTab.recordings) _loadRecordings();
@@ -169,6 +184,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       index: index,
                       serverUrl: serverUrl,
                       onTune: _tune,
+                      escapeUpFocusNode: _tabFocusNodes[_tab],
                     ),
                     _LiveTvTab.guide => _GuideList(
                       channels: _channels,
@@ -177,11 +193,13 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       recordingBusyId: _recordingBusyId,
                       onTune: _tune,
                       onRecord: _record,
+                      escapeUpFocusNode: _tabFocusNodes[_tab],
                     ),
                     _LiveTvTab.recordings => _RecordingsList(
                       recordings: _recordings,
                       cancelBusyId: _cancelBusyId,
                       onCancel: _cancelRecording,
+                      escapeUpFocusNode: _tabFocusNodes[_tab],
                     ),
                   },
           ),
@@ -194,11 +212,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
 /// Channels/Guide/Recordings tab selector — replaces the default
 /// `SegmentedButton`, whose focus indicator was nearly invisible on TV.
 class _LiveTvTabPill extends StatefulWidget {
-  const _LiveTvTabPill({required this.label, required this.active, required this.onTap});
+  const _LiveTvTabPill({required this.label, required this.active, required this.onTap, this.focusNode});
 
   final String label;
   final bool active;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
   @override
   State<_LiveTvTabPill> createState() => _LiveTvTabPillState();
@@ -219,6 +238,7 @@ class _LiveTvTabPillState extends State<_LiveTvTabPill> {
               : PrairieColors.bgElevated.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
+        focusNode: widget.focusNode,
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(999),
         onFocusChange: (value) => setState(() => _focused = value),
@@ -298,18 +318,51 @@ class _ChannelBadge extends StatelessWidget {
   }
 }
 
+/// Always redirects D-pad Up straight to [target] — used only on a list's
+/// first row. Geometric directional search (`focusInDirection`) technically
+/// "succeeds" from there, but on real hardware it lands past the tab pill
+/// row entirely and on the ShellNav header above it, so this bypasses that
+/// search rather than merely falling back when it fails (contrast with
+/// `MediaRow`'s `escapeUpFocusNode`, whose search genuinely fails to find
+/// anything and only then needs a fallback).
+class _EscapeUpToTab extends StatelessWidget {
+  const _EscapeUpToTab({required this.child, required this.target});
+
+  final Widget child;
+  final FocusNode? target;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = this.target;
+    if (target == null) return child;
+    return Focus(
+      canRequestFocus: false,
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.arrowUp) {
+          return KeyEventResult.ignored;
+        }
+        target.requestFocus();
+        return KeyEventResult.handled;
+      },
+      child: child,
+    );
+  }
+}
+
 class _ChannelsList extends StatelessWidget {
   const _ChannelsList({
     required this.channels,
     required this.index,
     required this.serverUrl,
     required this.onTune,
+    this.escapeUpFocusNode,
   });
 
   final List<LiveTvChannel> channels;
   final Map<String, List<LiveTvProgram>> index;
   final String serverUrl;
   final void Function(LiveTvChannel) onTune;
+  final FocusNode? escapeUpFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -324,40 +377,41 @@ class _ChannelsList extends StatelessWidget {
         final current = currentProgramInIndex(index, channel.id);
         final number = channel.numberOverride ?? channel.number;
         final hdSuffix = channel.hd ? ' HD' : '';
+        final row = _FocusableRow(
+          autofocus: i == 0,
+          onTap: () => onTune(channel),
+          child: Row(
+            children: [
+              _ChannelBadge(channel: channel, serverUrl: serverUrl),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 60,
+                child: Text(
+                  '$number$hdSuffix',
+                  style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      _programLine(current, 'No guide data'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: _FocusableRow(
-            autofocus: i == 0,
-            onTap: () => onTune(channel),
-            child: Row(
-              children: [
-                _ChannelBadge(channel: channel, serverUrl: serverUrl),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 60,
-                  child: Text(
-                    '$number$hdSuffix',
-                    style: const TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(channelDisplayLabel(channel), style: const TextStyle(color: PrairieColors.ink, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text(
-                        _programLine(current, 'No guide data'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: i == 0 ? _EscapeUpToTab(target: escapeUpFocusNode, child: row) : row,
         );
       },
     );
@@ -420,6 +474,7 @@ class _GuideList extends StatelessWidget {
     required this.recordingBusyId,
     required this.onTune,
     required this.onRecord,
+    this.escapeUpFocusNode,
   });
 
   final List<LiveTvChannel> channels;
@@ -428,6 +483,7 @@ class _GuideList extends StatelessWidget {
   final String? recordingBusyId;
   final void Function(LiveTvChannel) onTune;
   final void Function(LiveTvProgram) onRecord;
+  final FocusNode? escapeUpFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -444,13 +500,7 @@ class _GuideList extends StatelessWidget {
         final number = channel.numberOverride ?? channel.number;
         final hdSuffix = channel.hd ? ' HD' : '';
         final recordingBusy = recordingBusyId != null;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          // A guide row has several separately-focusable action buttons
-          // rather than one tappable target, so the row border highlights
-          // whenever any of them has focus (mirrors the TS `:focus-within`
-          // rule) instead of relying on the buttons' own focus rings alone.
-          child: _GuideRowShell(
+        final shell = _GuideRowShell(
             child: DecoratedBox(
             decoration: BoxDecoration(
               color: PrairieColors.bgElevated.withValues(alpha: 0.72),
@@ -545,8 +595,11 @@ class _GuideList extends StatelessWidget {
                 },
               ),
             ),
-            ),
           ),
+        );
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: i == 0 ? _EscapeUpToTab(target: escapeUpFocusNode, child: shell) : shell,
         );
       },
     );
@@ -636,11 +689,13 @@ class _RecordingsList extends StatelessWidget {
     required this.recordings,
     required this.cancelBusyId,
     required this.onCancel,
+    this.escapeUpFocusNode,
   });
 
   final List<LiveTvRecording> recordings;
   final String? cancelBusyId;
   final void Function(LiveTvRecording) onCancel;
+  final FocusNode? escapeUpFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -659,29 +714,28 @@ class _RecordingsList extends StatelessWidget {
       }
     }
 
+    final firstOverall = active.isNotEmpty ? active.first : (history.isNotEmpty ? history.first : null);
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       children: [
         if (active.isNotEmpty) ...[
           const Text('Scheduled & in progress', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
           const SizedBox(height: 8),
-          for (final recording in active) _recordingTile(recording, canCancel: true),
+          for (final recording in active) _recordingTile(recording, canCancel: true, isFirst: identical(recording, firstOverall)),
         ],
         if (history.isNotEmpty) ...[
           const SizedBox(height: 16),
           const Text('History', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
           const SizedBox(height: 8),
-          for (final recording in history) _recordingTile(recording, canCancel: false),
+          for (final recording in history) _recordingTile(recording, canCancel: false, isFirst: identical(recording, firstOverall)),
         ],
       ],
     );
   }
 
-  Widget _recordingTile(LiveTvRecording recording, {required bool canCancel}) {
+  Widget _recordingTile(LiveTvRecording recording, {required bool canCancel, bool isFirst = false}) {
     final busy = cancelBusyId == recording.id;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: _GuideRowShell(
+    final shell = _GuideRowShell(
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: PrairieColors.bgElevated.withValues(alpha: 0.72),
@@ -718,7 +772,10 @@ class _RecordingsList extends StatelessWidget {
             ),
           ),
         ),
-      ),
+      );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: isFirst ? _EscapeUpToTab(target: escapeUpFocusNode, child: shell) : shell,
     );
   }
 

@@ -18,10 +18,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   late Future<List<HomeSection>> _sections;
   int _heroIndex = 0;
   final _heroFocus = FocusNode(debugLabel: 'home-hero-play');
+  final _firstItemFocus = FocusNode(debugLabel: 'home-first-item');
   /// `autofocus:true` races the async section load — by the time the hero
-  /// mounts, initial D-pad presses may already have landed on the top nav.
-  /// Explicitly requesting focus once, like ItemDetail's hero pin, closes
-  /// that race.
+  /// (or, when there's no hero, the first row's first card) mounts, initial
+  /// D-pad presses may already have landed on the top nav. Explicitly
+  /// requesting focus once, like ItemDetail's hero pin, closes that race.
   bool _initialFocusApplied = false;
 
   @override
@@ -34,14 +35,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _heroFocus.dispose();
+    _firstItemFocus.dispose();
     super.dispose();
   }
 
-  void _applyInitialFocus() {
+  void _applyInitialFocus(FocusNode node) {
     if (_initialFocusApplied) return;
     _initialFocusApplied = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _heroFocus.requestFocus();
+      if (mounted) node.requestFocus();
     });
   }
 
@@ -77,7 +79,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             return const Center(child: Text('Nothing here yet', style: TextStyle(color: PrairieColors.muted)));
           }
           final heroAutofocus = featured != null;
-          if (heroAutofocus) _applyInitialFocus();
+          final firstRowAutofocus = !heroAutofocus && rows.isNotEmpty;
+          final firstOnNowAutofocus = !heroAutofocus && rows.isEmpty && onNow.isNotEmpty;
+          if (heroAutofocus) {
+            _applyInitialFocus(_heroFocus);
+          } else if (firstRowAutofocus || firstOnNowAutofocus) {
+            _applyInitialFocus(_firstItemFocus);
+          }
           return ListView(
             padding: EdgeInsets.zero,
             children: [
@@ -111,7 +119,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         itemBuilder: (context, entry, index) => _OnNowCard(
                           entry: entry,
                           serverUrl: session.serverUrl,
-                          autofocus: !heroAutofocus && rows.isEmpty && index == 0,
+                          autofocus: firstOnNowAutofocus && index == 0,
+                          focusNode: firstOnNowAutofocus && index == 0 ? _firstItemFocus : null,
                           onTap: () => ref
                               .read(routeProvider.notifier)
                               .go(LiveTvPlayerRoute(channel: entry.channel, back: const HomeRoute())),
@@ -155,6 +164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             progress: item.progress,
             watched: item.userState?.played ?? false,
             autofocus: autofocusFirst && index == 0,
+            focusNode: autofocusFirst && index == 0 ? _firstItemFocus : null,
             onTap: () => _openItem(item),
           );
         },
@@ -172,6 +182,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         favorite: item.userState?.isFavorite ?? false,
         progress: item.progress,
         autofocus: autofocusFirst && index == 0,
+        focusNode: autofocusFirst && index == 0 ? _firstItemFocus : null,
         onTap: () => _openItem(item),
       ),
     );
@@ -179,12 +190,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 class _OnNowCard extends StatefulWidget {
-  const _OnNowCard({required this.entry, required this.serverUrl, required this.onTap, this.autofocus = false});
+  const _OnNowCard({
+    required this.entry,
+    required this.serverUrl,
+    required this.onTap,
+    this.autofocus = false,
+    this.focusNode,
+  });
 
   final OnNowEntry entry;
   final String serverUrl;
   final VoidCallback onTap;
   final bool autofocus;
+  final FocusNode? focusNode;
 
   @override
   State<_OnNowCard> createState() => _OnNowCardState();
@@ -203,6 +221,7 @@ class _OnNowCardState extends State<_OnNowCard> {
     final posterUrl = program?.imageUrl;
     return InkWell(
       onTap: widget.onTap,
+      focusNode: widget.focusNode,
       autofocus: widget.autofocus,
       borderRadius: BorderRadius.circular(14),
       onFocusChange: (value) => setState(() => _focused = value),

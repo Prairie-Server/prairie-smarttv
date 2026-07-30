@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:prairie_core/src/lib/detail_metadata.dart';
@@ -50,6 +51,12 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   final _scrollController = ScrollController();
   final _playFocus = FocusNode(debugLabel: 'detail-play');
   final _backFocus = FocusNode(debugLabel: 'detail-back');
+  /// Target for Down out of the season chips — directional focus search
+  /// technically "succeeds" from the chip row, but on real hardware it skips
+  /// straight past the episode grid and lands on the Cast row below it, so
+  /// this bypasses that search rather than trusting it (same problem class
+  /// as MediaRow's escapeUpFocusNode, just the opposite direction).
+  final _firstEpisodeFocus = FocusNode(debugLabel: 'detail-first-episode');
   /// Once the viewer moves focus/scroll themselves, stop re-pinning to Play.
   bool _userMovedFocus = false;
   bool _pinScheduled = false;
@@ -75,6 +82,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     _scrollController.dispose();
     _playFocus.dispose();
     _backFocus.dispose();
+    _firstEpisodeFocus.dispose();
     super.dispose();
   }
 
@@ -519,16 +527,27 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                 ),
                 if (isSeries && _seasons.isNotEmpty) ...[
                   const SizedBox(height: 32),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final season in _seasons)
-                        _SeasonChip(
-                          label: season.title ?? 'Season ${season.seasonNumber}',
-                          selected: _seasonNumber == season.seasonNumber,
-                          onTap: () => _selectSeason(season.seasonNumber),
-                        ),
-                    ],
+                  Focus(
+                    canRequestFocus: false,
+                    onKeyEvent: (node, event) {
+                      if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.arrowDown) {
+                        return KeyEventResult.ignored;
+                      }
+                      if (_episodes.isEmpty) return KeyEventResult.ignored;
+                      _firstEpisodeFocus.requestFocus();
+                      return KeyEventResult.handled;
+                    },
+                    child: Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final season in _seasons)
+                          _SeasonChip(
+                            label: season.title ?? 'Season ${season.seasonNumber}',
+                            selected: _seasonNumber == season.seasonNumber,
+                            onTap: () => _selectSeason(season.seasonNumber),
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   if (_episodesLoading)
@@ -541,7 +560,12 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                       itemCount: _episodes.length,
                       itemBuilder: (context, index) {
                         final episode = _episodes[index];
-                        return _EpisodeCard(episode: episode, serverUrl: session.serverUrl, onTap: () => _play(episode.contentId, episode.title));
+                        return _EpisodeCard(
+                          episode: episode,
+                          serverUrl: session.serverUrl,
+                          focusNode: index == 0 ? _firstEpisodeFocus : null,
+                          onTap: () => _play(episode.contentId, episode.title),
+                        );
                       },
                     ),
                 ],
@@ -930,7 +954,14 @@ class _Hero extends StatelessWidget {
                                                   ListTile(
                                                     title: Text(
                                                       formatSubtitleLabel(
-                                                        language: humanizeTrackLanguage(track.language!),
+                                                        // Some tracks (e.g. PGS) carry a codec name where the
+                                                        // language belongs — humanizeTrackLanguage maps that to
+                                                        // 'Unknown', which reads worse than just falling through
+                                                        // to formatSubtitleLabel's own generic 'Subtitle' default.
+                                                        language: switch (humanizeTrackLanguage(track.language!)) {
+                                                          'Unknown' => null,
+                                                          final label => label,
+                                                        },
                                                         label: track.title,
                                                         hearingImpaired: track.hearingImpaired,
                                                         forced: track.forced,
@@ -1150,11 +1181,12 @@ class _CastMemberCardState extends State<_CastMemberCard> {
 }
 
 class _EpisodeCard extends StatefulWidget {
-  const _EpisodeCard({required this.episode, required this.serverUrl, required this.onTap});
+  const _EpisodeCard({required this.episode, required this.serverUrl, required this.onTap, this.focusNode});
 
   final EpisodeSummary episode;
   final String serverUrl;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
   @override
   State<_EpisodeCard> createState() => _EpisodeCardState();
@@ -1168,6 +1200,7 @@ class _EpisodeCardState extends State<_EpisodeCard> {
     final episode = widget.episode;
     final still = episode.stillUrl ?? episode.posterUrl;
     return InkWell(
+      focusNode: widget.focusNode,
       onTap: widget.onTap,
       borderRadius: BorderRadius.circular(12),
       onFocusChange: (value) => setState(() => _focused = value),

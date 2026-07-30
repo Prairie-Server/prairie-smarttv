@@ -14,6 +14,7 @@ class LandscapeCard extends StatefulWidget {
     this.progress,
     this.watched = false,
     this.autofocus = false,
+    this.focusNode,
   });
 
   final String title;
@@ -25,6 +26,7 @@ class LandscapeCard extends StatefulWidget {
   final bool watched;
   final VoidCallback onTap;
   final bool autofocus;
+  final FocusNode? focusNode;
 
   @override
   State<LandscapeCard> createState() => _LandscapeCardState();
@@ -39,6 +41,7 @@ class _LandscapeCardState extends State<LandscapeCard> {
       width: 280,
       child: InkWell(
         onTap: widget.onTap,
+        focusNode: widget.focusNode,
         autofocus: widget.autofocus,
         onFocusChange: (value) => setState(() => _focused = value),
         borderRadius: BorderRadius.circular(14),
