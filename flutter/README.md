@@ -137,11 +137,13 @@ with `ares-package` / install with `ares-install` as usual for native Flutter we
 Studio + TV Extension on `ubuntu-latest`; the webOS NDK + `flutter-webos` on `ubuntu-24.04-arm`,
 since the community NDK toolchain it uses only ships Linux ARM64 builds — see the workflow file's
 header comment for the full rationale and the couple of specifics that are best-effort pending a
-first real run). No self-hosted runner or persistent infra required. A signed Tizen build needs
-`TIZEN_AUTHOR_CERT_P12_BASE64` / `TIZEN_AUTHOR_CERT_PASSWORD` / `TIZEN_DIST_CERT_P12_BASE64` /
-`TIZEN_DIST_CERT_PASSWORD` set as repo secrets (Settings > Secrets and variables > Actions) —
-base64-encode your `author.p12`/`distributor.p12` locally and paste only into the GitHub secret
-box, never elsewhere.
+first real run). No self-hosted runner, no persistent infra, and **no signing secrets** — the
+Tizen build is signed with Tizen Studio's own bundled sample author/distributor certificates
+(the same pair every SDK install ships, for exactly this purpose), which makes the `.tpk`
+installable in TV Developer Mode but not Store-signed. Re-sign with your real distributor
+certificate at actual install time — e.g. [Apps2Samsung](https://apps2samsung.com/) accepts a
+"bring your own package" `.tpk`/`.wgt` and re-signs it during install — or Tizen Studio's
+Certificate Manager.
 
 | Workflow | Does |
 | --- | --- |

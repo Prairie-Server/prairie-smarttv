@@ -24,16 +24,24 @@ name: Release packages
 #     toolchain currently only publishes Linux ARM64 builds (not x86_64),
 #     which is why package-webos runs on ubuntu-24.04-arm instead of
 #     ubuntu-latest.
+#   - Tizen: the sample distributor cert's default password
+#     (tizenpkcs12passfordsigner) is well-documented across the Tizen dev
+#     community and confirmed locally. The sample *author* cert reusing that
+#     same password is my best guess, not independently confirmed — if
+#     "Register signing profile" fails on a password mismatch, check
+#     tools/certificate-generator/certificates/developer/conf.ini in the
+#     Tizen Studio install for the real one.
 #
-# Required repo secrets for a signed Tizen build (Settings > Secrets and
-# variables > Actions):
-#   TIZEN_AUTHOR_CERT_P12_BASE64   — base64 of your author.p12
-#   TIZEN_AUTHOR_CERT_PASSWORD
-#   TIZEN_DIST_CERT_P12_BASE64     — base64 of your distributor.p12
-#   TIZEN_DIST_CERT_PASSWORD
-# Encode locally with (never paste the raw file or password anywhere but
-# the GitHub secret box itself):
-#   base64 -w0 author.p12
+# No signing secrets needed. package-tizen registers Tizen Studio's own
+# bundled sample author/distributor certificates — every SDK install ships
+# tools/tizen-core/certificates/{author/default_author_signer.p12,
+# distributor/tizen_public_signer.p12} for exactly this purpose (offline,
+# publicly documented default passwords, not tied to any identity). That
+# produces an installable-in-Developer-Mode .tpk, not a Store-signed one —
+# by design: the intent is to hand the .tpk to something like Apps2Samsung
+# (apps2samsung.com) or Tizen Studio's own Certificate Manager, either of
+# which re-signs with *your* real distributor certificate at actual install
+# time. CI never touches your personal signing identity at all.
 #
 # Local builds:
 #   bash flutter/scripts/build-tizen.sh
@@ -200,31 +208,25 @@ jobs:
         run: flutter-tizen doctor -v
 
       - name: Register signing profile
-        env:
-          AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_CERT_P12_BASE64 }}
-          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_CERT_PASSWORD }}
-          DIST_P12_BASE64: ${{ secrets.TIZEN_DIST_CERT_P12_BASE64 }}
-          DIST_PASSWORD: ${{ secrets.TIZEN_DIST_CERT_PASSWORD }}
+        # Tizen Studio's own bundled sample certs — same pair every SDK
+        # install ships, publicly documented default passwords, no Samsung
+        # account or repo secrets involved. This makes the .tpk installable
+        # in TV Developer Mode, not Store-signed; re-sign with your real
+        # distributor certificate at install time (Apps2Samsung, or Tizen
+        # Studio's Certificate Manager) — see this file's header comment.
         run: |
           set -euo pipefail
-          if [[ -z "${AUTHOR_P12_BASE64:-}" ]]; then
-            echo "::error::TIZEN_AUTHOR_CERT_P12_BASE64 secret not set — see this file's header comment."
-            exit 1
-          fi
-          mkdir -p "$HOME/.tizen-certs"
-          echo "$AUTHOR_P12_BASE64" | base64 -d > "$HOME/.tizen-certs/author.p12"
-          echo "$DIST_P12_BASE64" | base64 -d > "$HOME/.tizen-certs/distributor.p12"
-          tizen security-profiles add -n Prairie_Server \
-            -a "$HOME/.tizen-certs/author.p12" -p "$AUTHOR_PASSWORD" \
-            --dist "$HOME/.tizen-certs/distributor.p12" --dist-password "$DIST_PASSWORD" \
+          CERT_DIR="$HOME/tizen-studio/tools/tizen-core/certificates"
+          tizen security-profiles add -n CI_Sideload \
+            -a "$CERT_DIR/author/default_author_signer.p12" -p tizenpkcs12passfordsigner \
+            --dist "$CERT_DIR/distributor/tizen_public_signer.p12" --dist-password tizenpkcs12passfordsigner \
             --active
-          rm -rf "$HOME/.tizen-certs"
 
       - name: Build
         run: |
           bash flutter/scripts/build-tizen.sh \
             --package-version "${{ needs.flutter-verify.outputs.version }}" \
-            --security-profile Prairie_Server
+            --security-profile CI_Sideload
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
