@@ -1,5 +1,20 @@
 name: Unit Tests
 
+# Flutter-first CI for the Smart TV rewrite. The TypeScript app under src/ is
+# being retired — do not reintroduce npm lint/build as the primary gate.
+#
+# What this workflow can do on stock ubuntu-latest:
+#   - flutter analyze + flutter test for prairie_core (fully supported)
+#   - flutter analyze for prairie_tizen Dart sources (pub.dev plugins resolve;
+#     native Tizen linking is NOT exercised here)
+#   - flutter analyze for the webOS pub workspace (prairie_webos +
+#     flutter_secure_storage_webos) when git plugin deps resolve (Dart only;
+#     flutter-webos / NDK are NOT installed on runners)
+#
+# What it cannot do without custom runners / cached SDKs:
+#   - flutter-tizen build tpk
+#   - flutter-webos build / ares-package
+
 on:
   push:
     branches:
@@ -15,56 +30,88 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-tests:
-    name: Unit tests
+  flutter-core:
+    name: prairie_core analyze + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter/packages/prairie_core
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+      - name: Test
+        run: flutter test
+
+  flutter-tizen-analyze:
+    name: prairie_tizen analyze (Dart only)
+    runs-on: ubuntu-latest
+    needs: flutter-core
+    defaults:
+      run:
+        working-directory: flutter/packages/prairie_tizen
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      # video_player_avplay / *_tizen plugins resolve from pub.dev; analyze
+      # covers Dart. Native Tizen compile requires flutter-tizen (not here).
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+  flutter-webos-analyze:
+    name: prairie_webos analyze (Dart only)
+    runs-on: ubuntu-latest
+    needs: flutter-core
+    defaults:
+      run:
+        # Workspace root for prairie_webos + flutter_secure_storage_webos.
+        working-directory: flutter/packages
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # lg-flutter-webos plugins are git deps; needs network egress to GitHub.
+      # Resolves the pub workspace (prairie_webos + flutter_secure_storage_webos).
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos prairie_webos flutter_secure_storage_webos
+
+  package-layout:
+    name: Validate 4-variant package layout
     runs-on: ubuntu-latest
     steps:
       - name: Check out sources
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Oxfmt check
-        run: npm run format:check
-
-      - name: Typecheck and unit tests with coverage
-        run: |
-          npm run typecheck
-          npm run build
-          # Vitest thresholds: 95% stmts/branches/funcs/lines on logic modules
-          # (src/api/**, src/storage/**, playback settings, player selection,
-          # platform detect). See vite.config.ts coverage.include.
-          npm run test:coverage
-
-      - name: Packaging stubs (Tizen / webOS)
-        run: |
-          npm run build:tizen
-          npm run build:tizen-legacy
-          npm run build:webos
-          test -f dist-tizen/config.xml
-          test -f dist-tizen-legacy/config.xml
-          grep -q 'package="PrairieApp"' dist-tizen/config.xml
-          grep -q 'package="PrairieLte"' dist-tizen-legacy/config.xml
-          grep -q 'required_version="2.3"' dist-tizen/config.xml
-          grep -q 'required_version="2.3"' dist-tizen-legacy/config.xml
-          test -f dist-webos/appinfo.json
-
-      - name: Upload coverage summary
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: smarttv-coverage
-          path: coverage
-          if-no-files-found: ignore
+      - name: Validate manifests + stamp scripts
+        run: bash flutter/scripts/validate-package-layout.sh

@@ -1,0 +1,24 @@
+{
+    "id": "org.prairieserver.prairie",
+    "version": "1.0.0",
+    "vendor": "Prairie",
+    "type": "native",
+    "main": "prairie_webos",
+    "title": "Prairie",
+    "icon": "icon.png",
+    "iconColor": "#e0a84a",
+    "largeIcon": "largeIcon.png",
+    "handlesRelaunch": true,
+    "visible": true,
+    "defaultWindowType": "card",
+    "trustLevel": "default",
+    "locationHint": "none",
+    "noSplashOnLaunch": true,
+    "spinnerOnLaunch": false,
+    "transparent": true,
+    "uiRevision": 2,
+    "requiredACG": [
+        "systemconfig.query",
+        "securitykey.operation"
+    ]
+}

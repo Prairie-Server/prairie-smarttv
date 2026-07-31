@@ -1,148 +1,41 @@
 # Prairie Smart TV
 
-AGPL-3.0 client for **Samsung Tizen** and **LG webOS**, sharing one remote-first web app that talks to Prairie over native `/api/v1` (not Jellyfin-primary).
+AGPL-3.0 Flutter clients for **Samsung Tizen** and **LG webOS**, talking to Prairie over native `/api/v1`.
 
 **Version 1.0.0** — Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`, Sora + Fraunces.
 
-## What’s included
-
-- Connect to a Prairie server (username / password)
-- **Multi-server registry** + **LAN discovery** (`GET /api/v1/health` probes; Scan LAN / Servers)
-- **Profile picker** (PIN unlock when required)
-- **Home** rails from `/api/v1/home/sections` with featured hero + continue-watching landscape cards
-- **Libraries** browse with sort chips, series/episode filter, pagination (`/api/v1/user/libraries` + `/api/v1/catalog`)
-- **Collections** (library + personal) → catalog items with load-more
-- **Search** across the catalog with pagination
-- **Live TV** channel list + guide now/next (tab hidden when the server has no enabled channels)
-- **Item detail** matching web/TV actions: Play/Resume/Start Over, favorite/watchlist/watched, seasons/episodes, cast, extras, details, more-like-this → Play via `/api/v1/watch/{id}` + `/playback/start` with resume
-- **Player chrome**: play/pause, ±15s seek, scrub readout, progress reporting, audio track switch, client-side subtitle selection, session teardown on exit
-- **Subtitle styling**: size, text/background color, opacity, box/shadow/outline, position (persisted; HTML5/webOS `::cue` + Tizen AVPlay overlay)
-- **Upgrade-safe persistence**: session + settings + last server URL survive app updates; logout keeps last server URL for reconnect
-- Container/index D-pad focus with virtualized home rails and poster grids
-- Automatic performance tiers that dial down focus effects on weaker TVs
-- Playback backends: HTML5 / Tizen AVPlay / webOS Starfish-style
-- Troubleshooting settings: force direct / force transcode, backend preference, performance mode
-- Store packaging scripts for unsigned `.wgt` / `.ipk` staging + signing docs
-
-## Requirements
-
-- Node.js 20+ (22 recommended)
-- A reachable Prairie server
-
-## Quick start
-
-```bash
-npm install
-npm run dev
-```
-
-Open the printed local URL (default `http://localhost:5174`). On a TV emulator/device, point the web app at your Prairie server URL.
-
-Optional default server for the connect form:
-
-```bash
-VITE_DEFAULT_SERVER_URL=https://prairie.example.com npm run dev
-```
-
-## Scripts
-
-| Command                        | Purpose                                                         |
-| ------------------------------ | --------------------------------------------------------------- |
-| `npm run dev`                  | Vite dev server                                                 |
-| `npm run build`                | Typecheck + production web bundle → `dist/`                     |
-| `npm run lint`                 | Oxlint (type-aware TypeScript + React Hooks via tsgolint/TS7)   |
-| `npm run format`               | Prettier write                                                  |
-| `npm run format:check`         | Prettier check (CI)                                             |
-| `npm run typecheck`            | `tsc --noEmit`                                                  |
-| `npm test`                     | Vitest unit tests                                               |
-| `npm run test:coverage`        | Vitest + **75%** coverage gate on logic modules                 |
-| `npm run build:web`            | Same as production web build                                    |
-| `npm run build:tizen`          | Web build + copy into `dist-tizen/` with `config.xml`           |
-| `npm run build:tizen-legacy`   | Chrome 69 downlevel build → `dist-tizen-legacy/` (Prairie Lite) |
-| `npm run build:webos`          | Web build + copy into `dist-webos/` with `appinfo.json`         |
-| `npm run package:tizen`        | Modern 6.0+ unsigned `.wgt` (auto-signs if profile set)         |
-| `npm run package:tizen-legacy` | Legacy 5.5+ Prairie Lite `.wgt`                                 |
-| `npm run sign:tizen`           | Sign `dist-tizen/` or `TIZEN_DIST_DIR=dist-tizen-legacy`        |
-| `npm run package:webos`        | Build + `.ipk` (via ares) or staging zip under `artifacts/`     |
-| `npm run package:store`        | Modern Tizen + legacy Tizen + webOS                             |
-
-**Tizen targets:** dual packages — `PrairieApp` (modern es2019) and `PrairieLte` (Chrome 69 legacy). Install floor `required_version="2.3"` like Litefin so Apps2Samsung **Public** certs work. Details: `platforms/tizen/README.md`.
-
-**Public sideload (Apps2Samsung):** ship the **unsigned** `*-tizen-unsigned.wgt` / `*-tizen-legacy-unsigned.wgt` from GitHub Releases. Apps2Samsung re-signs with each user’s **Public** Samsung cert (Partner not required). DUID-locked CI secrets only unlock _your_ TVs. Store listing without Developer Mode is Samsung Seller Office (separate process).
-
-### GitHub Release packages
-
-Push a `v*` tag (or run **Release packages** via `workflow_dispatch`) to build CI artifacts:
-
-- Unsigned Tizen `.wgt` (`Prairie-<version>-tizen-unsigned.wgt`)
-- Unsigned Tizen legacy `.wgt` (`Prairie-<version>-tizen-legacy-unsigned.wgt`)
-- Signed Tizen `.wgt` files when `TIZEN_*` repo secrets are configured
-- webOS `.ipk` via `@webos-tools/cli` (`ares-package`)
-
-Workflow: `.github/workflows/release-packages.yml`. It stamps manifests from the tag version and uploads Actions artifacts. Tag runs also attach those files to a GitHub Release; manual `workflow_dispatch` runs build and upload artifacts only.
-
-## Coverage CI
-
-GitHub Actions runs lint, Prettier check, typecheck, build, then `npm run test:coverage`. Vitest thresholds are **75%** for statements, branches, functions, and lines on logic modules:
-
-- `src/api/**`
-- `src/storage/**`
-- `src/focus/**`
-- `src/perf/**`
-- `src/settings/playbackSettings.ts`
-- `src/player/createPlayer.ts`
-- `src/player/createMediaPlayer.ts`
-- `src/player/timeFormat.ts`
-- `src/platform/detect.ts`
-
-UI screens and native AVPlay/Starfish adapter implementations stay excluded (thin platform wrappers).
-
-## Player backends
-
-| Backend            | When                                                                 |
-| ------------------ | -------------------------------------------------------------------- |
-| **HTML5**          | Dev browser, explicit setting, or fallback                           |
-| **AVPlay**         | Samsung Tizen native (`webapis.avplay`)                              |
-| **Starfish-style** | LG webOS HTML5 `<video>` with `mediaOption` / `mediaPreferred` hints |
-
-VOD player: **OK / Enter** toggles play-pause; **−15s / +15s** seek; Audio / Subs menus when tracks exist; **Back** reports progress, deletes the playback session, and destroys the native player.
-
-Live TV uses `/api/v1/livetv/...` session start/release (not VOD `playback/start`).
-
-## API surface
-
-1. `POST /api/v1/auth/login`
-2. `GET /api/v1/profiles` (+ `POST …/verify-pin` when needed)
-3. `GET /api/v1/home/sections`
-4. `GET /api/v1/user/libraries` · `GET /api/v1/catalog`
-5. `GET /api/v1/library/{id}/collections` · `GET /api/v1/collections`
-6. `GET /api/v1/catalog/items/{id}` · seasons/episodes · `GET /api/v1/watch/{id}`
-7. `PUT/DELETE /api/v1/favorites/{id}` · `PUT/DELETE /api/v1/watchlist/{id}` · `POST/DELETE /api/v1/watched/{id}`
-8. `GET /api/v1/recommendations/similar/{id}`
-9. `POST /api/v1/playback/start` → play `stream_url`
-10. `POST /api/v1/playback/{id}/progress` · `PATCH …/audio` · `DELETE …/{id}`
-11. `GET /api/v1/livetv/channels` · `GET …/guide` · `POST …/channels/{id}/session` · `DELETE …/sessions/{id}`
-
-Session auth stores non-secret identity (`serverUrl`, username, profile id/name) in the `prairie.session` localStorage blob, and access/profile tokens in dedicated localStorage keys so the signed-in profile survives TV app updates and cold launches. Packaged WebViews clear `sessionStorage` on exit, so tokens are not kept there.
+The TypeScript/React web app has been removed; Flutter is the only client tree.
 
 ## Layout
 
-```text
-src/
-  api/           Prairie /api/v1 client, auth, health, catalog, home, watch, playback, livetv
-  discovery/     LAN candidate builder + parallel /api/v1/health scan
-  focus/         Container/index D-pad focus engine
-  perf/          Device-tier performance mode
-  platform/      detect + tizen/avplay + webos/starfish adapters
-  player/        backend selection, HTML5 host, PlayerHost, time helpers
-  settings/      playback troubleshooting settings + screen
-  storage/       session, server registry, upgrade-safe persistence
-  screens/       Connect, server list, profiles, browse, Live TV, detail, player
-  components/    Shell nav, poster cards, virtualized media rows / grids
-platforms/       Tizen config.xml + webOS appinfo.json + packaging docs
-scripts/         build-web + package-store
 ```
+flutter/
+  packages/
+    prairie_core/     # shared Dart: API, screens, VideoBackend contract
+    prairie_tizen/    # Samsung Tizen (flutter-tizen) + AVPlay
+    prairie_webos/    # LG webOS (flutter-webos) + video_player_drm
+  scripts/            # Tizen api-version stamps + package builds
+```
+
+See [flutter/README.md](flutter/README.md) for toolchain setup, multi–api-version Tizen packages, and local run instructions.
+
+## What’s included
+
+- Connect to a Prairie server (username / password + Quick Connect QR opt-in)
+- Multi-server registry + LAN discovery
+- Profile picker (PIN unlock when required)
+- Home rails, libraries, collections, search
+- Live TV channels / EPG guide / recordings (Record now / Record next)
+- Item detail with Play / Resume / Start Over and related rails
+- Native player: progress reporting, ±15s seek, audio switch, subtitles, session teardown
+- Upgrade-safe persistence for session, settings, and last server URL
+- Playback backends: Tizen AVPlay / webOS DRM player
+- Troubleshooting settings: force direct / force transcode, AV1 advertise overrides, performance mode
+
+## CI / packaging
+
+GitHub Actions run Flutter analyze/test and (when SDKs are present) produce four release packages: webOS `.ipk` plus Tizen TPKs for api-versions `6.0`, `6.5`, and `10.0`.
 
 ## License
 
-GNU Affero General Public License v3.0 (or later) — see [LICENSE](./LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE).

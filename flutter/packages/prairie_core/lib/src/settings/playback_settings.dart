@@ -1,0 +1,134 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'subtitle_appearance.dart';
+
+/// Mirrors src/settings/playbackSettings.ts. `playerBackend` isn't ported —
+/// that TS field chose between a web `<video>` element and a native player;
+/// Flutter has exactly one native [VideoBackend] per platform, so there's no
+/// runtime choice to make.
+class PlaybackSettings {
+  const PlaybackSettings({
+    this.forceDirectPlay = false,
+    this.forceTranscode = false,
+    this.forceAv1 = false,
+    this.disableAv1 = false,
+    this.subtitleAppearance = const SubtitleAppearance(),
+    this.preferredSubtitleLanguage = '',
+    this.enableDiagnosticsBeacon = false,
+    this.is8KPanel = false,
+  });
+
+  final bool forceDirectPlay;
+  final bool forceTranscode;
+  final bool forceAv1;
+  final bool disableAv1;
+  final SubtitleAppearance subtitleAppearance;
+  final String preferredSubtitleLanguage;
+  /// Off by default — sends player-state beacons (see `VideoholeVideoBackend`)
+  /// on every playback session, which is extra network traffic in normal use
+  /// and only useful while actively diagnosing a TV playback issue.
+  final bool enableDiagnosticsBeacon;
+  /// Manual override: no reliable way to detect an 8K panel from this native
+  /// Flutter/Tizen app (Samsung's model-tier info lives behind `webapis.*`,
+  /// a Web-API-only surface — same reachability wall as everything else in
+  /// this file). Off by default (conservative: 5.1/6-channel audio cap);
+  /// Samsung's 8K-tier spec documents 7.1/8-channel support that 4K-tier
+  /// TVs don't have, so this directly raises [maxAudioChannels] sent to
+  /// `/playback/start` — see `TvPlaybackCapabilities.maxAudioChannels`.
+  final bool is8KPanel;
+
+  PlaybackSettings copyWith({
+    bool? forceDirectPlay,
+    bool? forceTranscode,
+    bool? forceAv1,
+    bool? disableAv1,
+    SubtitleAppearance? subtitleAppearance,
+    String? preferredSubtitleLanguage,
+    bool? enableDiagnosticsBeacon,
+    bool? is8KPanel,
+  }) {
+    var next = PlaybackSettings(
+      forceDirectPlay: forceDirectPlay ?? this.forceDirectPlay,
+      forceTranscode: forceTranscode ?? this.forceTranscode,
+      forceAv1: forceAv1 ?? this.forceAv1,
+      disableAv1: disableAv1 ?? this.disableAv1,
+      subtitleAppearance: subtitleAppearance ?? this.subtitleAppearance,
+      preferredSubtitleLanguage: preferredSubtitleLanguage ?? this.preferredSubtitleLanguage,
+      enableDiagnosticsBeacon: enableDiagnosticsBeacon ?? this.enableDiagnosticsBeacon,
+      is8KPanel: is8KPanel ?? this.is8KPanel,
+    );
+    // Direct wins when both are somehow set; disable wins over force av1.
+    if (next.forceDirectPlay && next.forceTranscode) next = next.copyWithRaw(forceTranscode: false);
+    if (next.forceAv1 && next.disableAv1) next = next.copyWithRaw(forceAv1: false);
+    return next;
+  }
+
+  PlaybackSettings copyWithRaw({bool? forceDirectPlay, bool? forceTranscode, bool? forceAv1}) => PlaybackSettings(
+    forceDirectPlay: forceDirectPlay ?? this.forceDirectPlay,
+    forceTranscode: forceTranscode ?? this.forceTranscode,
+    forceAv1: forceAv1 ?? this.forceAv1,
+    disableAv1: disableAv1,
+    subtitleAppearance: subtitleAppearance,
+    preferredSubtitleLanguage: preferredSubtitleLanguage,
+    enableDiagnosticsBeacon: enableDiagnosticsBeacon,
+    is8KPanel: is8KPanel,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'forceDirectPlay': forceDirectPlay,
+    'forceTranscode': forceTranscode,
+    'forceAv1': forceAv1,
+    'disableAv1': disableAv1,
+    'subtitleAppearance': subtitleAppearance.toJson(),
+    'preferredSubtitleLanguage': preferredSubtitleLanguage,
+    'enableDiagnosticsBeacon': enableDiagnosticsBeacon,
+    'is8KPanel': is8KPanel,
+  };
+
+  factory PlaybackSettings.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const PlaybackSettings();
+    return PlaybackSettings(
+      forceDirectPlay: json['forceDirectPlay'] == true,
+      forceTranscode: json['forceTranscode'] == true,
+      forceAv1: json['forceAv1'] == true,
+      disableAv1: json['disableAv1'] == true,
+      subtitleAppearance: SubtitleAppearance.fromJson(json['subtitleAppearance'] as Map<String, dynamic>?),
+      preferredSubtitleLanguage: (json['preferredSubtitleLanguage'] as String?)?.trim().toLowerCase() ?? '',
+      enableDiagnosticsBeacon: json['enableDiagnosticsBeacon'] == true,
+      is8KPanel: json['is8KPanel'] == true,
+    );
+  }
+}
+
+/// Stable key matching TS `prairie.playbackSettings`. Legacy Flutter key
+/// `prairie.settings.playback` is read as a fallback and migrated on save /
+/// via [DurableStore.ensureStorageSchema].
+const playbackSettingsKey = 'prairie.playbackSettings';
+const legacyPlaybackSettingsKey = 'prairie.settings.playback';
+
+Future<PlaybackSettings> loadPlaybackSettings(SharedPreferencesAsync prefs) async {
+  var raw = await prefs.getString(playbackSettingsKey);
+  if (raw == null || raw.isEmpty) {
+    raw = await prefs.getString(legacyPlaybackSettingsKey);
+  }
+  if (raw == null) return const PlaybackSettings();
+  try {
+    return PlaybackSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+  } catch (_) {
+    return const PlaybackSettings();
+  }
+}
+
+Future<PlaybackSettings> savePlaybackSettings(PlaybackSettings settings, SharedPreferencesAsync prefs) async {
+  await prefs.setString(playbackSettingsKey, jsonEncode(settings.toJson()));
+  return settings;
+}
+
+/// Mirrors `resolveForcedPlayMethod`/`describePlayMethodPreference`.
+String? resolveForcedPlayMethod(PlaybackSettings settings) {
+  if (settings.forceDirectPlay) return 'direct';
+  if (settings.forceTranscode) return 'transcode';
+  return null;
+}

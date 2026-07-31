@@ -1,0 +1,305 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:prairie_core/prairie_core.dart';
+import 'package:video_player_videohole/video_player.dart';
+import 'package:video_player_videohole/video_player_platform_interface.dart' show VideoFormat;
+
+/// [VideoBackend] implementation over `video_player_videohole`, wrapping
+/// Tizen's system Media Player (`player.h` capi / MMPlayer).
+///
+/// Chosen over `video_player_avplay` (PlusPlayer) because the AVPlay plugin's
+/// bundled GStreamer demuxer plugins (`libgsthls.so`, `libgstffmpeg.so`) hard
+/// -link `libclearkey.so.0`, and loading that library fails with `Operation
+/// not permitted` on retail-signed (non-partner-cert) builds — blocking
+/// playback of *any* content, DRM or not. `video_player_videohole` calls
+/// Tizen's standard `player_set_uri` directly and never touches that
+/// dependency, so it works on a retail cert. Trade-off: this plugin has no
+/// DRM support at all — fine, since Prairie never serves DRM content.
+class VideoholeVideoBackend implements VideoBackend {
+  /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
+  /// needs a VM service that a release build doesn't attach, and `debugPrint`
+  /// needs an `sdb dlog` session at the TV). The server already logs full
+  /// request query strings, so state changes ride a `dbg=` param on a request
+  /// it already receives — read back from the server's own request log,
+  /// timestamped and correlated with the playback session. Never let a
+  /// beacon failure affect playback: every call is fire-and-forget. Both are
+  /// null unless the user opted into `PlaybackSettings.enableDiagnosticsBeacon`.
+  VideoholeVideoBackend({this.beaconClient, this.beaconServerUrl});
+
+  final ApiClient? beaconClient;
+  final String? Function()? beaconServerUrl;
+
+  @override
+  void reportDiagnostic(String event) {
+    final client = beaconClient;
+    final serverUrl = beaconServerUrl?.call();
+    if (client == null || serverUrl == null || serverUrl.isEmpty) return;
+    unawaited(_sendBeacon(client, serverUrl, event));
+  }
+
+  static Future<void> _sendBeacon(ApiClient client, String serverUrl, String event) async {
+    try {
+      await client.dio.get<void>(
+        '$serverUrl/api/v1/settings/effective',
+        queryParameters: {'keys': 'playback.auto_skip_intro', 'dbg': event},
+      );
+    } catch (_) {
+      // Diagnostics must never affect playback.
+    }
+  }
+
+  VideoPlayerController? _controller;
+  final _positionController = StreamController<Duration>.broadcast();
+  final _captionController = StreamController<String?>.broadcast();
+  final _errorController = StreamController<String>.broadcast();
+  Timer? _positionTimer;
+  List<SubtitleTrackChoice> _subtitleTracks = [];
+  String? _lastCaptionText;
+  String? _lastError;
+  bool _initialized = false;
+  bool? _lastBuffering;
+  bool? _lastIsInitialized;
+  double? _contentAspectRatio;
+  bool _loggedVideoSize = false;
+
+  /// Redacts query-param values (session tokens) before a URL hits the log.
+  static String _redactQuery(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.query.isEmpty) return url;
+    final redacted = {for (final key in uri.queryParameters.keys) key: '<redacted>'};
+    return uri.replace(queryParameters: redacted).toString();
+  }
+
+  /// Same redaction as [_redactQuery], but for free-form text (plugin error
+  /// descriptions) that may *embed* the failing URL rather than *be* one —
+  /// native player errors routinely echo the URL they failed to open,
+  /// query string (session token) and all.
+  static final _embeddedUrlPattern = RegExp(r'https?://\S+');
+  static String _redactMessage(String message) =>
+      message.replaceAllMapped(_embeddedUrlPattern, (m) => _redactQuery(m.group(0)!));
+
+  @override
+  void attach(String url, {String? maxResolution, double? contentAspectRatio}) {
+    // video_player_videohole has no equivalent to AVPlay's fixed-max-resolution
+    // knob (no DRM/ABR-cap parameter on the plugin's network constructor), so
+    // maxResolution is accepted for interface parity but unused here.
+    final hls = isHlsUrl(url);
+    // Without an explicit hint, the native player is left to auto-detect the
+    // container from the URL/response — confirmed on-device: an HLS media
+    // playlist attached with no hint fails immediately with "Not supported
+    // format" (zero buffering, never initializes), even though the same
+    // plugin's formatHint is genuinely threaded to the native side (it's not
+    // the no-op the upstream video_player doc comment claims — that comment
+    // is stale, inherited from the non-Tizen fork this package started from).
+    final controller = VideoPlayerController.network(url, formatHint: hls ? VideoFormat.hls : null);
+
+    final transport = hls ? 'hls' : 'progressive';
+    debugPrint('prairie.videohole: attach url=${_redactQuery(url)} transport=$transport');
+    reportDiagnostic('attach:backend=videohole:transport=$transport');
+
+    _contentAspectRatio = contentAspectRatio != null && contentAspectRatio > 0 ? contentAspectRatio : null;
+    _loggedVideoSize = false;
+    _controller = controller;
+    controller.addListener(_onControllerUpdate);
+  }
+
+  @override
+  Future<void> initialize({Duration? startPosition}) async {
+    final controller = _controller;
+    if (controller == null) {
+      throw StateError('VideoholeVideoBackend.attach must be called before initialize');
+    }
+    await controller.initialize();
+    _initialized = true;
+    if (startPosition != null && startPosition > Duration.zero) {
+      try {
+        await controller.seekTo(startPosition);
+      } on PlatformException catch (err) {
+        // Same native "seek to failed" as the mid-playback scrub fallback
+        // (see player_screen._seekToPosition) — some sources (remux
+        // progressive HTTP) reject player_set_play_position outright. Left
+        // uncaught here, this threw out of initialize() and surfaced as an
+        // unrecoverable player error on every non-zero-position resume.
+        // Graceful degradation: keep playing from wherever the native
+        // player actually started rather than crash the whole session.
+        debugPrint('prairie.videohole: seekTo(startPosition) failed, continuing without it: $err');
+        reportDiagnostic('init:seekTo-failed:$err');
+      }
+    }
+    try {
+      final tracks = await controller.textTracks ?? const <TextTrack>[];
+      _subtitleTracks = tracks
+          .map((t) => SubtitleTrackChoice(trackId: t.trackId, language: t.language))
+          .toList();
+    } catch (_) {
+      _subtitleTracks = [];
+    }
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final position = _controller?.value.position;
+      if (position != null) _positionController.add(position);
+    });
+  }
+
+  void _onControllerUpdate() {
+    final controller = _controller;
+    if (controller == null) return;
+    final value = controller.value;
+
+    if (value.isBuffering != _lastBuffering) {
+      _lastBuffering = value.isBuffering;
+      debugPrint('prairie.videohole: isBuffering=${value.isBuffering} position=${value.position} buffered=${value.buffered}');
+      reportDiagnostic('buf=${value.isBuffering}:pos=${value.position.inMilliseconds}');
+    }
+    if (value.isInitialized != _lastIsInitialized) {
+      _lastIsInitialized = value.isInitialized;
+      debugPrint('prairie.videohole: isInitialized=${value.isInitialized} duration=${value.duration}');
+      reportDiagnostic('init=${value.isInitialized}:dur=${value.duration.end.inMilliseconds}');
+    }
+
+    if (value.hasError) {
+      final message = (value.errorDescription ?? 'Playback failed').trim();
+      if (message.isNotEmpty && message != _lastError) {
+        _lastError = message;
+        final redacted = _redactMessage(message);
+        debugPrint('prairie.videohole: hasError message=$redacted');
+        reportDiagnostic('err=$redacted');
+        if (!_errorController.isClosed) _errorController.add(message);
+      }
+    }
+
+    final text = value.caption.text.isEmpty ? null : value.caption.text;
+    if (text != _lastCaptionText) {
+      _lastCaptionText = text;
+      _captionController.add(text);
+    }
+  }
+
+  @override
+  bool get isInitialized => _initialized;
+
+  @override
+  bool get isBuffering => _controller?.value.isBuffering ?? false;
+
+  @override
+  List<SubtitleTrackChoice> get subtitleTracks => _subtitleTracks;
+
+  @override
+  Future<void> selectSubtitleTrack(int? trackId) async {
+    final controller = _controller;
+    if (controller == null) return;
+    if (trackId == null) {
+      // Plugin has no explicit "off" — selecting nothing is a no-op; callers
+      // clear the overlay caption themselves.
+      return;
+    }
+    SubtitleTrackChoice? track;
+    for (final t in _subtitleTracks) {
+      if (t.trackId == trackId) {
+        track = t;
+        break;
+      }
+    }
+    if (track == null) return;
+    await controller.setTrackSelection(TextTrack(trackId: trackId, language: track.language));
+  }
+
+  @override
+  Stream<String?> get captionStream => _captionController.stream;
+
+  @override
+  Future<void> play() async => _controller?.play();
+
+  @override
+  Future<void> pause() async => _controller?.pause();
+
+  @override
+  Future<void> seekTo(Duration position) async => _controller?.seekTo(position);
+
+  @override
+  Stream<Duration> get positionStream => _positionController.stream;
+
+  @override
+  Stream<String> get errorStream => _errorController.stream;
+
+  @override
+  Duration? get duration {
+    final range = _controller?.value.duration;
+    if (range == null) return null;
+    final end = range.end;
+    return end > Duration.zero ? end : null;
+  }
+
+  @override
+  bool get isPlaying => _controller?.value.isPlaying ?? false;
+
+  @override
+  Widget buildSurface() {
+    final controller = _controller;
+    if (controller == null) return const SizedBox.shrink();
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final size = value.size;
+        // Full-bleed until prepare reports a real size: the native plane needs a
+        // non-zero laid-out rect before then, and a constrained box would shrink
+        // the hole to nothing (see history above).
+        if (!value.isInitialized) {
+          return SizedBox.expand(child: VideoPlayer(controller));
+        }
+
+        final nativeRatio = size.width > 0 && size.height > 0 ? size.width / size.height : null;
+        if (!_loggedVideoSize) {
+          _loggedVideoSize = true;
+          final fallback = _contentAspectRatio;
+          final path = nativeRatio != null
+              ? 'native'
+              : (fallback != null ? 'fallback' : 'fullbleed');
+          debugPrint(
+            'prairie.videohole: videoSize=${size.width}x${size.height} '
+            'fallback=${fallback ?? 'none'} path=$path',
+          );
+          reportDiagnostic(
+            'vsize=${size.width.round()}x${size.height.round()}:'
+            'fb=${fallback?.toStringAsFixed(3) ?? 'none'}:path=$path',
+          );
+        }
+
+        // Native size preferred; server-probed VideoTrack dimensions backstop
+        // Tizen players that leave value.size at 0×0 for hole-punched playback.
+        final aspect = nativeRatio ?? _contentAspectRatio;
+        if (aspect == null || aspect <= 0) {
+          return SizedBox.expand(child: VideoPlayer(controller));
+        }
+        // Constraining the widget rect is what produces the bars: the native
+        // plane is positioned to this rect, and the surrounding area stays
+        // Flutter-painted black from the Scaffold.
+        return Center(
+          child: AspectRatio(
+            aspectRatio: aspect,
+            child: VideoPlayer(controller),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Future<void> dispose() async {
+    _positionTimer?.cancel();
+    final controller = _controller;
+    _controller = null;
+    _initialized = false;
+    _contentAspectRatio = null;
+    _loggedVideoSize = false;
+    if (controller != null) {
+      controller.removeListener(_onControllerUpdate);
+      await controller.dispose();
+    }
+    if (!_positionController.isClosed) await _positionController.close();
+    if (!_captionController.isClosed) await _captionController.close();
+    if (!_errorController.isClosed) await _errorController.close();
+  }
+}

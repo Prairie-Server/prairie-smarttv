@@ -1,0 +1,13 @@
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build/
+**/.pub-cache/
+**/.pub/
+**/*.iml
+**/android/.gradle/
+**/ios/Pods/
+**/tizen/.dart_tool/
+**/tizen/tizen-manifest.xml.orig
+flutter/artifacts/

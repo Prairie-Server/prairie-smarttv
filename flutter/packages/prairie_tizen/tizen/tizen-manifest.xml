@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest package="org.prairieserver.prairie_tizen" version="1.0.0" api-version="6.5" xmlns="http://tizen.org/ns/packages">
+    <profile name="common"/>
+    <ui-application appid="org.prairieserver.prairie_tizen" exec="Runner.dll" type="dotnet" multiple="false" nodisplay="false" taskmanage="true">
+        <label>Prairie</label>
+        <icon>ic_launcher.png</icon>
+        <metadata key="http://tizen.org/metadata/prefer_dotnet_aot" value="true"/>
+        <metadata key="http://tizen.org/metadata/prefer_nuget_cache" value="true"/>
+    </ui-application>
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+    <privileges>
+        <privilege>http://tizen.org/privilege/internet</privilege>
+        <privilege>http://tizen.org/privilege/tv.inputdevice</privilege>
+        <privilege>http://tizen.org/privilege/download</privilege>
+        <privilege>http://tizen.org/privilege/filesystem.read</privilege>
+        <privilege>http://tizen.org/privilege/filesystem.write</privilege>
+        <privilege>http://developer.samsung.com/privilege/productinfo</privilege>
+        <privilege>http://developer.samsung.com/privilege/network.public</privilege>
+        <privilege>http://tizen.org/privilege/mediastorage</privilege>
+        <privilege>http://tizen.org/privilege/externalstorage</privilege>
+    </privileges>
+</manifest>

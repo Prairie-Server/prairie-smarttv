@@ -1,0 +1,33 @@
+name: prairie_tizen
+description: Prairie Smart TV client for Samsung Tizen (flutter-tizen).
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  prairie_core:
+    path: ../prairie_core
+
+  flutter_riverpod: ^2.6.1
+  shared_preferences_tizen: ^2.3.3
+  flutter_secure_storage_tizen: ^0.1.3
+  # path_provider_tizen intentionally omitted — prairie_core does not use
+  # path_provider; dropping it shrinks the TPK.
+  video_player_videohole: ^0.5.9
+  device_info_plus_tizen: ^1.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  # Required: prairie_core uses Material Icons extensively (shell nav, player).
+  # Keep true until Icons.* are replaced with custom SVG/font assets — otherwise
+  # every Icon widget renders as a box and MaterialIcons.otf is still needed.
+  uses-material-design: true

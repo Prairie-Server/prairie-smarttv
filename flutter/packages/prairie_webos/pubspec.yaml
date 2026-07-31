@@ -1,0 +1,51 @@
+name: prairie_webos
+description: Prairie Smart TV client for LG webOS (flutter-webos).
+publish_to: 'none'
+version: 1.0.0+1
+resolution: workspace
+
+environment:
+  # Pinned to flutter-webos's bundled Dart SDK — see flutter/README.md.
+  sdk: ^3.10.9
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  prairie_core:
+    path: ../prairie_core
+  flutter_riverpod: ^2.6.1
+
+  # Federated plugins from https://github.com/lg-flutter-webos/plugins
+  # (paths under packages/ — see doc/plugin-list.md).
+  device_info_plus: ^11.1.0
+  device_info_plus_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/device_info_plus
+      ref: main
+  shared_preferences_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/shared_preferences
+      ref: main
+  flutter_secure_storage_webos:
+    # Path fork: upstream git package pins platform_interface ^1.1.0 which
+    # cannot solve with flutter_secure_storage ^10 (needs ^2.0.1). API-compatible.
+    path: ../flutter_secure_storage_webos
+  # Preferred over video_player_webos for multi-audio/subs/DRM.
+  video_player_drm:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/video_player_drm
+      ref: main
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  # Required: prairie_core uses Material Icons extensively (shell nav, player chrome).
+  # Keep true until Icons.* are replaced with custom SVG/font assets.
+  uses-material-design: true
