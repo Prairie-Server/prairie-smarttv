@@ -34,9 +34,28 @@ if ! command -v flutter-webos >/dev/null 2>&1; then
 fi
 
 mkdir -p "$OUT_DIR"
-# Resolve the pub workspace (prairie_webos + flutter_secure_storage_webos).
-(cd "${ROOT}/packages" && flutter-webos pub get)
 cd "$APP_DIR"
+
+# flutter-webos's build tooling does not locate a pub *workspace* root's
+# package_config when invoked from a member package — it only looks at
+# $APP_DIR/.dart_tool. Drop `resolution: workspace` for the build so
+# `pub get` writes a local package_config; path deps (including
+# flutter_secure_storage_webos) still resolve. Restore on exit.
+PUBSPEC_BAK=""
+if grep -q '^resolution:[[:space:]]*workspace' pubspec.yaml; then
+  PUBSPEC_BAK="$(mktemp)"
+  cp -f pubspec.yaml "$PUBSPEC_BAK"
+  # portable sed (GNU/BSD): delete the workspace resolution line
+  if sed --version >/dev/null 2>&1; then
+    sed -i '/^resolution:[[:space:]]*workspace/d' pubspec.yaml
+  else
+    sed -i '' '/^resolution:[[:space:]]*workspace/d' pubspec.yaml
+  fi
+  restore_pubspec() { cp -f "$PUBSPEC_BAK" pubspec.yaml; rm -f "$PUBSPEC_BAK"; }
+  trap restore_pubspec EXIT
+fi
+
+flutter-webos pub get
 
 BUILD_ARGS=(webos)
 if [[ "$RELEASE" -eq 1 ]]; then

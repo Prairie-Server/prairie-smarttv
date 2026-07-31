@@ -173,7 +173,7 @@ jobs:
           path: |
             ~/tizen-studio
             ~/tizen-studio-data
-          key: tizen-sdk-${{ env.TIZEN_SDK_VERSION }}-native-iotheaded60-v2
+          key: tizen-sdk-${{ env.TIZEN_SDK_VERSION }}-native-iotheaded65-v3
 
       - name: Install Tizen SDK CLI
         if: steps.cache-tizen-sdk.outputs.cache-hit != 'true'
@@ -186,10 +186,12 @@ jobs:
           rm installer.bin
 
           PM="$HOME/tizen-studio/package-manager/package-manager-cli.bin"
-          # Same package set flutter-tizen's e2e job uses to build .NET TPKs.
+          # api-version 6.5 needs the 6.5 rootstrap (flutter-tizen e2e uses 6.0
+          # because its sample apps target 6.0). Install both toolchains plus
+          # NativeCLI.
           "$PM" install --accept-license --no-java-check \
             NativeCLI NativeToolchain-Gcc-9.2 \
-            IOT-Headed-6.0-NativeAppDevelopment-CLI || {
+            IOT-Headed-6.5-NativeAppDevelopment-CLI || {
             echo "::warning::Tizen package install failed — listing available packages:"
             "$PM" show-pkgs --tree || true
             exit 1
