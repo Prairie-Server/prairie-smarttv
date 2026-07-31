@@ -45,10 +45,18 @@ class _HomeHeroState extends State<HomeHero> {
           ColoredBox(
             color: PrairieColors.bgElevated,
             child: backdrop != null
-                ? Image.network(
-                    resolveAssetUrl(widget.serverUrl, backdrop),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(color: PrairieColors.bgElevated),
+                ? Builder(
+                    builder: (context) {
+                      final dpr = MediaQuery.devicePixelRatioOf(context);
+                      final logicalW = MediaQuery.sizeOf(context).width;
+                      final resolved = resolveAssetUrl(widget.serverUrl, backdrop);
+                      return Image.network(
+                        artworkSized(resolved, heroArtworkWidth),
+                        fit: BoxFit.cover,
+                        cacheWidth: (logicalW * dpr).round().clamp(1, 1280),
+                        errorBuilder: (_, _, _) => const ColoredBox(color: PrairieColors.bgElevated),
+                      );
+                    },
                   )
                 : const DecoratedBox(
                     decoration: BoxDecoration(

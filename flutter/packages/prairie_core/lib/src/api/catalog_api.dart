@@ -1,6 +1,7 @@
 import '../models/auth.dart';
 import '../models/catalog_item.dart';
 import '../models/watch_detail.dart';
+import '../player/trickplay.dart';
 import 'api_client.dart';
 
 ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
@@ -139,6 +140,7 @@ class ItemVersion {
     this.hdr,
     this.container,
     this.duration,
+    this.trickplay,
   });
 
   final int fileId;
@@ -148,6 +150,7 @@ class ItemVersion {
   final bool? hdr;
   final String? container;
   final int? duration;
+  final TrickplayInfo? trickplay;
 
   factory ItemVersion.fromJson(Map<String, dynamic> json) => ItemVersion(
     fileId: json['file_id'] as int,
@@ -157,6 +160,7 @@ class ItemVersion {
     hdr: json['hdr'] as bool?,
     container: json['container'] as String?,
     duration: json['duration'] as int?,
+    trickplay: json['trickplay'] != null ? TrickplayInfo.fromJson(json['trickplay'] as Map<String, dynamic>) : null,
   );
 }
 

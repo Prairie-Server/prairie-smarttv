@@ -82,10 +82,18 @@ class _PosterCardState extends State<PosterCard> {
                       fit: StackFit.expand,
                       children: [
                         widget.posterUrl != null
-                            ? Image.network(
-                                resolveAssetUrl(widget.serverUrl, widget.posterUrl!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const PosterFallback(),
+                            ? Builder(
+                                builder: (context) {
+                                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                                  final resolved = resolveAssetUrl(widget.serverUrl, widget.posterUrl!);
+                                  return Image.network(
+                                    artworkSized(resolved, posterArtworkWidth),
+                                    fit: BoxFit.cover,
+                                    cacheWidth: (140 * dpr).round(),
+                                    cacheHeight: (210 * dpr).round(),
+                                    errorBuilder: (_, _, _) => const PosterFallback(),
+                                  );
+                                },
                               )
                             : const PosterFallback(),
                         if (widget.watched)
