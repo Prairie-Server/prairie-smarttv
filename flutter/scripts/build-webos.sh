@@ -38,7 +38,7 @@ mkdir -p "$OUT_DIR"
 (cd "${ROOT}/packages" && flutter-webos pub get)
 cd "$APP_DIR"
 
-BUILD_ARGS=()
+BUILD_ARGS=(webos)
 if [[ "$RELEASE" -eq 1 ]]; then
   BUILD_ARGS+=(--release)
 fi

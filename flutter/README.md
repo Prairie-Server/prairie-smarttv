@@ -133,17 +133,14 @@ with `ares-package` / install with `ares-install` as usual for native Flutter we
 
 ## CI
 
-`release-packages.yml` installs both TV toolchains from scratch on GitHub-hosted runners (Tizen
-Studio + TV Extension on `ubuntu-latest`; the webOS NDK + `flutter-webos` on `ubuntu-24.04-arm`,
-since the community NDK toolchain it uses only ships Linux ARM64 builds — see the workflow file's
-header comment for the full rationale and the couple of specifics that are best-effort pending a
-first real run). No self-hosted runner, no persistent infra, and **no signing secrets** — the
-Tizen build is signed with Tizen Studio's own bundled sample author/distributor certificates
-(the same pair every SDK install ships, for exactly this purpose), which makes the `.tpk`
-installable in TV Developer Mode but not Store-signed. Re-sign with your real distributor
-certificate at actual install time — e.g. [Apps2Samsung](https://apps2samsung.com/) accepts a
-"bring your own package" `.tpk`/`.wgt` and re-signs it during install — or Tizen Studio's
-Certificate Manager.
+`release-packages.yml` installs both TV toolchains from scratch on GitHub-hosted `ubuntu-22.04`
+runners (Tizen SDK 10.0 + NativeCLI/toolchain for the `.tpk`; the official LG
+`lg-flutter-webos/ndk` + `flutter-webos` for the `.ipk`). No self-hosted runner, no persistent
+infra, and **no signing secrets** — the Tizen build is signed with a fresh CI author certificate
+under gnome-keyring, which makes the `.tpk` installable in TV Developer Mode but not
+Store-signed. Re-sign with your real distributor certificate at actual install time — e.g.
+[Apps2Samsung](https://apps2samsung.com/) accepts a "bring your own package" `.tpk`/`.wgt` and
+re-signs it during install — or Tizen Studio's Certificate Manager.
 
 | Workflow | Does |
 | --- | --- |
