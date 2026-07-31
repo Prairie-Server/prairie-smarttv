@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build a prairie_webos .ipk via flutter-webos + ares-package.
 #
-# Requires flutter-webos + webOS NDK + @webos-tools/cli on a Linux host
-# (WSL2 Ubuntu on Windows). Stock ubuntu-latest runners do not ship these —
-# see .github/workflows/release-packages.yml.
+# Requires flutter-webos + webOS NDK + @webos-tools/cli on a Linux x86_64 host
+# (WSL2 Ubuntu on Windows). Stock runners do not ship these — see
+# .github/workflows/release-packages.yml (CI installs the official LG NDK).
 #
 # Usage:
 #   ./build-webos.sh
