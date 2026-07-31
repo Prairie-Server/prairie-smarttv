@@ -1,6 +1,6 @@
 {
     "id": "org.prairieserver.prairie",
-    "version": "1.0.0",
+    "version": "0.1.9",
     "vendor": "Prairie",
     "type": "native",
     "main": "prairie_webos",

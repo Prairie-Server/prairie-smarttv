@@ -10,38 +10,27 @@ name: Release packages
 #      source with no such split — see flutter/scripts/build-tizen.sh.
 #
 # Both packaging jobs install their SDK toolchain from scratch on a
-# GitHub-hosted runner (no self-hosted runner, no persistent infra). A few
-# specifics below are best-effort and may need a tweak on the first real
-# run — I could not verify them against a live GitHub Actions execution:
-#   - Tizen: the exact TV Extension package-manager-cli package ID/version
-#     string. If the install step fails with "package not found," add a
-#     `package-manager-cli.bin list` call to the Action log to see the real
-#     IDs and fix TIZEN_TV_EXTENSION_VERSION / the package name below.
-#   - webOS: the NDK is sourced from the community webosbrew/native-toolchain
-#     project (github.com/webosbrew/native-toolchain) — LG's own NDK is
-#     gated behind an interactive developer-site download with no stable
-#     URL. Swap WEBOS_NDK_URL for an official source if you have one. That
-#     toolchain currently only publishes Linux ARM64 builds (not x86_64),
-#     which is why package-webos runs on ubuntu-24.04-arm instead of
-#     ubuntu-latest.
-#   - Tizen: the sample distributor cert's default password
-#     (tizenpkcs12passfordsigner) is well-documented across the Tizen dev
-#     community and confirmed locally. The sample *author* cert reusing that
-#     same password is my best guess, not independently confirmed — if
-#     "Register signing profile" fails on a password mismatch, check
-#     tools/certificate-generator/certificates/developer/conf.ini in the
-#     Tizen Studio install for the real one.
+# GitHub-hosted runner (no self-hosted runner, no persistent infra).
 #
-# No signing secrets needed. package-tizen registers Tizen Studio's own
-# bundled sample author/distributor certificates — every SDK install ships
-# tools/tizen-core/certificates/{author/default_author_signer.p12,
-# distributor/tizen_public_signer.p12} for exactly this purpose (offline,
-# publicly documented default passwords, not tied to any identity). That
-# produces an installable-in-Developer-Mode .tpk, not a Store-signed one —
-# by design: the intent is to hand the .tpk to something like Apps2Samsung
-# (apps2samsung.com) or Tizen Studio's own Certificate Manager, either of
-# which re-signs with *your* real distributor certificate at actual install
-# time. CI never touches your personal signing identity at all.
+# Tizen (package-tizen):
+#   - ubuntu-22.04 + deadsnakes python3.8 (Tizen package-manager still
+#     pulls libpython3.8; ubuntu-24.04 does not ship it).
+#   - Tizen SDK 10.0 CLI installer (same as flutter-tizen CI).
+#   - NativeCLI + NativeToolchain-Gcc-9.2 + IOT-Headed-6.0 native CLI —
+#     enough to build a .NET TPK. Samsung TV Extension images are web/
+#     emulator tooling and are not required for flutter-tizen packaging.
+#   - Signing uses a fresh author cert created in CI under gnome-keyring
+#     (tizen security-profiles needs a keyring session on Linux). That
+#     produces an installable-in-Developer-Mode .tpk, not a Store-signed
+#     one — re-sign with your real distributor certificate at install
+#     time (Apps2Samsung, or Tizen Studio's Certificate Manager).
+#
+# webOS (package-webos):
+#   - ubuntu-22.04 x86_64. flutter-webos bundles its own Flutter SDK, so
+#     we do not use subosito/flutter-action (which has no Linux arm64
+#     stable builds anyway).
+#   - Official LG NDK installer from lg-flutter-webos/ndk (not the
+#     community webosbrew ARM64 toolchain).
 #
 # Local builds:
 #   bash flutter/scripts/build-tizen.sh
@@ -72,9 +61,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TIZEN_STUDIO_VERSION: "6.1"
-  TIZEN_TV_EXTENSION_VERSION: "9.0"
-  WEBOS_NDK_URL: "https://github.com/webosbrew/native-toolchain/releases/latest/download/arm-webos-linux-gnueabi_sdk-buildroot_linux-aarch64.tar.bz2"
+  # flutter-tizen CI pins Tizen SDK 10.0; Studio 6.1 is EOL for new installs.
+  TIZEN_SDK_VERSION: "10.0"
+  WEBOS_NDK_INSTALLER_URL: "https://github.com/lg-flutter-webos/ndk/releases/download/11.2.0/webos-ndk-flutter-starfish-x86_64-ca9v1-11.2.0.sh"
+  WEBOS_FLUTTER_NDK_ENV: "/usr/local/starfish-sdk-x86_64/environment-setup-ca9v1-webosmllib32-linux-gnueabi"
   WEBOS_ARES_NODE_VERSION: "16.20.2"
 
 jobs:
@@ -148,7 +138,9 @@ jobs:
     name: Package Tizen (.tpk)
     needs: flutter-verify
     if: needs.flutter-verify.outputs.attempt == 'true'
-    runs-on: ubuntu-latest
+    # Match flutter-tizen CI: Jammy has the python3.8 packages Tizen's
+    # package-manager still requires; Noble does not.
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -159,35 +151,53 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Cache Tizen Studio
-        id: cache-tizen-studio
+      - name: Set up .NET (prairie_tizen is a C# runner)
+        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
+        with:
+          dotnet-version: "6.0.x"
+
+      - name: Install Tizen host dependencies
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          sudo apt-get update
+          sudo apt-get install -y \
+            libncurses5 python3.8 libpython3.8 gettext \
+            libkf5itemmodels5 libkf5kiowidgets5 libkchart2 \
+            dbus-x11 gnome-keyring
+
+      - name: Cache Tizen SDK
+        id: cache-tizen-sdk
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/tizen-studio
-          key: tizen-studio-${{ env.TIZEN_STUDIO_VERSION }}-tv${{ env.TIZEN_TV_EXTENSION_VERSION }}-v1
+          path: |
+            ~/tizen-studio
+            ~/tizen-studio-data
+          key: tizen-sdk-${{ env.TIZEN_SDK_VERSION }}-native-iotheaded65-v3
 
-      - name: Install Tizen Studio CLI + TV Extension
-        if: steps.cache-tizen-studio.outputs.cache-hit != 'true'
+      - name: Install Tizen SDK CLI
+        if: steps.cache-tizen-sdk.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           curl -fsSL -o installer.bin \
-            "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VERSION}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VERSION}_ubuntu-64.bin"
+            "https://download.tizen.org/sdk/Installer/tizen-sdk_${TIZEN_SDK_VERSION}/web-cli_Tizen_SDK_${TIZEN_SDK_VERSION}_ubuntu-64.bin"
           chmod +x installer.bin
           ./installer.bin --accept-license "$HOME/tizen-studio"
           rm installer.bin
 
           PM="$HOME/tizen-studio/package-manager/package-manager-cli.bin"
-          # Package ID is best-effort — see the header comment at the top of
-          # this file if this fails.
+          # api-version 6.5 needs the 6.5 rootstrap (flutter-tizen e2e uses 6.0
+          # because its sample apps target 6.0). Install both toolchains plus
+          # NativeCLI.
           "$PM" install --accept-license --no-java-check \
-            "TV-Extensions-${TIZEN_TV_EXTENSION_VERSION}" \
-            NativeCLI NativeToolchain-Gcc-9.2 || {
-            echo "::warning::TV Extension install failed — listing available packages for debugging:"
-            "$PM" list || true
+            NativeCLI NativeToolchain-Gcc-9.2 \
+            IOT-Headed-6.5-NativeAppDevelopment-CLI || {
+            echo "::warning::Tizen package install failed — listing available packages:"
+            "$PM" show-pkgs --tree || true
             exit 1
           }
 
-      - name: Add Tizen Studio to PATH
+      - name: Add Tizen SDK to PATH
         run: echo "$HOME/tizen-studio/tools/ide/bin:$HOME/tizen-studio/tools" >> "$GITHUB_PATH"
 
       - name: Cache flutter-tizen
@@ -208,25 +218,31 @@ jobs:
         run: flutter-tizen doctor -v
 
       - name: Register signing profile
-        # Tizen Studio's own bundled sample certs — same pair every SDK
-        # install ships, publicly documented default passwords, no Samsung
-        # account or repo secrets involved. This makes the .tpk installable
-        # in TV Developer Mode, not Store-signed; re-sign with your real
-        # distributor certificate at install time (Apps2Samsung, or Tizen
-        # Studio's Certificate Manager) — see this file's header comment.
+        # tizen security-profiles talks to the GNOME keyring on Linux; wrap
+        # in dbus-run-session like flutter-tizen CI does.
         run: |
           set -euo pipefail
-          CERT_DIR="$HOME/tizen-studio/tools/tizen-core/certificates"
-          tizen security-profiles add -n CI_Sideload \
-            -a "$CERT_DIR/author/default_author_signer.p12" -p tizenpkcs12passfordsigner \
-            --dist "$CERT_DIR/distributor/tizen_public_signer.p12" --dist-password tizenpkcs12passfordsigner \
-            --active
+          dbus-run-session -- bash -c '
+            set -euo pipefail
+            echo tizen | gnome-keyring-daemon --unlock
+            tizen certificate -a CI_Sideload -p tizen -f CI_Sideload
+            tizen security-profiles add \
+              -n CI_Sideload \
+              -a "$HOME/tizen-studio-data/keystore/author/CI_Sideload.p12" \
+              -p tizen \
+              --active
+          '
 
       - name: Build
         run: |
-          bash flutter/scripts/build-tizen.sh \
-            --package-version "${{ needs.flutter-verify.outputs.version }}" \
-            --security-profile CI_Sideload
+          set -euo pipefail
+          dbus-run-session -- bash -c '
+            set -euo pipefail
+            echo tizen | gnome-keyring-daemon --unlock
+            bash flutter/scripts/build-tizen.sh \
+              --package-version "${{ needs.flutter-verify.outputs.version }}" \
+              --security-profile CI_Sideload
+          '
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -239,17 +255,19 @@ jobs:
     name: Package webOS (.ipk)
     needs: flutter-verify
     if: needs.flutter-verify.outputs.attempt == 'true'
-    # webosbrew/native-toolchain currently only ships Linux ARM64 builds.
-    runs-on: ubuntu-24.04-arm
+    # Official LG flutter-webos NDK is Linux x86_64 only.
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          channel: stable
-          cache: true
+      - name: Install webOS host dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            curl unzip cmake pkg-config file \
+            libgtk-3-0 libgtk-3-dev git ninja-build clang git-lfs
 
       - name: Set up Node for ares-cli
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -259,34 +277,19 @@ jobs:
       - name: Install ares-cli
         run: npm install -g @webos-tools/cli
 
-      - name: Cache webOS NDK
-        id: cache-webos-ndk
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/webos-ndk
-          key: webos-ndk-${{ env.WEBOS_NDK_URL }}
-
       - name: Install webOS NDK
-        if: steps.cache-webos-ndk.outputs.cache-hit != 'true'
+        # Installs into /usr/local — not cacheable via actions/cache without
+        # awkward sudo restore; the installer is ~fast enough to redo each run.
         run: |
           set -euo pipefail
-          curl -fsSL -o ndk.tar.bz2 "$WEBOS_NDK_URL"
-          mkdir -p "$HOME/webos-ndk"
-          tar -xjf ndk.tar.bz2 -C "$HOME/webos-ndk" --strip-components=1
-          rm ndk.tar.bz2
-          RELOCATE="$(find "$HOME/webos-ndk" -maxdepth 1 -name 'relocate-sdk.sh' | head -1)"
-          [[ -n "$RELOCATE" ]] && bash "$RELOCATE"
-          true
+          curl -fsSL -o ndk-installer.sh "$WEBOS_NDK_INSTALLER_URL"
+          chmod +x ndk-installer.sh
+          sudo ./ndk-installer.sh -y
+          rm ndk-installer.sh
+          test -f "$WEBOS_FLUTTER_NDK_ENV"
 
       - name: Point flutter-webos at the NDK
-        run: |
-          set -euo pipefail
-          ENV_SCRIPT="$(find "$HOME/webos-ndk" -name 'environment-setup-*' | head -1)"
-          if [[ -z "$ENV_SCRIPT" ]]; then
-            echo "::error::No environment-setup-* script found under ~/webos-ndk — NDK layout may have changed."
-            exit 1
-          fi
-          echo "WEBOS_FLUTTER_NDK_ENV=$ENV_SCRIPT" >> "$GITHUB_ENV"
+        run: echo "WEBOS_FLUTTER_NDK_ENV=$WEBOS_FLUTTER_NDK_ENV" >> "$GITHUB_ENV"
 
       - name: Cache flutter-webos
         id: cache-flutter-webos
@@ -302,11 +305,20 @@ jobs:
       - name: Add flutter-webos to PATH
         run: echo "$HOME/flutter-webos/bin" >> "$GITHUB_PATH"
 
-      - name: flutter-webos doctor
-        run: flutter-webos doctor -v
+      - name: flutter-webos doctor + precache
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1090
+          source "$WEBOS_FLUTTER_NDK_ENV"
+          flutter-webos doctor -v
+          flutter-webos precache
 
       - name: Build
-        run: bash flutter/scripts/build-webos.sh
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1090
+          source "$WEBOS_FLUTTER_NDK_ENV"
+          bash flutter/scripts/build-webos.sh
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
