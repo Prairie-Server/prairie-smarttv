@@ -1,34 +1,44 @@
 name: Release packages
 
-# Builds / stages the four Flutter Smart TV artifacts:
+# Builds the two Flutter Smart TV release artifacts:
 #   1. webOS .ipk
-#   2. Tizen TPK api-version 6.0  (Tizen OS 6.0 only)
-#   3. Tizen TPK api-version 6.5  (Tizen OS 6.5–9.0)
-#   4. Tizen TPK api-version 10.0 (Tizen OS 10.0 only)
+#   2. Tizen .tpk — a single build covers the whole supported range
+#      (tizen-manifest.xml's api-version="6.5" spans Tizen 6.5-9.0+). The
+#      old 3-variant (6.0/6.5/10.0) split only ever existed because
+#      video_player_avplay ships precompiled, api-version-specific native
+#      libraries; this app uses video_player_videohole, which compiles from
+#      source with no such split — see flutter/scripts/build-tizen.sh.
 #
-# ---------------------------------------------------------------------------
-# CI REALITY (ubuntu-latest, 2026-07):
-#   flutter-tizen and flutter-webos are NOT installable as simple apt/npm
-#   packages. They need:
-#     - flutter-tizen clone + Tizen Studio + TV Extensions + certificates
-#     - flutter-webos (Linux-only) + webOS NDK + Node 14–16 ares CLI
-#   Stock GitHub-hosted runners cannot produce real .tpk / .ipk binaries.
+# Both packaging jobs install their SDK toolchain from scratch on a
+# GitHub-hosted runner (no self-hosted runner, no persistent infra). A few
+# specifics below are best-effort and may need a tweak on the first real
+# run — I could not verify them against a live GitHub Actions execution:
+#   - Tizen: the exact TV Extension package-manager-cli package ID/version
+#     string. If the install step fails with "package not found," add a
+#     `package-manager-cli.bin list` call to the Action log to see the real
+#     IDs and fix TIZEN_TV_EXTENSION_VERSION / the package name below.
+#   - webOS: the NDK is sourced from the community webosbrew/native-toolchain
+#     project (github.com/webosbrew/native-toolchain) — LG's own NDK is
+#     gated behind an interactive developer-site download with no stable
+#     URL. Swap WEBOS_NDK_URL for an official source if you have one. That
+#     toolchain currently only publishes Linux ARM64 builds (not x86_64),
+#     which is why package-webos runs on ubuntu-24.04-arm instead of
+#     ubuntu-latest.
 #
-# This workflow therefore:
-#   (a) ALWAYS runs Flutter analyze/test + package-layout validation
-#   (b) Exposes a matrix of packaging jobs that CALL the build scripts when
-#       the toolchains are present (self-hosted / future SDK cache), and
-#       otherwise skip with an explicit notice — never a red X from missing
-#       SDKs on ubuntu-latest
-#   (c) Keeps artifact upload / GitHub Release steps ready for when builds
-#       actually produce files under flutter/artifacts/
+# Required repo secrets for a signed Tizen build (Settings > Secrets and
+# variables > Actions):
+#   TIZEN_AUTHOR_CERT_P12_BASE64   — base64 of your author.p12
+#   TIZEN_AUTHOR_CERT_PASSWORD
+#   TIZEN_DIST_CERT_P12_BASE64     — base64 of your distributor.p12
+#   TIZEN_DIST_CERT_PASSWORD
+# Encode locally with (never paste the raw file or password anywhere but
+# the GitHub secret box itself):
+#   base64 -w0 author.p12
 #
-# Local / self-hosted full builds:
-#   bash flutter/scripts/build-tizen.sh 6.0
-#   bash flutter/scripts/build-tizen.sh 6.5 --package-version 1.0.1
-#   bash flutter/scripts/build-tizen.sh 10.0 --package-version 1.0.2 --obfuscate
+# Local builds:
+#   bash flutter/scripts/build-tizen.sh
+#   bash flutter/scripts/build-tizen.sh --package-version 1.0.1 --security-profile Prairie_Server
 #   bash flutter/scripts/build-webos.sh --obfuscate
-# ---------------------------------------------------------------------------
 
 on:
   push:
@@ -41,15 +51,10 @@ on:
         required: false
         type: string
       attempt_native_builds:
-        description: "If true, run build-*.sh (will skip when SDKs missing unless fail_without_sdk)."
+        description: "If true, install SDKs and build real packages. If false, verify-only."
         required: false
         type: boolean
         default: true
-      fail_without_sdk:
-        description: "If true, fail packaging jobs when flutter-tizen/flutter-webos are missing."
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -58,15 +63,22 @@ concurrency:
   group: smarttv-release-packages-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  TIZEN_STUDIO_VERSION: "6.1"
+  TIZEN_TV_EXTENSION_VERSION: "9.0"
+  WEBOS_NDK_URL: "https://github.com/webosbrew/native-toolchain/releases/latest/download/arm-webos-linux-gnueabi_sdk-buildroot_linux-aarch64.tar.bz2"
+  WEBOS_ARES_NODE_VERSION: "16.20.2"
+
 jobs:
   flutter-verify:
     name: Flutter analyze + test + layout
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      attempt: ${{ steps.attempt.outputs.attempt }}
     steps:
       - name: Check out sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -89,8 +101,21 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
+      - name: Resolve whether to attempt native builds
+        id: attempt
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ATTEMPT: ${{ inputs.attempt_native_builds }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "attempt=${INPUT_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "attempt=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
           cache: true
@@ -108,128 +133,217 @@ jobs:
           flutter pub get
           flutter analyze --fatal-infos prairie_webos flutter_secure_storage_webos
 
-      - name: Validate 4-variant package layout
+      - name: Validate package layout
         run: bash flutter/scripts/validate-package-layout.sh
 
-  # Matrix ready for real SDK builds. On ubuntu-latest the scripts exit 127
-  # when toolchains are missing; we convert that into a soft skip unless
-  # fail_without_sdk is set (self-hosted runners with SDKs should set it).
-  package:
-    name: Package ${{ matrix.artifact }}
+  package-tizen:
+    name: Package Tizen (.tpk)
     needs: flutter-verify
+    if: needs.flutter-verify.outputs.attempt == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - artifact: webos
-            script: flutter/scripts/build-webos.sh
-            args: "--release"
-            pattern: "Prairie-webos.ipk"
-          - artifact: tizen-6.0
-            script: flutter/scripts/build-tizen.sh
-            args: "6.0 --package-version ${{ needs.flutter-verify.outputs.version }}"
-            pattern: "Prairie-tizen-api6.0.tpk"
-          - artifact: tizen-6.5
-            script: flutter/scripts/build-tizen.sh
-            args: "6.5 --package-version ${{ needs.flutter-verify.outputs.version }}"
-            pattern: "Prairie-tizen-api6.5.tpk"
-          - artifact: tizen-10.0
-            script: flutter/scripts/build-tizen.sh
-            args: "10.0 --package-version ${{ needs.flutter-verify.outputs.version }}"
-            pattern: "Prairie-tizen-api10.0.tpk"
     steps:
       - name: Check out sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Attempt native package build
-        id: build
-        env:
-          ATTEMPT: ${{ github.event_name != 'workflow_dispatch' && 'true' || inputs.attempt_native_builds }}
-          FAIL_WITHOUT_SDK: ${{ inputs.fail_without_sdk || false }}
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+
+      - name: Cache Tizen Studio
+        id: cache-tizen-studio
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/tizen-studio
+          key: tizen-studio-${{ env.TIZEN_STUDIO_VERSION }}-tv${{ env.TIZEN_TV_EXTENSION_VERSION }}-v1
+
+      - name: Install Tizen Studio CLI + TV Extension
+        if: steps.cache-tizen-studio.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          mkdir -p flutter/artifacts
-          if [[ "${ATTEMPT}" != "true" ]]; then
-            echo "Skipping native build (attempt_native_builds=false)"
-            echo "skipped=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          curl -fsSL -o installer.bin \
+            "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VERSION}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VERSION}_ubuntu-64.bin"
+          chmod +x installer.bin
+          ./installer.bin --accept-license "$HOME/tizen-studio"
+          rm installer.bin
+
+          PM="$HOME/tizen-studio/package-manager/package-manager-cli.bin"
+          # Package ID is best-effort — see the header comment at the top of
+          # this file if this fails.
+          "$PM" install --accept-license --no-java-check \
+            "TV-Extensions-${TIZEN_TV_EXTENSION_VERSION}" \
+            NativeCLI NativeToolchain-Gcc-9.2 || {
+            echo "::warning::TV Extension install failed — listing available packages for debugging:"
+            "$PM" list || true
+            exit 1
+          }
+
+      - name: Add Tizen Studio to PATH
+        run: echo "$HOME/tizen-studio/tools/ide/bin:$HOME/tizen-studio/tools" >> "$GITHUB_PATH"
+
+      - name: Cache flutter-tizen
+        id: cache-flutter-tizen
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/flutter-tizen
+          key: flutter-tizen-checkout-v1
+
+      - name: Install flutter-tizen
+        if: steps.cache-flutter-tizen.outputs.cache-hit != 'true'
+        run: git clone --depth 1 https://github.com/flutter-tizen/flutter-tizen.git "$HOME/flutter-tizen"
+
+      - name: Add flutter-tizen to PATH
+        run: echo "$HOME/flutter-tizen/bin" >> "$GITHUB_PATH"
+
+      - name: flutter-tizen doctor
+        run: flutter-tizen doctor -v
+
+      - name: Register signing profile
+        env:
+          AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_CERT_P12_BASE64 }}
+          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_CERT_PASSWORD }}
+          DIST_P12_BASE64: ${{ secrets.TIZEN_DIST_CERT_P12_BASE64 }}
+          DIST_PASSWORD: ${{ secrets.TIZEN_DIST_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${AUTHOR_P12_BASE64:-}" ]]; then
+            echo "::error::TIZEN_AUTHOR_CERT_P12_BASE64 secret not set — see this file's header comment."
+            exit 1
           fi
+          mkdir -p "$HOME/.tizen-certs"
+          echo "$AUTHOR_P12_BASE64" | base64 -d > "$HOME/.tizen-certs/author.p12"
+          echo "$DIST_P12_BASE64" | base64 -d > "$HOME/.tizen-certs/distributor.p12"
+          tizen security-profiles add -n Prairie_Server \
+            -a "$HOME/.tizen-certs/author.p12" -p "$AUTHOR_PASSWORD" \
+            --dist "$HOME/.tizen-certs/distributor.p12" --dist-password "$DIST_PASSWORD" \
+            --active
+          rm -rf "$HOME/.tizen-certs"
 
-          set +e
-          # shellcheck disable=SC2086
-          bash ${{ matrix.script }} ${{ matrix.args }} --out flutter/artifacts
-          code=$?
-          set -e
-
-          if [[ $code -eq 0 ]]; then
-            echo "built=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ $code -eq 127 ]]; then
-            echo "::notice::SDK toolchain missing for ${{ matrix.artifact }} on this runner."
-            echo "::notice::Install flutter-tizen / flutter-webos on a self-hosted runner, or build locally with flutter/scripts/."
-            echo "skipped=true" >> "$GITHUB_OUTPUT"
-            if [[ "${FAIL_WITHOUT_SDK}" == "true" ]]; then
-              exit 127
-            fi
-            # Write a marker so the artifact job still has something to upload
-            # documenting the skip (keeps Release structure ready).
-            cat > "flutter/artifacts/${{ matrix.artifact }}.SKIPPED.txt" <<EOF
-          Artifact: ${{ matrix.artifact }}
-          Reason: flutter-tizen / flutter-webos toolchain not available on runner
-          Version: ${{ needs.flutter-verify.outputs.version }}
-          Build locally: bash ${{ matrix.script }} ${{ matrix.args }}
-          EOF
-            exit 0
-          fi
-
-          echo "Build failed with exit code $code" >&2
-          exit "$code"
+      - name: Build
+        run: |
+          bash flutter/scripts/build-tizen.sh \
+            --package-version "${{ needs.flutter-verify.outputs.version }}" \
+            --security-profile Prairie_Server
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: prairie-${{ matrix.artifact }}-${{ needs.flutter-verify.outputs.version }}
-          path: |
-            flutter/artifacts/${{ matrix.pattern }}
-            flutter/artifacts/${{ matrix.artifact }}.SKIPPED.txt
-          if-no-files-found: warn
+          name: prairie-tizen-${{ needs.flutter-verify.outputs.version }}
+          path: flutter/artifacts/Prairie-tizen.tpk
+          if-no-files-found: error
+
+  package-webos:
+    name: Package webOS (.ipk)
+    needs: flutter-verify
+    if: needs.flutter-verify.outputs.attempt == 'true'
+    # webosbrew/native-toolchain currently only ships Linux ARM64 builds.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Node for ares-cli
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.WEBOS_ARES_NODE_VERSION }}
+
+      - name: Install ares-cli
+        run: npm install -g @webos-tools/cli
+
+      - name: Cache webOS NDK
+        id: cache-webos-ndk
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/webos-ndk
+          key: webos-ndk-${{ env.WEBOS_NDK_URL }}
+
+      - name: Install webOS NDK
+        if: steps.cache-webos-ndk.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o ndk.tar.bz2 "$WEBOS_NDK_URL"
+          mkdir -p "$HOME/webos-ndk"
+          tar -xjf ndk.tar.bz2 -C "$HOME/webos-ndk" --strip-components=1
+          rm ndk.tar.bz2
+          RELOCATE="$(find "$HOME/webos-ndk" -maxdepth 1 -name 'relocate-sdk.sh' | head -1)"
+          [[ -n "$RELOCATE" ]] && bash "$RELOCATE"
+          true
+
+      - name: Point flutter-webos at the NDK
+        run: |
+          set -euo pipefail
+          ENV_SCRIPT="$(find "$HOME/webos-ndk" -name 'environment-setup-*' | head -1)"
+          if [[ -z "$ENV_SCRIPT" ]]; then
+            echo "::error::No environment-setup-* script found under ~/webos-ndk — NDK layout may have changed."
+            exit 1
+          fi
+          echo "WEBOS_FLUTTER_NDK_ENV=$ENV_SCRIPT" >> "$GITHUB_ENV"
+
+      - name: Cache flutter-webos
+        id: cache-flutter-webos
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/flutter-webos
+          key: flutter-webos-checkout-v1
+
+      - name: Install flutter-webos
+        if: steps.cache-flutter-webos.outputs.cache-hit != 'true'
+        run: git clone --depth 1 https://github.com/lg-flutter-webos/flutter-webos.git "$HOME/flutter-webos"
+
+      - name: Add flutter-webos to PATH
+        run: echo "$HOME/flutter-webos/bin" >> "$GITHUB_PATH"
+
+      - name: flutter-webos doctor
+        run: flutter-webos doctor -v
+
+      - name: Build
+        run: bash flutter/scripts/build-webos.sh
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prairie-webos-${{ needs.flutter-verify.outputs.version }}
+          path: flutter/artifacts/Prairie-webos.ipk
+          if-no-files-found: error
 
   release-notes:
     name: Attach packages to GitHub Release
-    needs: [flutter-verify, package]
+    needs: [flutter-verify, package-tizen, package-webos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Check out sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download all package artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           path: release-artifacts
           pattern: prairie-*
           merge-multiple: true
 
-      - name: List artifacts
+      - name: Require real packages
         run: |
           set -euo pipefail
-          mkdir -p release-artifacts
           find release-artifacts -type f -print || true
-          # Prefer real packages; SKIPPED markers are acceptable on ubuntu-latest.
-          if ! find release-artifacts -type f \( -name '*.tpk' -o -name '*.ipk' -o -name '*.SKIPPED.txt' \) | grep -q .; then
-            echo "No package artifacts or skip markers found" >&2
+          if ! find release-artifacts -type f \( -name '*.tpk' -o -name '*.ipk' \) | grep -q .; then
+            echo "::error::No .tpk/.ipk produced for this tag — refusing to publish an empty release." >&2
             exit 1
           fi
 
       - name: Attach to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: release-artifacts/*
           generate_release_notes: true
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           name: Prairie Smart TV ${{ needs.flutter-verify.outputs.version }}
         env:

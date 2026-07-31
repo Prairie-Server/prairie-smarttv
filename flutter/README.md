@@ -14,11 +14,11 @@ flutter/
     prairie_webos/   # LG webOS app (flutter-webos) + video_player_drm backend
     flutter_secure_storage_webos/  # path fork: platform_interface ^2 for secure storage
   scripts/
-    stamp-tizen-api-version.sh   # stamp api-version for Store variants
-    build-tizen.sh               # build one Tizen TPK variant
-    build-webos.sh               # build webOS .ipk
-    validate-package-layout.sh   # CI-friendly layout/manifest checks (no SDKs)
-  artifacts/                     # local build outputs (gitignored)
+    stamp-tizen-package-version.sh   # stamp the release version into tizen-manifest.xml
+    build-tizen.sh                   # build the Tizen TPK
+    build-webos.sh                   # build webOS .ipk
+    validate-package-layout.sh       # CI-friendly layout/manifest checks (no SDKs)
+  artifacts/                         # local build outputs (gitignored)
 ```
 
 Each platform app only bundles the native plugins it needs.
@@ -39,32 +39,26 @@ git clone https://github.com/flutter-tizen/flutter-tizen.git ~/flutter-tizen
 export PATH="$HOME/flutter-tizen/bin:$PATH"
 ```
 
-Install **Tizen Studio** (real CLI install, not the VS Code extension SDK), TV Extensions
-for **6.0 and 10.0**, and a Samsung distributor certificate. Then `flutter-tizen doctor -v`
-until the toolchain check passes. Details: https://github.com/flutter-tizen/flutter-tizen
+Install **Tizen Studio** (real CLI install, not the VS Code extension SDK — Samsung has since
+deprecated Tizen Studio itself in favor of the VS Code extension as of 6.1, but this app's local
+dev + CI toolchain both still use classic Tizen Studio, which continues to work), the TV
+Extension, and a Samsung distributor certificate. Then `flutter-tizen doctor -v` until the
+toolchain check passes. Details: https://github.com/flutter-tizen/flutter-tizen
 
-#### Which Tizen api-version? (three Store TPKs)
+#### Why only one Tizen api-version / TPK
 
-`video_player_avplay` packages **api-version-specific** native libraries. One TPK does **not**
-span all Tizen OS versions. Ship three variants:
-
-| `api-version` in `tizen-manifest.xml` | Covers Tizen OS |
-| --- | --- |
-| `6.0` | 6.0 only |
-| `6.5` | 6.5–9.0 |
-| `10.0` | 10.0 only |
-
-The checked-in manifest defaults to **6.5** for day-to-day development. Stamp before release:
+The checked-in manifest's `api-version="6.5"` spans Tizen OS 6.5–9.0+ in a single TPK. This app
+used to ship three Store variants (6.0 / 6.5 / 10.0) because `video_player_avplay` packages
+**api-version-specific** precompiled native libraries — one TPK could not span all Tizen OS
+versions with that plugin. This app now uses `video_player_videohole` instead (switched to avoid
+`video_player_avplay`'s GStreamer HLS demux hard-linking `libclearkey.so.0`, which Smack blocks on
+a retail signing cert — see git history), which compiles from source with no such split, so the
+multi-variant stamping/build machinery was removed.
 
 ```bash
-./flutter/scripts/stamp-tizen-api-version.sh 6.0
-./flutter/scripts/build-tizen.sh 6.0
-./flutter/scripts/build-tizen.sh 6.5 --package-version 1.0.1
-./flutter/scripts/build-tizen.sh 10.0 --package-version 1.0.2 --obfuscate
+./flutter/scripts/build-tizen.sh --package-version 1.0.1
+./flutter/scripts/build-tizen.sh --package-version 1.0.1 --security-profile Prairie_Server --obfuscate
 ```
-
-See upstream:
-https://github.com/flutter-tizen/plugins/blob/master/packages/video_player_avplay/README.md
 
 #### GCC / 2026 TV note
 
@@ -117,7 +111,8 @@ bash flutter/scripts/validate-package-layout.sh
 3. `cd flutter/packages/prairie_tizen && flutter-tizen build tpk --device-profile tv`
 4. `flutter-tizen -d <tv-ip>:26101 install && flutter-tizen -d <tv-ip>:26101 run --release`
 
-Or use `./flutter/scripts/build-tizen.sh <api-version>` which stamps the manifest first.
+Or use `./flutter/scripts/build-tizen.sh` (`--package-version`/`--security-profile`/`--obfuscate`
+optional).
 
 ### webOS TV / emulator
 
@@ -136,15 +131,19 @@ with `ares-package` / install with `ares-install` as usual for native Flutter we
   subset to Latin + needed glyphs with `pyftsubset` / fontTools before release cutover, or switch
   to variable fonts with a unicode-range subset. Not automated in CI yet.
 
-## CI limitations
+## CI
 
-GitHub `ubuntu-latest` runners do **not** include flutter-tizen or flutter-webos/NDK. Workflows:
+`release-packages.yml` installs both TV toolchains from scratch on GitHub-hosted runners (Tizen
+Studio + TV Extension on `ubuntu-latest`; the webOS NDK + `flutter-webos` on `ubuntu-24.04-arm`,
+since the community NDK toolchain it uses only ships Linux ARM64 builds — see the workflow file's
+header comment for the full rationale and the couple of specifics that are best-effort pending a
+first real run). No self-hosted runner or persistent infra required. A signed Tizen build needs
+`TIZEN_AUTHOR_CERT_P12_BASE64` / `TIZEN_AUTHOR_CERT_PASSWORD` / `TIZEN_DIST_CERT_P12_BASE64` /
+`TIZEN_DIST_CERT_PASSWORD` set as repo secrets (Settings > Secrets and variables > Actions) —
+base64-encode your `author.p12`/`distributor.p12` locally and paste only into the GitHub secret
+box, never elsewhere.
 
-| Workflow | Always | When SDKs present |
-| --- | --- | --- |
-| `unit-tests.yml` | analyze + test `prairie_core`; Dart analyze platform pkgs; layout validation | — |
-| `release-packages.yml` | same verify gate; matrix for 4 artifacts | real `.tpk` / `.ipk` via build scripts |
-
-Missing SDKs produce skip markers under `flutter/artifacts/*.SKIPPED.txt` instead of failing the
-release job (unless `fail_without_sdk` is set on workflow_dispatch). Prefer a self-hosted runner
-with the TV toolchains for Store binaries.
+| Workflow | Does |
+| --- | --- |
+| `unit-tests.yml` | analyze + test `prairie_core`; Dart analyze platform pkgs; layout validation |
+| `release-packages.yml` | same verify gate, then real `.tpk` / `.ipk` builds, attached to the GitHub Release on a `v*` tag push |

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Validate Flutter package layouts / manifests for all four release artifacts
-# without needing flutter-tizen or flutter-webos SDKs.
+# Validate Flutter package layouts / manifests for both release artifacts
+# (webOS .ipk, Tizen .tpk) without needing flutter-tizen or flutter-webos
+# SDKs.
 #
 # Checks:
 #   - prairie_webos appinfo.json (transparent + requiredACG)
-#   - prairie_tizen tizen-manifest.xml privileges + stampable api-version
-#   - stamp script produces 6.0 / 6.5 / 10.0 variants and restores default
+#   - prairie_tizen tizen-manifest.xml privileges + fixed api-version
+#   - package-version stamp script works and restores the checked-in default
 #
 # Exit 0 on success. Intended for CI on ubuntu-latest.
 set -euo pipefail
@@ -14,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WEBOS_APPINFO="${ROOT}/packages/prairie_webos/webos/meta/appinfo.json"
 TIZEN_MANIFEST="${ROOT}/packages/prairie_tizen/tizen/tizen-manifest.xml"
-STAMP="${SCRIPT_DIR}/stamp-tizen-api-version.sh"
+STAMP="${SCRIPT_DIR}/stamp-tizen-package-version.sh"
 TMP_MANIFEST="$(mktemp)"
 trap 'rm -f "$TMP_MANIFEST"' EXIT
 
@@ -44,24 +45,17 @@ pass "webOS appinfo.json (transparent + ACGs)"
 # --- Tizen manifest baseline ---
 grep -q 'privilege>http://tizen.org/privilege/internet' "$TIZEN_MANIFEST" \
   || fail "tizen-manifest missing internet privilege"
-grep -q 'api-version=' "$TIZEN_MANIFEST" || fail "tizen-manifest missing api-version"
+# Fixed at 6.5 (spans Tizen 6.5-9.0+) — video_player_videohole compiles from
+# source with no per-api-version binaries, so unlike the old video_player_avplay
+# setup there is no need to vary this per Store submission.
+grep -q 'api-version="6.5"' "$TIZEN_MANIFEST" || fail "tizen-manifest api-version should be 6.5"
 pass "Tizen manifest privileges"
 
-# --- Stamp all three Store variants (on a copy; restore source unchanged) ---
+# --- Package-version stamp works (against a copy; $STAMP never touches $TIZEN_MANIFEST directly) ---
 cp -f "$TIZEN_MANIFEST" "$TMP_MANIFEST"
-ORIG_API="$(grep -oE 'api-version="[^"]+"' "$TIZEN_MANIFEST" | head -1)"
-
-for ver in 6.0 6.5 10.0; do
-  bash "$STAMP" "$ver" --manifest "$TMP_MANIFEST" >/dev/null
-  grep -q "api-version=\"${ver}\"" "$TMP_MANIFEST" \
-    || fail "stamp did not set api-version=${ver}"
-  pass "stamp api-version=${ver}"
-done
-
-# Default checked-in manifest should remain 6.5 (dev default spanning 6.5–9.0).
-grep -q 'api-version="6.5"' "$TIZEN_MANIFEST" \
-  || fail "checked-in tizen-manifest.xml should default to api-version=6.5 (was ${ORIG_API})"
-pass "checked-in default api-version=6.5"
+bash "$STAMP" "9.9.9" --manifest "$TMP_MANIFEST" >/dev/null
+grep -q 'version="9.9.9"' "$TMP_MANIFEST" || fail "stamp did not set package version"
+pass "package-version stamp"
 
 # --- Required Dart entrypoints / scripts exist ---
 for f in \
@@ -96,9 +90,7 @@ fi
 pass "pubspec dependency shape"
 
 echo
-echo "All four release variants are layout-valid:"
+echo "Both release variants are layout-valid:"
 echo "  1) webOS (.ipk) — appinfo ready"
-echo "  2) Tizen api-version 6.0"
-echo "  3) Tizen api-version 6.5"
-echo "  4) Tizen api-version 10.0"
+echo "  2) Tizen (.tpk) — api-version 6.5 (spans 6.5-9.0+)"
 echo "Native SDK builds: flutter/scripts/build-{webos,tizen}.sh"
