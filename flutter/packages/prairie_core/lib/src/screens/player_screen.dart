@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide Route;
@@ -75,6 +76,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// Debounce for remux's restart-based seek — see [_seekToPosition].
   Timer? _seekDebounce;
   Duration? _pendingRemuxSeek;
+  /// Live scrub/seek preview time shown above the seek bar (trickplay + clock).
+  Duration? _seekPreviewTime;
+  Timer? _seekPreviewHideTimer;
   /// When the stream was attached; stall detection runs during prepare too.
   DateTime? _streamAttachedAt;
   bool _exiting = false;
@@ -122,6 +126,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _hideControlsTimer?.cancel();
     _stallTimer?.cancel();
     _seekDebounce?.cancel();
+    _seekPreviewHideTimer?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -162,12 +167,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _hideControlsNow() {
     if (!mounted) return;
     _hideControlsTimer?.cancel();
-    setState(() => _controlsVisible = false);
+    _seekPreviewHideTimer?.cancel();
+    setState(() {
+      _controlsVisible = false;
+      _seekPreviewTime = null;
+    });
     // Controls leave the tree with their FocusNodes — park focus on the
     // idle catcher so the next D-pad event has somewhere to land.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_controlsVisible) _idleFocus.requestFocus();
     });
+  }
+
+  void _showSeekPreview(Duration time) {
+    _seekPreviewHideTimer?.cancel();
+    _seekPreviewTime = time;
+    _seekPreviewHideTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      setState(() => _seekPreviewTime = null);
+    });
+  }
+
+  TrickplayInfo? get _activeTrickplay {
+    final watch = widget.launch.watch;
+    if (watch == null) return null;
+    final fileId = _playbackSession?.mediaFileId ?? widget.launch.fileId;
+    return selectFileVersion(watch, fileId)?.trickplay ??
+        (watch.versions.isNotEmpty ? watch.versions.first.trickplay : null);
   }
 
   void _showControls({bool focusPlay = false}) {
@@ -1196,6 +1222,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final isRemux = (_playbackSession?.playMethod ?? '').trim().toLowerCase() == 'remux';
     if (isRemux) {
+      _showSeekPreview(next);
       setState(() => _position = next);
       _showControls();
       _pendingRemuxSeek = next;
@@ -1212,7 +1239,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     try {
       await backend.seekTo(next);
-      if (mounted) setState(() => _position = next);
+      if (mounted) {
+        _showSeekPreview(next);
+        setState(() => _position = next);
+      }
     } on PlatformException catch (err) {
       debugPrint('prairie.player_screen: native seekTo failed: $err');
     }
@@ -1445,7 +1475,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                 Row(
                                   children: [
                                     Text(_formatDuration(_position), style: const TextStyle(color: PrairieColors.muted)),
-                                    Expanded(child: _buildSeekBar(backend)),
+                                    Expanded(child: _buildSeekBarWithPreview(backend)),
                                     Text(_formatDuration(_totalDuration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
                                   ],
                                 ),
@@ -1535,6 +1565,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// [_seekBarStep] seeks and Down/Up as focus moves. The Material [Slider]
   /// is excluded from focus so it can't swallow D-pad with its 5%-of-duration
   /// keyboard steps.
+  Widget _buildSeekBarWithPreview(VideoBackend backend) {
+    final duration = _totalDuration ?? Duration.zero;
+    final preview = _seekPreviewTime;
+    final previewSeconds = preview?.inMilliseconds ?? _position.inMilliseconds;
+    final pct = duration.inMilliseconds > 0
+        ? (previewSeconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final tile = preview == null
+        ? null
+        : resolveTrickplayTile(_activeTrickplay, preview.inMilliseconds / 1000.0);
+    final serverUrl = ref.read(sessionProvider)?.serverUrl ?? '';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const bubbleHalf = 88.0;
+        final left = (pct * constraints.maxWidth - bubbleHalf)
+            .clamp(0.0, math.max(0.0, constraints.maxWidth - bubbleHalf * 2))
+            .toDouble();
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            if (preview != null)
+              Positioned(
+                left: left,
+                bottom: 36,
+                child: _SeekPreviewBubble(
+                  timeLabel: _formatDuration(preview),
+                  tile: tile,
+                  serverUrl: serverUrl,
+                ),
+              ),
+            _buildSeekBar(backend),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildSeekBar(VideoBackend backend) {
     final maxMs = (_totalDuration ?? const Duration(seconds: 1))
         .inMilliseconds
@@ -1563,8 +1632,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 value: value,
                 max: maxMs,
                 onChanged: (v) {
+                  final next = Duration(milliseconds: v.round());
                   _scheduleHideControls();
-                  setState(() => _position = Duration(milliseconds: v.round()));
+                  _showSeekPreview(next);
+                  setState(() => _position = next);
                 },
                 onChangeEnd: (v) => _seekToPosition(Duration(milliseconds: v.round())),
               ),
@@ -1572,6 +1643,91 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Seek scrub preview: optional trickplay tile + timecode, matching web SeekBar.
+class _SeekPreviewBubble extends StatelessWidget {
+  const _SeekPreviewBubble({
+    required this.timeLabel,
+    required this.tile,
+    required this.serverUrl,
+  });
+
+  final String timeLabel;
+  final TrickplayTilePreview? tile;
+  final String serverUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final tip = tile;
+    double? displayW;
+    double? displayH;
+    if (tip != null && tip.width > 0 && tip.height > 0) {
+      displayW = math.min(tip.width.toDouble(), 176.0);
+      displayH = displayW * tip.height / tip.width;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xF2171717),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 18, offset: const Offset(0, 8)),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (tip != null && displayW != null && displayH != null)
+                  SizedBox(
+                    width: displayW,
+                    height: displayH,
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          maxWidth: displayW * tip.columns,
+                          maxHeight: displayH * tip.rows,
+                          alignment: Alignment(tip.alignmentX, tip.alignmentY),
+                          child: SizedBox(
+                            width: displayW * tip.columns,
+                            height: displayH * tip.rows,
+                            child: Image.network(
+                              resolveAssetUrl(serverUrl, tip.url),
+                              fit: BoxFit.fill,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Text(
+                    timeLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

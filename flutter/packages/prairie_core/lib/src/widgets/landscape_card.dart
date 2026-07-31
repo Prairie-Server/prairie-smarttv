@@ -79,10 +79,18 @@ class _LandscapeCardState extends State<LandscapeCard> {
                       children: [
                         const ColoredBox(color: Color(0xFF10151C)),
                         if (widget.imageUrl != null && widget.imageUrl!.trim().isNotEmpty)
-                          Image.network(
-                            resolveAssetUrl(widget.serverUrl, widget.imageUrl!),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const Center(child: Icon(Icons.play_arrow, size: 28, color: PrairieColors.muted)),
+                          Builder(
+                            builder: (context) {
+                              final dpr = MediaQuery.devicePixelRatioOf(context);
+                              final resolved = resolveAssetUrl(widget.serverUrl, widget.imageUrl!);
+                              return Image.network(
+                                artworkSized(resolved, landscapeArtworkWidth),
+                                fit: BoxFit.cover,
+                                cacheWidth: (280 * dpr).round(),
+                                cacheHeight: (157 * dpr).round(),
+                                errorBuilder: (_, _, _) => const Center(child: Icon(Icons.play_arrow, size: 28, color: PrairieColors.muted)),
+                              );
+                            },
                           )
                         else
                           const Center(child: Icon(Icons.play_arrow, size: 28, color: PrairieColors.muted)),

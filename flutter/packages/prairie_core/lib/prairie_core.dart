@@ -11,6 +11,8 @@ export 'src/models/library.dart';
 export 'src/models/live_tv_channel.dart';
 export 'src/models/server_entry.dart';
 export 'src/models/watch_detail.dart';
+export 'src/player/trickplay.dart';
+export 'src/lib/artwork_url.dart';
 export 'src/api/api_client.dart';
 export 'src/api/api_error.dart';
 export 'src/api/auth_api.dart';

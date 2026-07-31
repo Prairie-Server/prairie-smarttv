@@ -1,3 +1,5 @@
+import '../player/trickplay.dart';
+
 /// Mirrors `AudioTrackInfo` from src/api/watch.ts.
 class AudioTrackInfo {
   const AudioTrackInfo({this.title, this.embeddedTitle, this.language, this.codec, this.channels, this.isDefault});
@@ -120,6 +122,7 @@ class FileVersion {
     this.videoTracks = const [],
     this.audioTracks = const [],
     this.subtitleTracks = const [],
+    this.trickplay,
   });
 
   final int fileId;
@@ -131,6 +134,7 @@ class FileVersion {
   final List<VideoTrackInfo> videoTracks;
   final List<AudioTrackInfo> audioTracks;
   final List<SubtitleTrackInfo> subtitleTracks;
+  final TrickplayInfo? trickplay;
 
   factory FileVersion.fromJson(Map<String, dynamic> json) => FileVersion(
     fileId: json['file_id'] as int,
@@ -142,6 +146,7 @@ class FileVersion {
     videoTracks: (json['video_tracks'] as List<dynamic>? ?? []).map((j) => VideoTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     audioTracks: (json['audio_tracks'] as List<dynamic>? ?? []).map((j) => AudioTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     subtitleTracks: (json['subtitle_tracks'] as List<dynamic>? ?? []).map((j) => SubtitleTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
+    trickplay: json['trickplay'] != null ? TrickplayInfo.fromJson(json['trickplay'] as Map<String, dynamic>) : null,
   );
 }
 

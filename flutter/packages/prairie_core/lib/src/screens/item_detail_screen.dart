@@ -247,7 +247,17 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         backdropUrl: detail.item.backdropUrl,
         year: detail.item.year,
         versions: detail.versions
-            .map((v) => FileVersion(fileId: v.fileId, resolution: v.resolution, codecVideo: v.codecVideo, codecAudio: v.codecAudio))
+            .map(
+              (v) => FileVersion(
+                fileId: v.fileId,
+                resolution: v.resolution,
+                codecVideo: v.codecVideo,
+                codecAudio: v.codecAudio,
+                container: v.container,
+                duration: v.duration,
+                trickplay: v.trickplay,
+              ),
+            )
             .toList(),
         userData: detail.userData,
         seriesId: detail.seriesId,
@@ -748,7 +758,19 @@ class _Hero extends StatelessWidget {
         const Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: PrairieColors.bgElevated))),
         if (backdrop != null)
           Positioned.fill(
-            child: Image.network(resolveAssetUrl(serverUrl, backdrop), fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+            child: Builder(
+              builder: (context) {
+                final dpr = MediaQuery.devicePixelRatioOf(context);
+                final logicalW = MediaQuery.sizeOf(context).width;
+                final resolved = resolveAssetUrl(serverUrl, backdrop);
+                return Image.network(
+                  artworkSized(resolved, heroArtworkWidth),
+                  fit: BoxFit.cover,
+                  cacheWidth: (logicalW * dpr).round().clamp(1, 1280),
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                );
+              },
+            ),
           ),
         Positioned.fill(
           child: DecoratedBox(
@@ -800,12 +822,20 @@ class _Hero extends StatelessWidget {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14),
-                            child: Image.network(
-                              resolveAssetUrl(serverUrl, poster),
-                              width: 160,
-                              height: 240,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const SizedBox(width: 160, height: 240, child: PosterFallback()),
+                            child: Builder(
+                              builder: (context) {
+                                final dpr = MediaQuery.devicePixelRatioOf(context);
+                                final resolved = resolveAssetUrl(serverUrl, poster);
+                                return Image.network(
+                                  artworkSized(resolved, detailPosterArtworkWidth),
+                                  width: 160,
+                                  height: 240,
+                                  fit: BoxFit.cover,
+                                  cacheWidth: (160 * dpr).round(),
+                                  cacheHeight: (240 * dpr).round(),
+                                  errorBuilder: (_, _, _) => const SizedBox(width: 160, height: 240, child: PosterFallback()),
+                                );
+                              },
                             ),
                           ),
                         ),
