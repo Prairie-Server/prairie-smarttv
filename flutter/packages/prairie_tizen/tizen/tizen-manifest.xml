@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest package="org.prairieserver.prairie_tizen" version="1.0.0" api-version="6.5" xmlns="http://tizen.org/ns/packages">
+<manifest package="org.prairieserver.prairie_tizen" version="0.1.9" api-version="6.5" xmlns="http://tizen.org/ns/packages">
     <profile name="common"/>
     <ui-application appid="org.prairieserver.prairie_tizen" exec="Runner.dll" type="dotnet" multiple="false" nodisplay="false" taskmanage="true">
         <label>Prairie</label>

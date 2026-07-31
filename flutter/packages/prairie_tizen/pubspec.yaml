@@ -1,7 +1,7 @@
 name: prairie_tizen
 description: Prairie Smart TV client for Samsung Tizen (flutter-tizen).
 publish_to: 'none'
-version: 1.0.0+1
+version: 0.1.9+1
 
 environment:
   sdk: ^3.12.2
