@@ -115,3 +115,73 @@ jobs:
 
       - name: Validate manifests + stamp scripts
         run: bash flutter/scripts/validate-package-layout.sh
+  webos-native-build:
+    name: webOS native build
+    runs-on: ubuntu-22.04
+    needs: flutter-webos-analyze
+    env:
+      WEBOS_NDK_INSTALLER_URL: "https://github.com/lg-flutter-webos/ndk/releases/download/11.2.0/webos-ndk-flutter-starfish-x86_64-ca9v1-11.2.0.sh"
+      WEBOS_FLUTTER_NDK_ENV: "/usr/local/starfish-sdk-x86_64/environment-setup-ca9v1-webosmllib32-linux-gnueabi"
+      WEBOS_ARES_NODE_VERSION: "20.19.5"
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Install webOS host dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip cmake pkg-config file libgtk-3-0 libgtk-3-dev git ninja-build clang git-lfs
+
+      - name: Set up Node for ares-cli
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.WEBOS_ARES_NODE_VERSION }}
+
+      - name: Install ares-cli
+        run: npm install -g @webos-tools/cli
+
+      - name: Install webOS NDK
+        run: |
+          set -euo pipefail
+          curl -fsSL -o ndk-installer.sh "${WEBOS_NDK_INSTALLER_URL}"
+          chmod +x ndk-installer.sh
+          sudo ./ndk-installer.sh -y
+          rm ndk-installer.sh
+          test -f "${WEBOS_FLUTTER_NDK_ENV}"
+
+      - name: Point flutter-webos at the NDK
+        run: echo "WEBOS_FLUTTER_NDK_ENV=${WEBOS_FLUTTER_NDK_ENV}" >> "${GITHUB_ENV}"
+
+      - name: Cache flutter-webos
+        id: cache-flutter-webos
+        uses: actions/cache@v4
+        with:
+          path: ~/flutter-webos
+          key: flutter-webos-checkout-v1
+
+      - name: Install flutter-webos
+        if: steps.cache-flutter-webos.outputs.cache-hit != 'true'
+        run: git clone --depth 1 https://github.com/lg-flutter-webos/flutter-webos.git "${HOME}/flutter-webos"
+
+      - name: Add flutter-webos to PATH
+        run: echo "${HOME}/flutter-webos/bin" >> "${GITHUB_PATH}"
+
+      - name: Doctor + precache
+        run: |
+          set -euo pipefail
+          source "${WEBOS_FLUTTER_NDK_ENV}"
+          flutter-webos doctor -v
+          flutter-webos precache
+
+      - name: Native release build
+        run: |
+          set -euo pipefail
+          source "${WEBOS_FLUTTER_NDK_ENV}"
+          bash flutter/scripts/build-webos.sh
+
+      - name: Verify IPK
+        run: |
+          set -euo pipefail
+          test -s flutter/artifacts/Prairie-webos.ipk
+          file flutter/artifacts/Prairie-webos.ipk
