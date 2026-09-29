@@ -197,7 +197,7 @@ Future<PlaybackSessionResponse> replanPlaybackQuality(ApiClient client, PrairieS
     'client_capabilities': current.clientCapabilities, 'client_playback_context': current.clientPlaybackContext,
   };
   Map<String, dynamic> json;
-  final v2Path = '/api/v2/playback/' + Uri.encodeComponent(current.sessionId) + '/replan';
+  final v2Path = '/api/v2/playback/${Uri.encodeComponent(current.sessionId)}/replan';
   try {
     json = await client.request<Map<String, dynamic>>(
       _sessionOptions(session), v2Path, method: 'POST', body: body,
@@ -205,7 +205,7 @@ Future<PlaybackSessionResponse> replanPlaybackQuality(ApiClient client, PrairieS
   } on ApiError catch (err) {
     if (err.status != 404 && err.status != 405) rethrow;
     json = await client.request<Map<String, dynamic>>(
-      _sessionOptions(session), '/api/v1/playback/' + Uri.encodeComponent(current.sessionId) + '/replan',
+      _sessionOptions(session), '/api/v1/playback/${Uri.encodeComponent(current.sessionId)}/replan',
       method: 'POST', body: body,
     );
   }
