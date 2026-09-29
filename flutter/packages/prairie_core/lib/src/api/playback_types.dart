@@ -75,7 +75,7 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
   // old forceDirectPlay / forceTranscode switches.
   final deliveries = <String, dynamic>{
     'original_http': {
-      'enabled': input.forcedPlayMethod != PlayMethod.transcode,
+      'enabled': input.forcedPlayMethod != PlayMethod.transcode && input.forcedPlayMethod != PlayMethod.direct,
       'supported_on_device': true,
       'containers': containers,
       'video_codecs': videoCodecs,
