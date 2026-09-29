@@ -52,10 +52,8 @@ Future<List<CollectionCard>> fetchPersonalCollections(ApiClient client, PrairieS
   for (final card in (json['items'] as List<dynamic>? ?? [])) {
     out.add(_cardFromJson(card as Map<String, dynamic>));
   }
-  for (final group in (json['groups'] as List<dynamic>? ?? [])) {
-    for (final card in ((group as Map<String, dynamic>)['collections'] as List<dynamic>? ?? [])) {
-      out.add(_cardFromJson(card as Map<String, dynamic>));
-    }
-  }
+  // `items` is the complete personal collection list. `groups` is
+  // presentation metadata and repeats grouped collections, so do not flatten it
+  // into the card list or grouped collections appear twice.
   return out;
 }
