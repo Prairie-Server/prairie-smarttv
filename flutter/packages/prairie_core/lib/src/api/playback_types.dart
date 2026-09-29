@@ -162,6 +162,7 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
     if (input.startPosition != null && input.startPosition! > 0) 'start_position': input.startPosition,
     'progress_persistence': 'server',
     'metered': false,
+    'max_audio_channels': maxAudioChannels,
     'client_capabilities': {
       'video_evidence': 'declared',
       'audio_evidence': 'declared',
