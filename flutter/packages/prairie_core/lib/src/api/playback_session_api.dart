@@ -52,19 +52,71 @@ class PlaybackSessionResponse {
   final double? durationSeconds;
   final PlaybackInfo? playbackInfo;
 
-  factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) => PlaybackSessionResponse(
-    sessionId: json['session_id'] as String,
-    mediaFileId: json['media_file_id'] as int,
-    playMethod: json['play_method'] as String,
-    position: (json['position'] as num).toDouble(),
-    isPaused: json['is_paused'] as bool? ?? false,
-    streamUrl: json['stream_url'] as String,
-    audioTrackIndex: json['audio_track_index'] as int? ?? 0,
-    durationSeconds: (json['duration_seconds'] as num?)?.toDouble(),
-    playbackInfo: json['playback_info'] is Map<String, dynamic>
-        ? PlaybackInfo.fromJson(json['playback_info'] as Map<String, dynamic>)
-        : null,
-  );
+  factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) {
+    final plan = json['playback_plan'];
+    if (plan is Map<String, dynamic>) {
+      return PlaybackSessionResponse.fromV3Decision(json);
+    }
+    return PlaybackSessionResponse(
+      sessionId: json['session_id'] as String,
+      mediaFileId: json['media_file_id'] as int,
+      playMethod: json['play_method'] as String,
+      position: (json['position'] as num).toDouble(),
+      isPaused: json['is_paused'] as bool? ?? false,
+      streamUrl: json['stream_url'] as String,
+      audioTrackIndex: json['audio_track_index'] as int? ?? 0,
+      durationSeconds: (json['duration_seconds'] as num?)?.toDouble(),
+      playbackInfo: json['playback_info'] is Map<String, dynamic>
+          ? PlaybackInfo.fromJson(json['playback_info'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  factory PlaybackSessionResponse.fromV3Decision(Map<String, dynamic> json) {
+    final plan = Map<String, dynamic>.from(json['playback_plan'] as Map);
+    final delivery = (plan['delivery'] as String? ?? '').toLowerCase();
+    final stream = Map<String, dynamic>.from(plan['stream'] as Map? ?? const {});
+    final timeline = Map<String, dynamic>.from(plan['timeline'] as Map? ?? const {});
+    final source = Map<String, dynamic>.from(plan['source'] as Map? ?? const {});
+    final selected = Map<String, dynamic>.from(plan['selected_tracks'] as Map? ?? const {});
+    final audio = selected['audio'] is Map ? Map<String, dynamic>.from(selected['audio'] as Map) : null;
+    final recipe = Map<String, dynamic>.from(plan['effective_recipe'] as Map? ?? const {});
+
+    final playMethod = switch (delivery) {
+      'original_http' => 'direct',
+      'server_remux_progressive' => 'remux',
+      _ => 'transcode',
+    };
+
+    final streamProtocol = stream['protocol'] as String?;
+    final streamUrl = stream['url'] as String? ?? '';
+    final playerStart = (timeline['player_start_seconds'] as num?)?.toDouble() ?? 0;
+    final streamOrigin = (timeline['stream_origin_seconds'] as num?)?.toDouble() ?? 0;
+
+    return PlaybackSessionResponse(
+      sessionId: json['session_id'] as String? ?? plan['session_id'] as String? ?? '',
+      mediaFileId: _intFromDynamic(plan['effective_media_file_id'] ?? plan['requested_media_file_id']),
+      playMethod: playMethod,
+      position: playerStart + streamOrigin,
+      isPaused: false,
+      streamUrl: streamUrl,
+      audioTrackIndex: (audio?['index'] as num?)?.toInt() ?? 0,
+      durationSeconds: (source['duration_seconds'] as num?)?.toDouble(),
+      playbackInfo: PlaybackInfo(
+        streamType: streamProtocol,
+        canSeekAnywhere: timeline['can_seek_anywhere'] as bool?,
+        transcodeAudio: playMethod == 'transcode',
+        videoCodec: recipe['video_codec'] as String?,
+        audioCodec: recipe['audio_codec'] as String?,
+      ),
+    );
+  }
+
+  static int _intFromDynamic(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
 }
 
 ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
