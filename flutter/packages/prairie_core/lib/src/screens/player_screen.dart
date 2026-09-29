@@ -443,6 +443,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     try {
       final client = ref.read(apiClientProvider);
+      final identity = ref.read(clientIdentityProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
       final deviceCaps = applyAudioChannelOverride(
@@ -873,6 +874,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           maxResolution: deviceCaps.maxResolution,
           hdr: deviceCaps.hdr,
           maxAudioChannels: deviceCaps.maxAudioChannels,
+          devicePlatform: identity.devicePlatform,
+          appVersion: identity.appVersion,
+          appBuild: identity.appBuild,
+          appChannel: identity.appChannel,
         ),
       );
       startedSessionId = started.sessionId;
