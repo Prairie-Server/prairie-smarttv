@@ -65,7 +65,7 @@ env:
   TIZEN_SDK_VERSION: "10.0"
   WEBOS_NDK_INSTALLER_URL: "https://github.com/lg-flutter-webos/ndk/releases/download/11.2.0/webos-ndk-flutter-starfish-x86_64-ca9v1-11.2.0.sh"
   WEBOS_FLUTTER_NDK_ENV: "/usr/local/starfish-sdk-x86_64/environment-setup-ca9v1-webosmllib32-linux-gnueabi"
-  WEBOS_ARES_NODE_VERSION: "16.20.2"
+  WEBOS_ARES_NODE_VERSION: "20.19.5"
 
 jobs:
   flutter-verify:
