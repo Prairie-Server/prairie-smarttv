@@ -22,6 +22,7 @@ export 'src/api/collections_api.dart';
 export 'src/api/health_api.dart';
 export 'src/api/home_api.dart';
 export 'src/api/libraries_api.dart';
+export 'src/api/native_api.dart';
 export 'src/api/livetv_api.dart';
 export 'src/api/playback_session_api.dart';
 export 'src/api/playback_types.dart';
