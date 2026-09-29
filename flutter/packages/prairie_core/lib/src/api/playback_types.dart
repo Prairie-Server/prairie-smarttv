@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Mirrors `PlayMethod`/`ForcedPlayMethod` from src/platform/types.ts.
 enum PlayMethod { direct, remux, transcode }
 
