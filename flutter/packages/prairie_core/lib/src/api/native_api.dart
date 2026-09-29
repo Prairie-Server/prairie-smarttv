@@ -1,4 +1,3 @@
-import '../models/auth.dart';
 import 'api_client.dart';
 import 'api_error.dart';
 
