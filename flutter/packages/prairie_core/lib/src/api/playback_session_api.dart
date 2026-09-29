@@ -50,6 +50,7 @@ class PlaybackSessionResponse {
     this.clientCapabilities = const {},
     this.clientPlaybackContext = const {},
     this.isProtocolV3 = false,
+    this.qualityPreference = 'auto',
   });
 
   final String sessionId;
@@ -69,6 +70,10 @@ class PlaybackSessionResponse {
   final Map<String, dynamic> clientCapabilities;
   final Map<String, dynamic> clientPlaybackContext;
   final bool isProtocolV3;
+
+  /// Quality preference the current plan was made under. A track change
+  /// replans with it so switching audio does not reset the chosen quality.
+  final String qualityPreference;
 
   factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) {
     final plan = json['playback_plan'];
@@ -153,21 +158,114 @@ ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
   profileToken: session.profileToken,
 );
 
+/// `GET /api/v2/playback/capabilities`, memoized per server for a minute
+/// (mirrors `playbackCapabilitiesV2` in web/src/player/start-v2.ts).
+class _PlaybackCapabilitiesV2 {
+  const _PlaybackCapabilitiesV2(this.at, this.installationId);
+  final DateTime at;
+
+  /// Null when this server or account cannot start playback on /api/v2.
+  final String? installationId;
+}
+
+const _capabilitiesTtl = Duration(minutes: 1);
+final _capabilitiesCache = <String, _PlaybackCapabilitiesV2>{};
+
+/// Sequencing state for a session started on /api/v2 (mirrors
+/// web/src/player/session-mutations.ts). The server orders progress with a
+/// compare-and-set on `sequence`, and a stop keeps one `stop_id` across
+/// retries. Sessions absent from this map were started on the v1 bridge and
+/// keep the v1 lifecycle routes.
+class _V2Mutations {
+  _V2Mutations(this.installationId);
+  final String installationId;
+  int sequence = 0;
+  String? stopId;
+}
+
+final _v2Sessions = <String, _V2Mutations>{};
+
+/// Forgets memoized capabilities and registered v2 sessions; tests only.
+void resetPlaybackV2StateForTest() {
+  _capabilitiesCache.clear();
+  _v2Sessions.clear();
+}
+
+/// The installation to start on /api/v2 with, or null to use the v1 bridge.
+Future<String?> _playbackInstallationV2(ApiClient client, PrairieSession session, {bool force = false}) async {
+  final key = session.serverUrl;
+  final cached = _capabilitiesCache[key];
+  if (!force && cached != null && DateTime.now().difference(cached.at) < _capabilitiesTtl) {
+    return cached.installationId;
+  }
+  String? installationId;
+  try {
+    final cap = await client.request<Map<String, dynamic>>(
+      _sessionOptions(session), '/api/v2/playback/capabilities',
+    );
+    final versions = cap['protocol_versions'];
+    final id = cap['installation_id'];
+    if (cap['state'] == 'available' &&
+        cap['allowed'] == true &&
+        versions is List &&
+        versions.contains(3) &&
+        id is String &&
+        id.isNotEmpty) {
+      installationId = id;
+    }
+  } on ApiError catch (err) {
+    // A server without /api/v2 playback keeps the v1 bridge. Anything else
+    // (auth, 5xx) is a real failure and must not silently change protocol.
+    if (err.status != 404 && err.status != 405) rethrow;
+  }
+  _capabilitiesCache[key] = _PlaybackCapabilitiesV2(DateTime.now(), installationId);
+  return installationId;
+}
+
+/// Converts the v1-bridge start body to `PlaybackStartBody`: string ids, the
+/// capabilities' installation, and no Prairie v1 extras (v2 rejects unknown
+/// fields; the channel ceiling already rides on each delivery's
+/// `max_channels`).
+Map<String, dynamic> _startBodyV2(Map<String, dynamic> body, String installationId) {
+  final next = Map<String, dynamic>.from(body)
+    ..remove('max_audio_channels')
+    ..['file_id'] = body['file_id'].toString()
+    ..['installation_id'] = installationId;
+  return next;
+}
+
 /// Mirrors `startPlayback` from src/api/startPlayback.ts.
+///
+/// Starts on /api/v2 when the server offers protocol v3 there, else on the
+/// frozen /api/v1 bridge.
 Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession session, BuildPlaybackStartInput input) async {
   final body = buildPlaybackStartRequest(input);
+  var installationId = await _playbackInstallationV2(client, session);
   Map<String, dynamic> json;
-  try {
-    json = await client.request<Map<String, dynamic>>(
-      _sessionOptions(session), '/api/v2/playback/start', method: 'POST', body: body,
-    );
-  } on ApiError catch (err) {
-    if (err.status != 404 && err.status != 405) rethrow;
+  if (installationId != null) {
+    try {
+      json = await client.request<Map<String, dynamic>>(
+        _sessionOptions(session), '/api/v2/playback/start', method: 'POST', body: _startBodyV2(body, installationId),
+      );
+    } on ApiError catch (err) {
+      if (err.code != 'installation_changed') rethrow;
+      // The server was reinstalled since capabilities were read; retry once
+      // with the new installation.
+      installationId = await _playbackInstallationV2(client, session, force: true);
+      if (installationId == null) rethrow;
+      json = await client.request<Map<String, dynamic>>(
+        _sessionOptions(session), '/api/v2/playback/start', method: 'POST', body: _startBodyV2(body, installationId),
+      );
+    }
+  } else {
     json = await client.request<Map<String, dynamic>>(
       _sessionOptions(session), '/api/v1/playback/start', method: 'POST', body: body,
     );
   }
   final parsed = PlaybackSessionResponse.fromJson(json);
+  if (installationId != null && parsed.sessionId.isNotEmpty) {
+    _v2Sessions.putIfAbsent(parsed.sessionId, () => _V2Mutations(installationId!));
+  }
   return PlaybackSessionResponse(
     sessionId: parsed.sessionId, mediaFileId: parsed.mediaFileId, playMethod: parsed.playMethod,
     position: parsed.position, isPaused: parsed.isPaused, streamUrl: parsed.streamUrl,
@@ -179,48 +277,71 @@ Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession s
     clientCapabilities: Map<String, dynamic>.from(body['client_capabilities'] as Map? ?? const {}),
     clientPlaybackContext: Map<String, dynamic>.from(body['client_playback_context'] as Map? ?? const {}),
     isProtocolV3: parsed.isProtocolV3,
+    qualityPreference: body['quality_preference'] as String? ?? 'auto',
   );
 }
 
-Future<PlaybackSessionResponse> replanPlaybackQuality(ApiClient client, PrairieSession session, PlaybackSessionResponse current, {
-  required String qualityPreference, required double positionSeconds, int attemptCount = 1,
+Future<PlaybackSessionResponse> _replanPlayback(ApiClient client, PrairieSession session, PlaybackSessionResponse current, {
+  required String operation, required String qualityPreference, required double positionSeconds,
+  Map<String, dynamic> selectedTracks = const {}, int attemptCount = 1,
 }) async {
   final attemptId = current.playbackAttemptId, planId = current.planId, planKey = current.planAttemptKey;
-  if (attemptId == null || planId == null || planKey == null) throw StateError('Protocol-v3 playback metadata is unavailable for quality replan');
+  if (attemptId == null || planId == null || planKey == null) throw StateError('Protocol-v3 playback metadata is unavailable for replan');
+  final v2 = _v2Sessions[current.sessionId];
   final body = <String, dynamic>{
-    'protocol_version': 3, 'client_features': current.clientFeatures, 'operation': 'quality_change',
+    'installation_id': ?v2?.installationId,
+    'protocol_version': 3, 'client_features': current.clientFeatures, 'operation': operation,
     'playback_attempt_id': attemptId, 'replan_request_id': _newPlaybackRequestId(),
     'failed_plan_id': planId, 'plan_attempt_id': _newPlaybackRequestId(), 'plan_attempt_key': planKey,
     'attempted_plan_keys': current.attemptedPlanKeys, 'attempt_count': attemptCount.clamp(1, 8),
     'quality_preference': qualityPreference, 'position_seconds': positionSeconds < 0 ? 0.0 : positionSeconds,
-    'metered': false, 'selected_tracks': const <String, dynamic>{},
+    'metered': false, 'selected_tracks': selectedTracks,
     'client_capabilities': current.clientCapabilities, 'client_playback_context': current.clientPlaybackContext,
   };
-  Map<String, dynamic> json;
-  final v2Path = '/api/v2/playback/${Uri.encodeComponent(current.sessionId)}/replan';
-  try {
-    json = await client.request<Map<String, dynamic>>(
-      _sessionOptions(session), v2Path, method: 'POST', body: body,
-    );
-  } on ApiError catch (err) {
-    if (err.status != 404 && err.status != 405) rethrow;
-    json = await client.request<Map<String, dynamic>>(
-      _sessionOptions(session), '/api/v1/playback/${Uri.encodeComponent(current.sessionId)}/replan',
-      method: 'POST', body: body,
-    );
-  }
+  final api = v2 != null ? 'v2' : 'v1';
+  final json = await client.request<Map<String, dynamic>>(
+    _sessionOptions(session), '/api/$api/playback/${Uri.encodeComponent(current.sessionId)}/replan',
+    method: 'POST', body: body,
+  );
   final parsed = PlaybackSessionResponse.fromJson(json);
   final nextKey = parsed.planAttemptKey;
+  final sessionId = parsed.sessionId.isNotEmpty ? parsed.sessionId : current.sessionId;
+  if (v2 != null && sessionId != current.sessionId) _v2Sessions.putIfAbsent(sessionId, () => _V2Mutations(v2.installationId));
   return PlaybackSessionResponse(
-    sessionId: parsed.sessionId.isNotEmpty ? parsed.sessionId : current.sessionId, mediaFileId: parsed.mediaFileId,
+    sessionId: sessionId, mediaFileId: parsed.mediaFileId,
     playMethod: parsed.playMethod, position: parsed.position, isPaused: current.isPaused, streamUrl: parsed.streamUrl,
     audioTrackIndex: parsed.audioTrackIndex, durationSeconds: parsed.durationSeconds ?? current.durationSeconds,
     playbackInfo: parsed.playbackInfo, playbackAttemptId: current.playbackAttemptId, planId: parsed.planId, planAttemptKey: nextKey,
     attemptedPlanKeys: [...current.attemptedPlanKeys, if (nextKey != null && !current.attemptedPlanKeys.contains(nextKey)) nextKey],
     clientFeatures: current.clientFeatures, clientCapabilities: current.clientCapabilities, clientPlaybackContext: current.clientPlaybackContext,
     isProtocolV3: true,
+    qualityPreference: qualityPreference,
   );
 }
+
+Future<PlaybackSessionResponse> replanPlaybackQuality(ApiClient client, PrairieSession session, PlaybackSessionResponse current, {
+  required String qualityPreference, required double positionSeconds, int attemptCount = 1,
+}) => _replanPlayback(client, session, current,
+  operation: 'quality_change', qualityPreference: qualityPreference, positionSeconds: positionSeconds, attemptCount: attemptCount,
+);
+
+/// Switches audio with a protocol-v3 `track_change` replan (the server no
+/// longer has the legacy PATCH /audio route). Sending the index alone lets
+/// the server resolve the track identity against the effective file.
+Future<PlaybackSessionResponse> replanPlaybackAudio(ApiClient client, PrairieSession session, PlaybackSessionResponse current, {
+  required int audioTrackIndex, required double positionSeconds,
+}) => _replanPlayback(client, session, current,
+  operation: 'track_change', qualityPreference: current.qualityPreference, positionSeconds: positionSeconds,
+  selectedTracks: {'audio': {'id': '', 'index': audioTrackIndex}},
+);
+
+/// Re-anchors the stream at [positionSeconds] on the current tracks: the v3
+/// equivalent of restarting the legacy session for a seek outside the window.
+Future<PlaybackSessionResponse> replanPlaybackSeek(ApiClient client, PrairieSession session, PlaybackSessionResponse current, {
+  required double positionSeconds,
+}) => _replanPlayback(client, session, current,
+  operation: 'seek_reanchor', qualityPreference: current.qualityPreference, positionSeconds: positionSeconds,
+);
 
 String _newPlaybackRequestId() {
   final random = math.Random.secure();
@@ -285,6 +406,23 @@ Future<PlaybackQualityAdvice?> reportPlaybackProgress(
   bool? isBuffering,
   bool requestAdvice = false,
 }) async {
+  final v2 = _v2Sessions[playbackSessionId];
+  if (v2 != null) {
+    // v2 carries no throughput/buffering signal and gives no quality advice.
+    if (v2.stopId != null) return null;
+    await client.request<dynamic>(
+      _sessionOptions(session),
+      '/api/v2/playback/${Uri.encodeComponent(playbackSessionId)}/progress',
+      method: 'POST',
+      body: {
+        'installation_id': v2.installationId,
+        'sequence': ++v2.sequence,
+        'position': position < 0 ? 0.0 : position,
+        'is_paused': isPaused,
+      },
+    );
+    return null;
+  }
   final body = <String, dynamic>{
     'position': position,
     'is_paused': isPaused,
@@ -326,14 +464,31 @@ bool isPlaybackSessionGone(Object error) {
 Future<void> stopPlaybackSession(ApiClient client, PrairieSession session, String playbackSessionId) async {
   final trimmed = playbackSessionId.trim();
   if (trimmed.isEmpty) return;
+  final v2 = _v2Sessions[trimmed];
   try {
+    if (v2 != null) {
+      // One stop_id per session, kept across retries: the server answers
+      // `stopped` the first time and `replayed` after, both terminal.
+      v2.stopId ??= _newPlaybackRequestId();
+      await client.request<dynamic>(
+        _sessionOptions(session),
+        '/api/v2/playback/${Uri.encodeComponent(trimmed)}',
+        method: 'DELETE',
+        body: {'installation_id': v2.installationId, 'stop_id': v2.stopId},
+      );
+      _v2Sessions.remove(trimmed);
+      return;
+    }
     await client.request<dynamic>(
       _sessionOptions(session),
       '/api/v1/playback/${Uri.encodeComponent(trimmed)}',
       method: 'DELETE',
     );
   } on ApiError catch (err) {
-    if (isPlaybackSessionGone(err)) return;
+    if (isPlaybackSessionGone(err)) {
+      _v2Sessions.remove(trimmed);
+      return;
+    }
     rethrow;
   }
 }

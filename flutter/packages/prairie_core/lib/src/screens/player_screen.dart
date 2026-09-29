@@ -681,7 +681,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   /// Restarts the active playback session at [audioTrackIndex] /
-  /// [positionSeconds] via PATCH `/playback/{id}/audio` + a fresh
+  /// [positionSeconds] via a protocol-v3 replan (`track_change`, or
+  /// `seek_reanchor` when the track is unchanged; legacy sessions use PATCH
+  /// `/playback/{id}/audio`) + a fresh
   /// [preparePlayableSession] — the same server round trip whether the
   /// track actually changes or not, since the endpoint's job is "give me a
   /// stream for this track starting at this position." Used both for
@@ -716,23 +718,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
 
       final position = positionSeconds < 0 ? 0.0 : positionSeconds;
-      final updated = await switchPlaybackAudio(client, session, sessionId, audioTrackIndex, position);
+      final PlaybackSessionResponse nextSession;
+      if (current.isProtocolV3) {
+        nextSession = audioTrackIndex == current.audioTrackIndex
+            ? await replanPlaybackSeek(client, session, current, positionSeconds: position)
+            : await replanPlaybackAudio(
+                client,
+                session,
+                current,
+                audioTrackIndex: audioTrackIndex,
+                positionSeconds: position,
+              );
+      } else {
+        final updated = await switchPlaybackAudio(client, session, sessionId, audioTrackIndex, position);
+        nextSession = PlaybackSessionResponse(
+          sessionId: current.sessionId,
+          mediaFileId: current.mediaFileId,
+          playMethod: updated.playMethod.isNotEmpty ? updated.playMethod : current.playMethod,
+          position: position,
+          isPaused: current.isPaused,
+          streamUrl: updated.streamUrl.isNotEmpty ? updated.streamUrl : current.streamUrl,
+          audioTrackIndex: updated.audioTrackIndex,
+          durationSeconds: current.durationSeconds,
+          playbackInfo: updated.playbackInfo ?? current.playbackInfo,
+        );
+      }
       if (!mounted || _exiting || cancel.isCancelled) {
         _clearAudioBusyIfCurrent(cancel);
         return;
       }
-
-      final nextSession = PlaybackSessionResponse(
-        sessionId: current.sessionId,
-        mediaFileId: current.mediaFileId,
-        playMethod: updated.playMethod.isNotEmpty ? updated.playMethod : current.playMethod,
-        position: position,
-        isPaused: current.isPaused,
-        streamUrl: updated.streamUrl.isNotEmpty ? updated.streamUrl : current.streamUrl,
-        audioTrackIndex: updated.audioTrackIndex,
-        durationSeconds: current.durationSeconds,
-        playbackInfo: updated.playbackInfo ?? current.playbackInfo,
-      );
 
       final prepared = await preparePlayableSession(
         client,
