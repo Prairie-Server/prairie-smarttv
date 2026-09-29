@@ -329,7 +329,7 @@ void main() {
     expect(page.snapshot, 'cursor-1');
     expect(page.hasMore, false);
     expect(adapter.requests.single.method, 'POST');
-    expect(adapter.requests.single.path, '/api/v2/catalog/query');
+    expect(adapter.requests.single.path, 'https://prairie.example/api/v2/catalog/query');
     expect(adapter.requests.single.data, {'q': 'heat & rain', 'source': 'query', 'seek': 48, 'limit': 48, 'cursor': 'cursor-0'});
   });
 
