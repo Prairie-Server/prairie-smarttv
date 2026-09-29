@@ -42,4 +42,31 @@ void main() {
     expect((deliveries['progressive'] as Map)['validated_claims'], isEmpty);
     expect(buildPlaybackStartRequest(const BuildPlaybackStartInput(fileId: 1, profileId: 'p')).containsKey('audio_track_index'), isFalse);
   });
+
+  group('matchNativeAudioTrack', () {
+    // Who Framed Roger Rabbit (file 515): the player omits the TrueHD stream,
+    // so source ordinal 2 (DD 5.1) is native index 1, and native index 2 is
+    // a DD 2.0 commentary.
+    const main51 = AudioTrackInfo(codec: 'ac3', channels: 6, language: 'en', bitrateKbps: 640);
+    const native = <NativeAudioTrack>[
+      (language: 'eng', channels: 8, bitrate: 0), // DTS-HD MA 7.1
+      (language: 'eng', channels: 6, bitrate: 640000), // DD 5.1
+      (language: 'eng', channels: 2, bitrate: 320000), // DD 2.0 commentary
+      (language: 'eng', channels: 2, bitrate: 192000),
+      (language: 'fre', channels: 6, bitrate: 1536000), // DTS 5.1
+    ];
+
+    test('matches by attributes when the player omits streams', () {
+      expect(matchNativeAudioTrack(native, 2, track: main51, sourceTrackCount: 12), 1);
+    });
+
+    test('uses the ordinal when the player lists every stream', () {
+      expect(matchNativeAudioTrack(native, 2, track: main51, sourceTrackCount: 5), 2);
+    });
+
+    test('returns null when no stream has the channel count', () {
+      const mono = AudioTrackInfo(codec: 'ac3', channels: 1, language: 'es');
+      expect(matchNativeAudioTrack(native, 11, track: mono, sourceTrackCount: 12), isNull);
+    });
+  });
 }

@@ -1144,7 +1144,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (defaultIndex < 0) defaultIndex = 0;
     if (session.audioTrackIndex == defaultIndex) return;
     try {
-      await backend.selectAudioTrack(session.audioTrackIndex);
+      final index = session.audioTrackIndex;
+      await backend.selectAudioTrack(
+        index,
+        track: index >= 0 && index < tracks.length ? tracks[index] : null,
+        sourceTrackCount: tracks.length,
+      );
     } catch (err) {
       backend.reportDiagnostic('audio:select-failed:$err');
     }
@@ -1242,7 +1247,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _errorSub?.cancel();
     _errorSub = null;
     if (sessionId != null) {
-      await _reportProgress(paused: true);
+      // The session fields are already cleared above, so report against the
+      // captured id directly; _reportProgress would find nothing and the
+      // resume point would never be saved.
+      final progressSession = ref.read(sessionProvider);
+      if (progressSession != null) {
+        await reportPlaybackProgress(
+          ref.read(apiClientProvider),
+          progressSession,
+          sessionId,
+          _position.inSeconds.toDouble(),
+          true,
+        ).then((_) {}, onError: (_) {});
+      }
       // Await stop so Back cannot race a new play against a still-open session
       // on the single hardware decoder / server encode slot.
       final session = ref.read(sessionProvider);
@@ -1339,6 +1356,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     } on PlatformException catch (err) {
       debugPrint('prairie.player_screen: native seekTo failed: $err');
+      backend.reportDiagnostic('seek:failed:${_playbackSession?.playMethod}:${err.message ?? err.code}');
     }
     _showControls();
   }

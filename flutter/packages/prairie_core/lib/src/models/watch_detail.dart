@@ -2,13 +2,15 @@ import '../player/trickplay.dart';
 
 /// Mirrors `AudioTrackInfo` from src/api/watch.ts.
 class AudioTrackInfo {
-  const AudioTrackInfo({this.title, this.embeddedTitle, this.language, this.codec, this.channels, this.isDefault});
+  const AudioTrackInfo({this.title, this.embeddedTitle, this.language, this.codec, this.channels, this.isDefault, this.bitrateKbps});
   final String? title;
   final String? embeddedTitle;
   final String? language;
   final String? codec;
   final int? channels;
   final bool? isDefault;
+  /// Probed bitrate in kbps; absent for lossless tracks.
+  final int? bitrateKbps;
 
   factory AudioTrackInfo.fromJson(Map<String, dynamic> json) => AudioTrackInfo(
     title: json['title'] as String?,
@@ -17,6 +19,7 @@ class AudioTrackInfo {
     codec: json['codec'] as String?,
     channels: json['channels'] as int?,
     isDefault: json['default'] as bool?,
+    bitrateKbps: (json['bitrate'] as num?)?.toInt(),
   );
 }
 

@@ -207,25 +207,39 @@ class VideoholeVideoBackend implements VideoBackend {
   }
 
   @override
-  Future<void> selectAudioTrack(int audioOrdinal) async {
+  Future<void> selectAudioTrack(int audioOrdinal, {AudioTrackInfo? track, int sourceTrackCount = 0}) async {
     final controller = _controller;
     if (controller == null) return;
     final tracks = await controller.audioTracks ?? const <AudioTrack>[];
-    // The native player lists audio streams in container order, which is the
-    // same ordinal space as the server's audio_track_index.
-    if (audioOrdinal < 0 || audioOrdinal >= tracks.length) {
+    final index = matchNativeAudioTrack(
+      [for (final t in tracks) (language: t.language, channels: t.channel, bitrate: t.bitrate)],
+      audioOrdinal,
+      track: track,
+      sourceTrackCount: sourceTrackCount,
+    );
+    if (index == null) {
       reportDiagnostic('audio:select-miss:$audioOrdinal/${tracks.length}');
       return;
     }
-    final ok = await controller.setTrackSelection(tracks[audioOrdinal]);
-    reportDiagnostic('audio:select:$audioOrdinal:ok=$ok');
+    final ok = await controller.setTrackSelection(tracks[index]);
+    reportDiagnostic('audio:select:$audioOrdinal->$index/${tracks.length}:ok=$ok');
   }
 
   @override
   Stream<String?> get captionStream => _captionController.stream;
 
   @override
-  Future<void> play() async => _controller?.play();
+  Future<void> play() async {
+    try {
+      await _controller?.play();
+    } on PlatformException catch (err) {
+      // The native player rejects its playback-rate call ("set speed failed")
+      // on some streams (live HLS) yet starts playing anyway. Real playback
+      // failures arrive through hasError/errorStream, so this is not one.
+      debugPrint('prairie.videohole: play() reported $err; continuing');
+      reportDiagnostic('play:error-ignored:${err.message ?? err.code}');
+    }
+  }
 
   @override
   Future<void> pause() async => _controller?.pause();

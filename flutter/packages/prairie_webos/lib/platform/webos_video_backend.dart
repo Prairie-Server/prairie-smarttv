@@ -195,7 +195,7 @@ class WebosVideoBackend implements VideoBackend {
   }
 
   @override
-  Future<void> selectAudioTrack(int audioOrdinal) async {
+  Future<void> selectAudioTrack(int audioOrdinal, {AudioTrackInfo? track, int sourceTrackCount = 0}) async {
     final controller = _controller;
     if (controller == null || audioOrdinal < 0) return;
     // SMP lists audio streams in container order, the same ordinal space as

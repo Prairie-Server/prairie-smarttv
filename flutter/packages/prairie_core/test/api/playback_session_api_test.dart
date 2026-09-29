@@ -169,7 +169,8 @@ void main() {
       expect(stop.method, 'DELETE');
       expect(stop.uri.path, '/api/v2/playback/s1');
       expect(body(stop)['installation_id'], 'inst-1');
-      expect((body(stop)['stop_id'] as String).length, greaterThanOrEqualTo(8));
+      // v2 rejects anything but a canonical UUID here.
+      expect(body(stop)['stop_id'], matches(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
     });
 
     test('replans an audio change on v2 as a track_change', () async {

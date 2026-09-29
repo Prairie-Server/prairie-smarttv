@@ -38,6 +38,7 @@ export 'src/lib/language_labels.dart';
 export 'src/perf/performance_tier.dart';
 export 'src/platform/client_identity.dart';
 export 'src/platform/tv_capabilities.dart';
+export 'src/platform/audio_track_match.dart';
 export 'src/platform/video_backend.dart';
 export 'src/routing/route.dart';
 export 'src/routing/route_notifier.dart';
