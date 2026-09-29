@@ -62,21 +62,6 @@ class CatalogQuery {
   final String? sort;
   final String? order;
 
-  String _buildPath() {
-    final params = <String, String>{};
-    if (libraryId != null) params['library_id'] = '$libraryId';
-    if (type != null) params['type'] = type!;
-    if (q != null) params['q'] = q!;
-    if (source != null) params['source'] = source!;
-    if (collectionId != null) params['collection_id'] = collectionId!;
-    if (offset != null) params['offset'] = '$offset';
-    if (limit != null) params['limit'] = '$limit';
-    if (snapshot != null) params['snapshot'] = snapshot!;
-    if (sort != null) params['sort'] = sort!;
-    if (order != null) params['order'] = order!;
-    if (params.isEmpty) return '/api/v1/catalog';
-    return '/api/v1/catalog?${Uri(queryParameters: params).query}';
-  }
 }
 
 /// Mirrors `CatalogResponse` from src/api/catalog.ts.
