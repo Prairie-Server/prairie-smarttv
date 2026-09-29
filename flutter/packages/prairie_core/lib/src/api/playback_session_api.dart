@@ -343,6 +343,18 @@ Future<PlaybackSessionResponse> replanPlaybackSeek(ApiClient client, PrairieSess
   operation: 'seek_reanchor', qualityPreference: current.qualityPreference, positionSeconds: positionSeconds,
 );
 
+/// Canonical lowercase UUIDv4. v2 stop rejects anything else as `stop_id`
+/// ("Expected a canonical UUID.") although the published schema only says
+/// "opaque identifier".
+String _newUuidV4() {
+  final random = math.Random.secure();
+  final b = List<int>.generate(16, (_) => random.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  final hex = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+}
+
 String _newPlaybackRequestId() {
   final random = math.Random.secure();
   final bytes = List<int>.generate(16, (_) => random.nextInt(256));
@@ -469,7 +481,7 @@ Future<void> stopPlaybackSession(ApiClient client, PrairieSession session, Strin
     if (v2 != null) {
       // One stop_id per session, kept across retries: the server answers
       // `stopped` the first time and `replayed` after, both terminal.
-      v2.stopId ??= _newPlaybackRequestId();
+      v2.stopId ??= _newUuidV4();
       await client.request<dynamic>(
         _sessionOptions(session),
         '/api/v2/playback/${Uri.encodeComponent(trimmed)}',

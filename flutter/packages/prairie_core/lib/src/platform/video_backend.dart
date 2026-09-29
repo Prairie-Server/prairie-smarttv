@@ -79,8 +79,11 @@ abstract class VideoBackend {
   /// Switches the native player to the source's [audioOrdinal]-th audio
   /// stream (the server's `audio_track_index`). Used for original-file
   /// playback, where the server serves every stream untouched and the client
-  /// claims `client_selected_audio_track_v1`. Valid after [initialize].
-  Future<void> selectAudioTrack(int audioOrdinal);
+  /// claims `client_selected_audio_track_v1`. [track] is that stream's
+  /// probed metadata, for players whose track list omits streams they cannot
+  /// decode (so the ordinal alone would land on the wrong track). Valid after
+  /// [initialize].
+  Future<void> selectAudioTrack(int audioOrdinal, {AudioTrackInfo? track, int sourceTrackCount = 0});
 
   /// Emits the subtitle text that should be on screen right now (`null`
   /// when nothing should be showing), driven by the native player's own
