@@ -156,9 +156,17 @@ ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
 /// Mirrors `startPlayback` from src/api/startPlayback.ts.
 Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession session, BuildPlaybackStartInput input) async {
   final body = buildPlaybackStartRequest(input);
-  final json = await client.request<Map<String, dynamic>>(
-    _sessionOptions(session), '/api/v1/playback/start', method: 'POST', body: body,
-  );
+  Map<String, dynamic> json;
+  try {
+    json = await client.request<Map<String, dynamic>>(
+      _sessionOptions(session), '/api/v2/playback/start', method: 'POST', body: body,
+    );
+  } on ApiError catch (err) {
+    if (err.status != 404 && err.status != 405) rethrow;
+    json = await client.request<Map<String, dynamic>>(
+      _sessionOptions(session), '/api/v1/playback/start', method: 'POST', body: body,
+    );
+  }
   final parsed = PlaybackSessionResponse.fromJson(json);
   return PlaybackSessionResponse(
     sessionId: parsed.sessionId, mediaFileId: parsed.mediaFileId, playMethod: parsed.playMethod,
@@ -188,10 +196,19 @@ Future<PlaybackSessionResponse> replanPlaybackQuality(ApiClient client, PrairieS
     'metered': false, 'selected_tracks': const <String, dynamic>{},
     'client_capabilities': current.clientCapabilities, 'client_playback_context': current.clientPlaybackContext,
   };
-  final json = await client.request<Map<String, dynamic>>(
-    _sessionOptions(session), '/api/v1/playback/' + Uri.encodeComponent(current.sessionId) + '/replan',
-    method: 'POST', body: body,
-  );
+  Map<String, dynamic> json;
+  final v2Path = '/api/v2/playback/' + Uri.encodeComponent(current.sessionId) + '/replan';
+  try {
+    json = await client.request<Map<String, dynamic>>(
+      _sessionOptions(session), v2Path, method: 'POST', body: body,
+    );
+  } on ApiError catch (err) {
+    if (err.status != 404 && err.status != 405) rethrow;
+    json = await client.request<Map<String, dynamic>>(
+      _sessionOptions(session), '/api/v1/playback/' + Uri.encodeComponent(current.sessionId) + '/replan',
+      method: 'POST', body: body,
+    );
+  }
   final parsed = PlaybackSessionResponse.fromJson(json);
   final nextKey = parsed.planAttemptKey;
   return PlaybackSessionResponse(
