@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Mirrors `PlayMethod`/`ForcedPlayMethod` from src/platform/types.ts.
 enum PlayMethod { direct, remux, transcode }
 
@@ -16,7 +18,11 @@ class TvCapabilities {
   static const maxAudioChannels = 6;
 }
 
-/// Mirrors `BuildPlaybackStartInput` from src/api/playback.ts.
+/// Mirrors the playback-v3 start contract used by both the native /api/v2
+/// endpoint and the frozen /api/v1 bridge. The bridge now rejects pre-v3
+/// request bodies, so this client must speak protocol v3 even while keeping
+/// the legacy lifecycle endpoints for compatibility.
+
 class BuildPlaybackStartInput {
   const BuildPlaybackStartInput({
     required this.fileId,
@@ -29,6 +35,11 @@ class BuildPlaybackStartInput {
     this.maxResolution,
     this.hdr,
     this.maxAudioChannels,
+    this.playbackAttemptId,
+    this.devicePlatform = 'smarttv',
+    this.appVersion = '1.0.0',
+    this.appBuild = '',
+    this.appChannel = 'release',
   });
 
   final int fileId;
@@ -41,31 +52,154 @@ class BuildPlaybackStartInput {
   final String? maxResolution;
   final bool? hdr;
   final int? maxAudioChannels;
+
+  /// Stable identity for retrying one playback start. Generated when omitted.
+  final String? playbackAttemptId;
+  final String devicePlatform;
+  final String appVersion;
+  final String appBuild;
+  final String appChannel;
 }
+
+String _newPlaybackAttemptId() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+}
+
 
 /// Mirrors `buildPlaybackStartRequest`: builds the POST /api/v1/playback/start
 /// body, omitting `play_method` when unset so Prairie can prefer remux/auto.
 Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
-  final body = <String, dynamic>{
-    'file_id': input.fileId,
-    'profile_id': input.profileId,
-    'codecs_video': input.codecsVideo ?? TvCapabilities.codecsVideo,
-    'codecs_audio': input.codecsAudio ?? TvCapabilities.codecsAudio,
-    'containers': input.containers ?? TvCapabilities.containers,
-    'max_resolution': input.maxResolution ?? TvCapabilities.maxResolution,
-    'hdr': input.hdr ?? TvCapabilities.hdr,
-    'max_audio_channels': input.maxAudioChannels ?? TvCapabilities.maxAudioChannels,
-    'supports_bitmap_subtitle_burn_in': false,
+  final videoCodecs = input.codecsVideo ?? TvCapabilities.codecsVideo;
+  final audioCodecs = input.codecsAudio ?? TvCapabilities.codecsAudio;
+  final containers = input.containers ?? TvCapabilities.containers;
+  final maxResolution = input.maxResolution ?? TvCapabilities.maxResolution;
+  final hdr = input.hdr ?? TvCapabilities.hdr;
+  final maxAudioChannels = input.maxAudioChannels ?? TvCapabilities.maxAudioChannels;
+
+  // The v3 planner selects the route from the delivery classes the client
+  // advertises. Restricting the classes is the protocol-v3 equivalent of the
+  // old forceDirectPlay / forceTranscode switches.
+  final deliveries = <String, dynamic>{
+    'original_http': {
+      'enabled': input.forcedPlayMethod != PlayMethod.transcode,
+      'supported_on_device': true,
+      'containers': containers,
+      'video_codecs': videoCodecs,
+      'audio_decode_codecs': audioCodecs,
+      'audio_passthrough_codecs': const <String>[],
+      'max_channels': maxAudioChannels,
+      'subtitles': {
+        'embedded_text': false,
+        'sidecar_text': false,
+        'ass_styling': false,
+        'embedded_bitmap': false,
+        'sidecar_bitmap': false,
+        'font_attachments': false,
+      },
+      'features': const <String>[],
+      'auth_header_refresh': false,
+      'validated_claims': const <String>[],
+      'transformations': const <String>[],
+    },
+    'progressive': {
+      'enabled': input.forcedPlayMethod == null || input.forcedPlayMethod == PlayMethod.remux,
+      'supported_on_device': true,
+      'containers': containers,
+      'video_codecs': videoCodecs,
+      'audio_decode_codecs': audioCodecs,
+      'audio_passthrough_codecs': const <String>[],
+      'max_channels': maxAudioChannels,
+      'subtitles': {
+        'embedded_text': false,
+        'sidecar_text': false,
+        'ass_styling': false,
+        'embedded_bitmap': false,
+        'sidecar_bitmap': false,
+        'font_attachments': false,
+      },
+      'features': const <String>[],
+      'auth_header_refresh': false,
+      'validated_claims': const <String>[],
+      'transformations': const <String>[],
+    },
+    'hls': {
+      'enabled': input.forcedPlayMethod != PlayMethod.direct,
+      'supported_on_device': true,
+      'containers': const <String>['hls'],
+      'video_codecs': videoCodecs,
+      'audio_decode_codecs': audioCodecs,
+      'audio_passthrough_codecs': const <String>[],
+      'max_channels': maxAudioChannels,
+      'subtitles': {
+        'embedded_text': false,
+        'sidecar_text': false,
+        'ass_styling': false,
+        'embedded_bitmap': false,
+        'sidecar_bitmap': false,
+        'font_attachments': false,
+      },
+      'features': const <String>[],
+      'auth_header_refresh': false,
+      'validated_claims': const <String>[],
+      'transformations': const <String>[],
+    },
   };
 
-  if (input.forcedPlayMethod != null) {
-    body['play_method'] = input.forcedPlayMethod!.wireValue;
-  }
-  if (input.startPosition != null && input.startPosition! > 0) {
-    body['start_position'] = input.startPosition;
-  }
-
-  return body;
+  return {
+    'protocol_version': 3,
+    'client_features': const [
+      'playback_plan_v3',
+      'neutral_playback_v3_contract_v1',
+      'embedded_subtitles_v1',
+    ],
+    'file_id': input.fileId,
+    'profile_id': input.profileId,
+    'playback_attempt_id': input.playbackAttemptId ?? _newPlaybackAttemptId(),
+    'quality_preference': input.forcedPlayMethod == PlayMethod.direct ? 'original' : 'auto',
+    'subtitle_fidelity_preference': 'compatible',
+    if (input.startPosition != null && input.startPosition! > 0) 'start_position': input.startPosition,
+    'progress_persistence': 'server',
+    'metered': false,
+    'max_audio_channels': maxAudioChannels,
+    'client_capabilities': {
+      'video_evidence': 'declared',
+      'audio_evidence': 'declared',
+      'codecs_video': videoCodecs,
+      'codecs_video_hardware': videoCodecs,
+      'codecs_audio': audioCodecs,
+      'containers': containers,
+      'max_resolution': maxResolution,
+      'hdr': hdr,
+      'hdr_details': {
+        'hdr10': hdr,
+        'hdr10_plus': false,
+        'hlg': false,
+        'dolby_vision_profiles': const <int>[],
+      },
+    },
+    'client_playback_context': {
+      'protocol_version': 3,
+      'form_factor': 'tv',
+      'app_version': input.appVersion,
+      'app_build': input.appBuild,
+      'app_channel': input.appChannel,
+      'device': {
+        'platform': input.devicePlatform,
+      },
+      'output': {
+        'hdr_details': {
+          'hdr10': hdr,
+          'hdr10_plus': false,
+          'hlg': false,
+          'dolby_vision_profiles': const <int>[],
+        },
+        'sink_type': 'display',
+      },
+      'deliveries': deliveries,
+    },
+  };
 }
 
 /// Mirrors `withPlayMethod`.

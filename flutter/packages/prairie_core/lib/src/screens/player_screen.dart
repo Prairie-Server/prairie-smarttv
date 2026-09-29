@@ -454,6 +454,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         is8KPanel: settings.is8KPanel,
       );
 
+      if (current.isProtocolV3) {
+        final qualityPreference = fromAdvice && playingRungId != null ? playingRungId : menuId;
+        final replanned = await replanPlaybackQuality(
+          client,
+          session,
+          current,
+          qualityPreference: qualityPreference,
+          positionSeconds: position,
+        );
+        final prepared = await preparePlayableSession(
+          client,
+          session,
+          replanned,
+          position,
+          sourceResolution: _sourceResolutionForFile(widget.launch.watch, replanned.mediaFileId),
+          maxResolution: deviceCaps.maxResolution,
+          cancelToken: cancel,
+        );
+        if (!mounted || _exiting || cancel.isCancelled) {
+          await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
+          _clearQualityBusyIfCurrent(cancel);
+          return;
+        }
+        _autoPlayingRungId = playingRungId;
+        await _attachPrepared(
+          prepared: prepared,
+          client: client,
+          session: session,
+          cancel: cancel,
+          settings: settings,
+          deviceCaps: deviceCaps,
+          clearBusy: _clearQualityBusyIfCurrent,
+        );
+        return;
+      }
+
       // Direct-play Original: drop HLS and reattach the progressive stream.
       if (dropToOriginalDirect) {
         final prepared = await preparePlayableSession(
@@ -843,6 +879,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     String? startedSessionId;
     try {
       final client = ref.read(apiClientProvider);
+      final identity = ref.read(clientIdentityProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
       final deviceCaps = applyAudioChannelOverride(
@@ -873,6 +910,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           maxResolution: deviceCaps.maxResolution,
           hdr: deviceCaps.hdr,
           maxAudioChannels: deviceCaps.maxAudioChannels,
+          devicePlatform: identity.devicePlatform,
+          appVersion: identity.appVersion,
+          appBuild: identity.appBuild,
+          appChannel: identity.appChannel,
         ),
       );
       startedSessionId = started.sessionId;

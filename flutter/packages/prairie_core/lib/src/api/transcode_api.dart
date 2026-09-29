@@ -130,6 +130,46 @@ class PreparedPlayback {
 
 const transcodeStartupTimeout = Duration(seconds: 90);
 
+Future<PreparedPlayback> prepareProtocolV3Decision(
+  ApiClient client,
+  PrairieSession session,
+  PlaybackSessionResponse decision,
+  double seekSeconds, {
+  CancelToken? cancelToken,
+}) async {
+  final streamType = decision.playbackInfo?.streamType?.toLowerCase() ?? '';
+  final clampedSeek = seekSeconds < 0 ? 0.0 : seekSeconds;
+  final isHls = streamType == 'hls' || decision.streamUrl.toLowerCase().contains('.m3u8');
+  final streamUrl = resolvePlaybackStreamUrl(session.serverUrl, decision, session.accessToken);
+  if (!isHls) {
+    final isRemux = decision.playMethod.toLowerCase() == 'remux';
+    final url = isRemux && clampedSeek > 0 ? appendStreamSeekParam(streamUrl, clampedSeek) : streamUrl;
+    return PreparedPlayback(
+      session: decision,
+      streamUrl: url,
+      playerStartSeconds: isRemux ? 0 : clampedSeek,
+      streamOriginSeconds: isRemux ? clampedSeek : 0,
+    );
+  }
+
+  final probe = await waitForHlsManifest(
+    streamUrl,
+    dio: client.dio,
+    timeout: transcodeStartupTimeout,
+    requireSegment: true,
+    throwOnTimeout: true,
+    keepAliveEvery: const Duration(seconds: 10),
+    cancelToken: cancelToken,
+    onKeepAlive: () => reportPlaybackProgress(client, session, decision.sessionId, clampedSeek, true),
+  );
+  return PreparedPlayback(
+    session: decision,
+    streamUrl: probe.resolvedUrl,
+    playerStartSeconds: clampedSeek,
+    streamOriginSeconds: 0,
+  );
+}
+
 /// `direct` and `remux` play `stream_url` from `/playback/start` verbatim,
 /// progressive, over plain HTTP — no `/playback/transcode/start`, no HLS
 /// demuxer, no manifest. `remux` still gets its audio re-encoded server-side
@@ -172,6 +212,10 @@ Future<PreparedPlayback> preparePlayableSession(
   CancelToken? cancelToken,
   Dio? probeDio,
 }) async {
+  if (started.isProtocolV3) {
+    return prepareProtocolV3Decision(client, session, started, seekSeconds, cancelToken: cancelToken);
+  }
+
   final forceHls = forceTranscode || copyVideo || (targetResolution != null && targetResolution.isNotEmpty);
   if (!needsHlsBootstrap(started.playMethod) && !forceHls) {
     final isRemux = started.playMethod.trim().toLowerCase() == 'remux';

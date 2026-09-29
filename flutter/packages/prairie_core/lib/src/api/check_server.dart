@@ -2,6 +2,7 @@ import 'api_client.dart';
 import 'api_error.dart';
 import 'auth_api.dart';
 import 'health_api.dart';
+import 'native_api.dart';
 
 const _checkTimeout = Duration(seconds: 6);
 
@@ -68,7 +69,15 @@ Future<CheckServerResult> checkServer(ApiClient client, String serverUrl) async 
 
   SetupStatusResponse setup;
   try {
-    setup = await fetchSetupStatus(client, serverUrl, timeout: _checkTimeout);
+    // Prefer the stable native API's public discovery surface. Older Prairie
+    // servers keep the frozen v1 bridge, so only a missing v2 route falls back.
+    try {
+      final native = await fetchNativeSetupStatus(client, serverUrl);
+      setup = SetupStatusResponse(needsSetup: native.needsSetup);
+    } catch (err) {
+      if (!isNativeApiUnavailable(err)) rethrow;
+      setup = await fetchSetupStatus(client, serverUrl, timeout: _checkTimeout);
+    }
   } catch (err) {
     return CheckServerFailure(networkFailureMessage(err));
   }
