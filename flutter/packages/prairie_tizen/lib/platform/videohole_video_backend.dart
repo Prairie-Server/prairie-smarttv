@@ -207,6 +207,21 @@ class VideoholeVideoBackend implements VideoBackend {
   }
 
   @override
+  Future<void> selectAudioTrack(int audioOrdinal) async {
+    final controller = _controller;
+    if (controller == null) return;
+    final tracks = await controller.audioTracks ?? const <AudioTrack>[];
+    // The native player lists audio streams in container order, which is the
+    // same ordinal space as the server's audio_track_index.
+    if (audioOrdinal < 0 || audioOrdinal >= tracks.length) {
+      reportDiagnostic('audio:select-miss:$audioOrdinal/${tracks.length}');
+      return;
+    }
+    final ok = await controller.setTrackSelection(tracks[audioOrdinal]);
+    reportDiagnostic('audio:select:$audioOrdinal:ok=$ok');
+  }
+
+  @override
   Stream<String?> get captionStream => _captionController.stream;
 
   @override

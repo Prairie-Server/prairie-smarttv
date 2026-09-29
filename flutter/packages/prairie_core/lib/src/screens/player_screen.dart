@@ -641,6 +641,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
           : null,
       playMethod: prepared.session.playMethod,
+      playbackSession: prepared.session,
     );
     await backend.play();
     if (!mounted || _exiting || cancel.isCancelled) {
@@ -804,6 +805,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
         playMethod: prepared.session.playMethod,
+        playbackSession: prepared.session,
       );
       await backend.play();
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -910,6 +912,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _ => null,
       };
 
+      // An explicit pick wins; otherwise avoid a default the device cannot
+      // decode (e.g. TrueHD beside an AC-3 companion), which would force a
+      // server audio re-encode instead of playing the original file.
+      final launchVersion = widget.launch.watch == null ? null : selectFileVersion(widget.launch.watch!, widget.launch.fileId);
+      final initialAudioTrackIndex = widget.launch.initialAudioTrackIndex ??
+          selectPlayableAudioTrack(
+            launchVersion?.audioTracks ?? const <AudioTrackInfo>[],
+            deviceCaps.codecsAudio,
+            deviceCaps.maxAudioChannels,
+          );
       final started = await startPlayback(
         client,
         session,
@@ -924,6 +936,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           maxResolution: deviceCaps.maxResolution,
           hdr: deviceCaps.hdr,
           maxAudioChannels: deviceCaps.maxAudioChannels,
+          audioTrackIndex: initialAudioTrackIndex,
           devicePlatform: identity.devicePlatform,
           appVersion: identity.appVersion,
           appBuild: identity.appBuild,
@@ -1011,6 +1024,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
             : null,
         playMethod: prepared.session.playMethod,
+        playbackSession: prepared.session,
       );
       await backend.play();
 
@@ -1093,7 +1107,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _stallTimer?.cancel();
   }
 
-  Future<void> _initializeBackend(VideoBackend backend, {Duration? startPosition, String? playMethod}) async {
+  Future<void> _initializeBackend(
+    VideoBackend backend, {
+    Duration? startPosition,
+    String? playMethod,
+    PlaybackSessionResponse? playbackSession,
+  }) async {
     final timeout = _initializeTimeout;
     final startedAt = DateTime.now();
     backend.reportDiagnostic('init:start:method=$playMethod:budget=${timeout.inSeconds}');
@@ -1108,6 +1127,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       debugPrint('prairie.player_screen: Player initialize timed out after ${timeout.inSeconds}s (playMethod=$playMethod)');
       backend.reportDiagnostic('init:TIMEOUT:${timeout.inSeconds}s');
       throw StateError('Player initialize timed out after ${timeout.inSeconds}s');
+    }
+    if (playbackSession != null) await _applyOriginalAudioSelection(backend, playbackSession);
+  }
+
+  /// Original-file playback serves every stream untouched, so a non-default
+  /// audio track the server planned (we claim client_selected_audio_track_v1)
+  /// must be selected in the native player. Remux/HLS already carry only the
+  /// planned track.
+  Future<void> _applyOriginalAudioSelection(VideoBackend backend, PlaybackSessionResponse session) async {
+    if (session.playMethod != 'direct') return;
+    final watch = widget.launch.watch;
+    final version = watch == null ? null : selectFileVersion(watch, session.mediaFileId);
+    final tracks = version?.audioTracks ?? const <AudioTrackInfo>[];
+    var defaultIndex = tracks.indexWhere((t) => t.isDefault == true);
+    if (defaultIndex < 0) defaultIndex = 0;
+    if (session.audioTrackIndex == defaultIndex) return;
+    try {
+      await backend.selectAudioTrack(session.audioTrackIndex);
+    } catch (err) {
+      backend.reportDiagnostic('audio:select-failed:$err');
     }
   }
 
