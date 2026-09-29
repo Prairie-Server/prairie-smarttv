@@ -314,4 +314,23 @@ void main() {
       expect(result, null);
     });
   });
+  test('catalog v2 query uses cursor and seek', () async {
+    final dio = Dio()..httpClientAdapter = FakeHttpAdapter((_) => jsonResponse(
+      '{"items":[{"content_id":"movie:heat","type":"movie","title":"Heat","year":1995}],"total":1,"total_exact":true,"window_cursor":"cursor-1","page":{"has_more":false}}',
+      200,
+    ));
+    final adapter = dio.httpClientAdapter as FakeHttpAdapter;
+    final page = await fetchCatalog(
+      ApiClient(dio: dio),
+      const PrairieSession(serverUrl: 'https://prairie.example', accessToken: 'token', username: 'user', profileId: 'p1'),
+      const CatalogQuery(q: 'heat & rain', source: 'query', offset: 48, limit: 48, snapshot: 'cursor-0'),
+    );
+    expect(page.items.single.title, 'Heat');
+    expect(page.snapshot, 'cursor-1');
+    expect(page.hasMore, false);
+    expect(adapter.requests.single.method, 'POST');
+    expect(adapter.requests.single.path, '/api/v2/catalog/query');
+    expect(adapter.requests.single.data, {'q': 'heat & rain', 'source': 'query', 'seek': 48, 'limit': 48, 'cursor': 'cursor-0'});
+  });
+
 }
