@@ -122,7 +122,7 @@ jobs:
     env:
       WEBOS_NDK_INSTALLER_URL: "https://github.com/lg-flutter-webos/ndk/releases/download/11.2.0/webos-ndk-flutter-starfish-x86_64-ca9v1-11.2.0.sh"
       WEBOS_FLUTTER_NDK_ENV: "/usr/local/starfish-sdk-x86_64/environment-setup-ca9v1-webosmllib32-linux-gnueabi"
-      WEBOS_ARES_NODE_VERSION: "20.19.5"
+      WEBOS_ARES_NODE_VERSION: "24.8.0"
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
