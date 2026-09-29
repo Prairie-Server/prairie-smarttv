@@ -36,6 +36,10 @@ class BuildPlaybackStartInput {
     this.hdr,
     this.maxAudioChannels,
     this.playbackAttemptId,
+    this.devicePlatform = 'smarttv',
+    this.appVersion = '1.0.0',
+    this.appBuild = '',
+    this.appChannel = 'release',
   });
 
   final int fileId;
@@ -51,6 +55,10 @@ class BuildPlaybackStartInput {
 
   /// Stable identity for retrying one playback start. Generated when omitted.
   final String? playbackAttemptId;
+  final String devicePlatform;
+  final String appVersion;
+  final String appBuild;
+  final String appChannel;
 }
 
 String _newPlaybackAttemptId() {
@@ -173,10 +181,11 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
     'client_playback_context': {
       'protocol_version': 3,
       'form_factor': 'tv',
-      'app_version': '1.0.0',
-      'app_channel': 'release',
+      'app_version': input.appVersion,
+      'app_build': input.appBuild,
+      'app_channel': input.appChannel,
       'device': {
-        'platform': 'smarttv',
+        'platform': input.devicePlatform,
       },
       'output': {
         'hdr_details': {
