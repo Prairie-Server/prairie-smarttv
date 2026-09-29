@@ -704,7 +704,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     try {
       final client = ref.read(apiClientProvider);
-      final identity = ref.read(clientIdentityProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
       final deviceCaps = applyAudioChannelOverride(
