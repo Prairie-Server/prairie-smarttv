@@ -57,6 +57,9 @@ class PlaybackSessionResponse {
     if (plan is Map<String, dynamic>) {
       return PlaybackSessionResponse.fromV3Decision(json);
     }
+    if (json['outcome'] is String) {
+      throw FormatException('Prairie playback was not playable: ${json['outcome']}');
+    }
     return PlaybackSessionResponse(
       sessionId: json['session_id'] as String,
       mediaFileId: json['media_file_id'] as int,
