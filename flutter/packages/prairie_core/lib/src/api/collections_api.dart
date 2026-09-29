@@ -28,7 +28,7 @@ Future<List<CollectionCard>> fetchLibraryCollections(
 ) async {
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
-    '/api/v1/library/$libraryId/collections',
+    '/api/v2/library/$libraryId/collections',
   );
   final out = <CollectionCard>[];
   for (final group in (json['groups'] as List<dynamic>? ?? [])) {
@@ -45,15 +45,15 @@ Future<List<CollectionCard>> fetchLibraryCollections(
 
 /// Mirrors `fetchPersonalCollections` from src/api/collections.ts.
 Future<List<CollectionCard>> fetchPersonalCollections(ApiClient client, PrairieSession session) async {
-  final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v1/collections');
+  final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v2/collections');
   final out = <CollectionCard>[];
-  for (final card in (json['collections'] as List<dynamic>? ?? [])) {
+  // v2 returns personal collections in `items` and grouped collections in
+  // `groups[*].collections`. Keep the flattened card contract used by the TV UI.
+  for (final card in (json['items'] as List<dynamic>? ?? [])) {
     out.add(_cardFromJson(card as Map<String, dynamic>));
   }
-  for (final group in (json['groups'] as List<dynamic>? ?? [])) {
-    for (final card in ((group as Map<String, dynamic>)['collections'] as List<dynamic>? ?? [])) {
-      out.add(_cardFromJson(card as Map<String, dynamic>));
-    }
-  }
+  // `items` is the complete personal collection list. `groups` is
+  // presentation metadata and repeats grouped collections, so do not flatten it
+  // into the card list or grouped collections appear twice.
   return out;
 }
