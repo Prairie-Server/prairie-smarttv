@@ -91,12 +91,34 @@ class CatalogResponse {
 
 /// Mirrors `fetchCatalog`. Response caching (`cachedRequest`) isn't ported.
 Future<CatalogResponse> fetchCatalog(ApiClient client, PrairieSession session, [CatalogQuery query = const CatalogQuery()]) async {
-  final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), query._buildPath());
+  // Catalog reads moved to the v2 contract. Unlike v1, v2 uses a POST body,
+  // an opaque window cursor, and an explicit seek for later pages.
+  final body = <String, dynamic>{
+    if (query.libraryId != null) 'library_id': '$query.libraryId',
+    if (query.type != null) 'type': query.type,
+    if (query.q != null && query.q!.isNotEmpty) 'q': query.q,
+    if (query.source != null) 'source': query.source,
+    if (query.collectionId != null) 'collection_id': query.collectionId,
+    if (query.offset != null) 'seek': query.offset,
+    if (query.limit != null) 'limit': query.limit,
+    if (query.snapshot != null) 'cursor': query.snapshot,
+    if (query.sort != null) 'sort': query.sort,
+    if (query.order != null) 'order': query.order,
+  };
+  final json = await client.request<Map<String, dynamic>>(
+    _sessionOptions(session),
+    '/api/v2/catalog/query',
+    method: 'POST',
+    body: body,
+  );
+  final page = json['page'] as Map<String, dynamic>?;
   return CatalogResponse(
     total: json['total'] as int?,
-    hasMore: json['has_more'] as bool?,
-    snapshot: json['snapshot'] as String?,
-    items: (json['items'] as List<dynamic>? ?? []).map((j) => catalogItemFromJson(j as Map<String, dynamic>)).toList(),
+    hasMore: page?['has_more'] as bool?,
+    snapshot: json['window_cursor'] as String?,
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((j) => catalogItemFromJson(j as Map<String, dynamic>))
+        .toList(),
   );
 }
 
