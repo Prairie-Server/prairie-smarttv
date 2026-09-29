@@ -16,8 +16,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   shared_preferences_tizen: ^2.3.3
   flutter_secure_storage_tizen: ^0.1.3
-  # path_provider_tizen intentionally omitted — prairie_core does not use
-  # path_provider; dropping it shrinks the TPK.
+  path_provider_tizen: ^2.3.3
   video_player_videohole: ^0.5.9
   device_info_plus_tizen: ^1.4.0
 
