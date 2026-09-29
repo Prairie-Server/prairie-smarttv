@@ -84,9 +84,8 @@ grep -q 'resolution: workspace' "${ROOT}/packages/flutter_secure_storage_webos/p
   || fail "flutter_secure_storage_webos missing resolution: workspace"
 grep -q 'video_player_videohole:' "${ROOT}/packages/prairie_tizen/pubspec.yaml" \
   || fail "prairie_tizen missing video_player_videohole"
-if grep -q 'path_provider_tizen:' "${ROOT}/packages/prairie_tizen/pubspec.yaml"; then
-  fail "prairie_tizen still depends on unused path_provider_tizen"
-fi
+grep -q 'path_provider_tizen:' "${ROOT}/packages/prairie_tizen/pubspec.yaml" \
+  || fail "prairie_tizen missing path_provider_tizen"
 pass "pubspec dependency shape"
 
 echo
