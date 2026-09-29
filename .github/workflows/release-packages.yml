@@ -172,8 +172,7 @@ jobs:
         with:
           path: |
             ~/tizen-studio
-            ~/tizen-studio-data
-          key: tizen-sdk-${{ env.TIZEN_SDK_VERSION }}-native-iotheaded65-v3
+          key: tizen-sdk-${{ env.TIZEN_SDK_VERSION }}-native-iotheaded65-v4
 
       - name: Install Tizen SDK CLI
         if: steps.cache-tizen-sdk.outputs.cache-hit != 'true'
