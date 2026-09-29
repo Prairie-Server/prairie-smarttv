@@ -142,8 +142,16 @@ Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession s
 }
 
 /// Mirrors `resolvePlaybackStreamUrl`.
-String resolvePlaybackStreamUrl(String serverUrl, PlaybackSessionResponse session, String accessToken) =>
-    buildStreamUrl(serverUrl, session.streamUrl, accessToken);
+String resolvePlaybackStreamUrl(String serverUrl, PlaybackSessionResponse session, String accessToken) {
+  // Protocol-v3 plans normally return an already-authorized stream URL. Do
+  // not append the legacy session token a second time; v3 signatures cover the
+  // URL's complete query string.
+  final uri = Uri.tryParse(session.streamUrl);
+  if (uri != null && uri.queryParameters.containsKey('token')) {
+    return session.streamUrl;
+  }
+  return buildStreamUrl(serverUrl, session.streamUrl, accessToken);
+}
 
 /// Optional recommendation from `POST .../progress?advice=1`.
 ///
