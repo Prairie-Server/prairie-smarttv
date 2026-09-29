@@ -7,6 +7,84 @@ import 'fake_http_adapter.dart';
 ApiClient _clientWith(ResponseBody Function(RequestOptions) handler) {
   final dio = Dio()..httpClientAdapter = FakeHttpAdapter(handler);
   return ApiClient(dio: dio);
+  group('v2 catalog reads', () {
+    const session = PrairieSession(
+      serverUrl: 'https://prairie.example',
+      accessToken: 'token',
+      username: 'user',
+      profileId: 'profile-1',
+    );
+
+    test('uses POST /api/v2/catalog/query with window cursor pagination', () async {
+      final dio = Dio()..httpClientAdapter = FakeHttpAdapter(
+        (_) => jsonResponse(
+          '{"items":[{"content_id":"movie:heat","type":"movie","title":"Heat","year":1995}],'
+          '"total":1,"total_exact":true,"window_cursor":"cursor-1",'
+          '"page":{"has_more":false}}',
+          200,
+        ),
+      );
+      final adapter = dio.httpClientAdapter as FakeHttpAdapter;
+      final client = ApiClient(dio: dio);
+
+      final page = await fetchCatalog(
+        client,
+        session,
+        const CatalogQuery(
+          q: 'heat & rain',
+          source: 'query',
+          offset: 48,
+          limit: 48,
+          snapshot: 'cursor-0',
+        ),
+      );
+
+      expect(page.items.single.title, 'Heat');
+      expect(page.total, 1);
+      expect(page.hasMore, false);
+      expect(page.snapshot, 'cursor-1');
+      expect(adapter.requests.single.method, 'POST');
+      expect(adapter.requests.single.path, '/api/v2/catalog/query');
+      expect(adapter.requests.single.data, {
+        'q': 'heat & rain',
+        'source': 'query',
+        'seek': 48,
+        'limit': 48,
+        'cursor': 'cursor-0',
+      });
+    });
+
+    test('sends library collection scope through v2', () async {
+      final dio = Dio()..httpClientAdapter = FakeHttpAdapter(
+        (_) => jsonResponse(
+          '{"items":[],"total":0,"total_exact":true,"window_cursor":"c",'
+          '"page":{"has_more":false}}',
+          200,
+        ),
+      );
+      final adapter = dio.httpClientAdapter as FakeHttpAdapter;
+      final client = ApiClient(dio: dio);
+
+      await fetchCatalog(
+        client,
+        session,
+        const CatalogQuery(
+          source: 'library_collection',
+          libraryId: 7,
+          collectionId: 'collection-1',
+          limit: 80,
+        ),
+      );
+
+      expect(adapter.requests.single.data, {
+        'library_id': '7',
+        'source': 'library_collection',
+        'collection_id': 'collection-1',
+        'limit': 80,
+      });
+    });
+  });
+
 }
 
 void main() {
