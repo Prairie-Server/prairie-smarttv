@@ -94,7 +94,7 @@ Future<CatalogResponse> fetchCatalog(ApiClient client, PrairieSession session, [
   // Catalog reads moved to the v2 contract. Unlike v1, v2 uses a POST body,
   // an opaque window cursor, and an explicit seek for later pages.
   final body = <String, dynamic>{
-    if (query.libraryId != null) 'library_id': '$query.libraryId',
+    if (query.libraryId != null) 'library_id': '${query.libraryId}',
     if (query.type != null) 'type': query.type,
     if (query.q != null && query.q!.isNotEmpty) 'q': query.q,
     if (query.source != null) 'source': query.source,
