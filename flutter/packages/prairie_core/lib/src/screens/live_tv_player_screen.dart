@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Mirrors LiveTvPlayerScreen.tsx: tunes a channel, plays its stream, and
 /// always releases the tuner session on exit (including if the user leaves
@@ -24,6 +26,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
   String? _error;
   String? _note;
   bool _exited = false;
+  StreamSubscription<String>? _errorSub;
 
   @override
   void initState() {
@@ -40,6 +43,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
       final session = ref.read(sessionProvider)!;
       unawaited(releaseLiveTvSession(client, session, _liveSessionId!).catchError((_) {}));
     }
+    _errorSub?.cancel();
     _backend?.dispose();
     super.dispose();
   }
@@ -62,8 +66,15 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
       if (raw == null) throw StateError('Live TV session returned no stream URL');
       final streamUrl = resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken, session.profileId);
       final caps = ref.read(tvCapabilitiesProvider);
-      final backend = ref.read(videoBackendFactoryProvider)();
+      final settings = await loadPlaybackSettings(SharedPreferencesAsync());
+      final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
       backend.attach(streamUrl, maxResolution: caps.maxResolution);
+      // The native player reports failures asynchronously (after initialize
+      // resolves, or mid-stream); show them instead of a silent black screen.
+      await _errorSub?.cancel();
+      _errorSub = backend.errorStream.listen((message) {
+        if (mounted) setState(() => _error = message);
+      });
       // Mount hole-punch surface before initialize (same as VOD PlayerScreen).
       setState(() {
         _backend = backend;
@@ -88,7 +99,9 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e is ApiError ? e.message : 'Could not start Live TV';
+          // Keep the real cause visible: a generic message hid whether the
+          // tune, the native player's initialize, or play() failed.
+          _error = e is ApiError ? e.message : 'Could not start Live TV: ${e is PlatformException ? (e.message ?? e.code) : e}';
           _loading = false;
         });
       }
