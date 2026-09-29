@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import '../models/watch_detail.dart';
+
 /// A selectable text/subtitle track, as reported by the native player.
 /// Deliberately minimal (just enough to label a picker) — richer per-track
 /// metadata belongs in the server-driven [SubtitleTrackInfo] instead.
