@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import '../models/watch_detail.dart';
+
 /// Mirrors `PlayMethod`/`ForcedPlayMethod` from src/platform/types.ts.
 enum PlayMethod { direct, remux, transcode }
 
@@ -35,6 +37,7 @@ class BuildPlaybackStartInput {
     this.maxResolution,
     this.hdr,
     this.maxAudioChannels,
+    this.audioTrackIndex,
     this.playbackAttemptId,
     this.devicePlatform = 'smarttv',
     this.appVersion = '1.0.0',
@@ -52,6 +55,9 @@ class BuildPlaybackStartInput {
   final String? maxResolution;
   final bool? hdr;
   final int? maxAudioChannels;
+
+  /// Source audio stream ordinal to play; null lets the server choose.
+  final int? audioTrackIndex;
 
   /// Stable identity for retrying one playback start. Generated when omitted.
   final String? playbackAttemptId;
@@ -100,7 +106,9 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
       },
       'features': const <String>[],
       'auth_header_refresh': false,
-      'validated_claims': const <String>[],
+      // The native player selects the stream itself, so the original file
+      // can be played with a non-default audio track (see selectAudioTrack).
+      'validated_claims': const <String>['client_selected_audio_track_v1'],
       'transformations': const <String>[],
     },
     'progressive': {
@@ -160,6 +168,7 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
     'quality_preference': input.forcedPlayMethod == PlayMethod.direct ? 'original' : 'auto',
     'subtitle_fidelity_preference': 'compatible',
     if (input.startPosition != null && input.startPosition! > 0) 'start_position': input.startPosition,
+    'audio_track_index': ?input.audioTrackIndex,
     'progress_persistence': 'server',
     'metered': false,
     'max_audio_channels': maxAudioChannels,
@@ -211,4 +220,40 @@ Map<String, dynamic> withPlayMethod(Map<String, dynamic> body, PlayMethod? metho
     next['play_method'] = method.wireValue;
   }
   return next;
+}
+
+/// Picks a source audio track the device can decode when the container
+/// default cannot be decoded (mirrors the server's
+/// SelectClientPlayableAudioTrack, which the v3 planner does not call).
+///
+/// Returns null when the default is decodable or nothing better exists, so
+/// the server keeps its own choice. Preference: a decodable codec, the
+/// default track's language, the most channels within [maxChannels], then the
+/// lowest index.
+int? selectPlayableAudioTrack(List<AudioTrackInfo> tracks, List<String> decodable, int maxChannels) {
+  if (tracks.isEmpty) return null;
+  final codecs = decodable.map((c) => c.toLowerCase()).toSet();
+  bool canDecode(AudioTrackInfo t) => codecs.contains((t.codec ?? '').toLowerCase());
+  var defaultIndex = tracks.indexWhere((t) => t.isDefault == true);
+  if (defaultIndex < 0) defaultIndex = 0;
+  final fallback = tracks[defaultIndex];
+  if (canDecode(fallback)) return null;
+  final language = (fallback.language ?? '').toLowerCase();
+  int? best;
+  (int, int, int)? bestKey;
+  for (var i = 0; i < tracks.length; i++) {
+    final t = tracks[i];
+    if (!canDecode(t)) continue;
+    final channels = t.channels ?? 2;
+    final key = (
+      (t.language ?? '').toLowerCase() == language ? 1 : 0,
+      maxChannels <= 0 || channels <= maxChannels ? 1 : 0,
+      channels,
+    );
+    if (bestKey == null || key.$1 > bestKey.$1 || key.$1 == bestKey.$1 && (key.$2 > bestKey.$2 || key.$2 == bestKey.$2 && key.$3 > bestKey.$3)) {
+      best = i;
+      bestKey = key;
+    }
+  }
+  return best;
 }

@@ -195,6 +195,16 @@ class WebosVideoBackend implements VideoBackend {
   }
 
   @override
+  Future<void> selectAudioTrack(int audioOrdinal) async {
+    final controller = _controller;
+    if (controller == null || audioOrdinal < 0) return;
+    // SMP lists audio streams in container order, the same ordinal space as
+    // the server's audio_track_index.
+    await controller.selectAudioTrack(audioOrdinal);
+    reportDiagnostic('audio:select:$audioOrdinal');
+  }
+
+  @override
   Stream<String?> get captionStream => _captionController.stream;
 
   @override
