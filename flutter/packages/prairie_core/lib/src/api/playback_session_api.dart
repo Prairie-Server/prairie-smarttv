@@ -49,6 +49,7 @@ class PlaybackSessionResponse {
     this.clientFeatures = const [],
     this.clientCapabilities = const {},
     this.clientPlaybackContext = const {},
+    this.isProtocolV3 = false,
   });
 
   final String sessionId;
@@ -67,6 +68,7 @@ class PlaybackSessionResponse {
   final List<String> clientFeatures;
   final Map<String, dynamic> clientCapabilities;
   final Map<String, dynamic> clientPlaybackContext;
+  final bool isProtocolV3;
 
   factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) {
     final plan = json['playback_plan'];
@@ -132,6 +134,7 @@ class PlaybackSessionResponse {
       planId: plan['plan_id'] as String?,
       planAttemptKey: plan['plan_attempt_key'] as String?,
       attemptedPlanKeys: const [],
+      isProtocolV3: true,
     );
   }
 
@@ -167,6 +170,7 @@ Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession s
     clientFeatures: List<String>.from(body['client_features'] as List? ?? const []),
     clientCapabilities: Map<String, dynamic>.from(body['client_capabilities'] as Map? ?? const {}),
     clientPlaybackContext: Map<String, dynamic>.from(body['client_playback_context'] as Map? ?? const {}),
+    isProtocolV3: parsed.isProtocolV3,
   );
 }
 
@@ -197,6 +201,7 @@ Future<PlaybackSessionResponse> replanPlaybackQuality(ApiClient client, PrairieS
     playbackInfo: parsed.playbackInfo, playbackAttemptId: current.playbackAttemptId, planId: parsed.planId, planAttemptKey: nextKey,
     attemptedPlanKeys: [...current.attemptedPlanKeys, if (nextKey != null && !current.attemptedPlanKeys.contains(nextKey)) nextKey],
     clientFeatures: current.clientFeatures, clientCapabilities: current.clientCapabilities, clientPlaybackContext: current.clientPlaybackContext,
+    isProtocolV3: true,
   );
 }
 
