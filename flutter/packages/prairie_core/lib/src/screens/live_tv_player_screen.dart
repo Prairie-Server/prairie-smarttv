@@ -348,7 +348,8 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
         if (didPop) return;
         // Same as the VOD player: the first Back dismisses the chrome, and only
         // a Back with the chrome already hidden leaves the channel.
-        if (_controlsVisible && _status == LiveTvPlaybackStatus.live) {
+        if (_controlsVisible &&
+            (_status == LiveTvPlaybackStatus.live || _status == LiveTvPlaybackStatus.buffering)) {
           _hideControlsNow();
         } else {
           _exit();

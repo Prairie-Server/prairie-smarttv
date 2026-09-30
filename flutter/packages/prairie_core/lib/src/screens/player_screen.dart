@@ -85,6 +85,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _stallTimer;
   /// Debounce for re-anchoring seeks — see [_seekToPosition].
   Timer? _seekDebounce;
+  int _seekGeneration = 0;
   Duration? _pendingReanchorSeek;
   /// Live scrub/seek preview time shown above the seek bar (trickplay + clock).
   Duration? _seekPreviewTime;
@@ -1388,6 +1389,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _seekToPosition(Duration target) async {
     final backend = _backend;
     if (backend == null || _recovering) return;
+    final generation = ++_seekGeneration;
     final duration = _totalDuration ?? Duration.zero;
     var next = target < Duration.zero ? Duration.zero : target;
     if (duration > Duration.zero && next > duration) next = duration;
@@ -1411,7 +1413,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _showSeekPreview(next);
         setState(() => _position = next);
       }
-      unawaited(_reportSeekLanding(backend, next, plan?.playMethod));
+      unawaited(_reportSeekLanding(backend, next, plan?.playMethod, generation));
     } on PlatformException catch (err) {
       debugPrint('prairie.player_screen: native seekTo failed: $err');
       backend.reportDiagnostic('seek:failed:${plan?.playMethod}:${err.message ?? err.code}');
@@ -1428,7 +1430,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// The first tick after a seek can still carry the pre-seek position, so
   /// the second is the one reported, along with how long after the seek it
   /// arrived (playback keeps advancing in the meantime).
-  Future<void> _reportSeekLanding(VideoBackend backend, Duration target, String? playMethod) async {
+  Future<void> _reportSeekLanding(VideoBackend backend, Duration target, String? playMethod, int generation) async {
     final seekedAt = DateTime.now();
     Duration landed;
     try {
@@ -1436,7 +1438,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     } catch (_) {
       return;
     }
-    if (!mounted || !identical(_backend, backend)) return;
+    if (!mounted || !identical(_backend, backend) || generation != _seekGeneration) return;
     final absolute = _streamOrigin + landed;
     backend.reportDiagnostic(
       'seek:landed:$playMethod:want=${target.inMilliseconds}:got=${absolute.inMilliseconds}'
