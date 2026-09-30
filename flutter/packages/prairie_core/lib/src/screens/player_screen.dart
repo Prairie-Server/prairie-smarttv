@@ -465,7 +465,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
         final prepared = await preparePlayableSession(
           client,
-          session,
+          // Fresh: a preceding call may have refreshed the access token.
+          ref.read(sessionProvider) ?? session,
           replanned,
           position,
           sourceResolution: _sourceResolutionForFile(widget.launch.watch, replanned.mediaFileId),
@@ -494,7 +495,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (dropToOriginalDirect) {
         final prepared = await preparePlayableSession(
           client,
-          session,
+          // Fresh: a preceding call may have refreshed the access token.
+          ref.read(sessionProvider) ?? session,
           base,
           position,
           sourceResolution: _sourceResolutionForFile(widget.launch.watch, fileId),
@@ -540,7 +542,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       final prepared = await preparePlayableSession(
         client,
-        session,
+        // Fresh: a preceding call may have refreshed the access token.
+        ref.read(sessionProvider) ?? session,
         startFrom,
         position,
         sourceResolution: _sourceResolutionForFile(widget.launch.watch, fileId),
@@ -751,7 +754,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       final prepared = await preparePlayableSession(
         client,
-        session,
+        // Fresh: a preceding call may have refreshed the access token.
+        ref.read(sessionProvider) ?? session,
         nextSession,
         position,
         sourceResolution: _sourceResolutionForFile(widget.launch.watch, nextSession.mediaFileId),
@@ -965,7 +969,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       try {
         prepared = await preparePlayableSession(
           client,
-          session,
+          // Fresh: a preceding call may have refreshed the access token.
+          ref.read(sessionProvider) ?? session,
           started,
           seekAt,
           sourceResolution: _sourceResolutionForFile(widget.launch.watch, started.mediaFileId),

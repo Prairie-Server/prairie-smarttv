@@ -34,7 +34,11 @@ final serverRegistryStoreProvider = Provider<ServerRegistryStore>((ref) {
 final clientIdentityProvider = Provider<ClientIdentity>((ref) => const ClientIdentity());
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient(identity: ref.watch(clientIdentityProvider));
+  final client = ApiClient(identity: ref.watch(clientIdentityProvider));
+  // Persist refreshed tokens so later requests and native-player stream URLs
+  // use the live access token instead of re-refreshing from an expired one.
+  client.onTokensRefreshed = (access, refresh) => ref.read(sessionProvider.notifier).updateTokens(access, refresh);
+  return client;
 });
 
 /// Holds the active [PrairieSession], if any. Mirrors the `session` useState

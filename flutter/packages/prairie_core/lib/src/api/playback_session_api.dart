@@ -365,10 +365,13 @@ String _newPlaybackRequestId() {
 String resolvePlaybackStreamUrl(String serverUrl, PlaybackSessionResponse session, String accessToken) {
   // Protocol-v3 plans normally return an already-authorized stream URL. Do
   // not append the legacy session token a second time; v3 signatures cover the
-  // URL's complete query string.
+  // URL's complete query string. (Relative URLs are still joined to the server.)
   final uri = Uri.tryParse(session.streamUrl);
-  if (uri != null && uri.queryParameters.containsKey('token')) {
-    return session.streamUrl;
+  // `st` is the v2 stream grant. Appending the session access token beside it
+  // is not harmless: the server validates any `token` it is given, so an
+  // expired access token 401s a stream the grant alone would authorize.
+  if (uri != null && (uri.queryParameters.containsKey('token') || uri.queryParameters.containsKey('st'))) {
+    return buildStreamUrl(serverUrl, session.streamUrl, null);
   }
   return buildStreamUrl(serverUrl, session.streamUrl, accessToken);
 }
