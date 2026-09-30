@@ -937,6 +937,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           hdr: deviceCaps.hdr,
           maxAudioChannels: deviceCaps.maxAudioChannels,
           audioTrackIndex: initialAudioTrackIndex,
+          supportsFragmentedMp4: deviceCaps.supportsFragmentedMp4,
           devicePlatform: identity.devicePlatform,
           appVersion: identity.appVersion,
           appBuild: identity.appBuild,

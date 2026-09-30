@@ -12,6 +12,7 @@ class TvPlaybackCapabilities {
     required this.hdr,
     this.maxAudioChannels = 6,
     this.supportsHlsTranscode = true,
+    this.supportsFragmentedMp4 = true,
   });
 
   final List<String> codecsVideo;
@@ -45,6 +46,12 @@ class TvPlaybackCapabilities {
   /// `_qualityOptions` in `player_screen.dart`.
   final bool supportsHlsTranscode;
 
+  /// Whether the native demuxer accepts fragmented MP4 (the server's
+  /// progressive remux and copy-video HLS). `false` on Tizen: this panel
+  /// rejects fMP4 while MPEG-TS plays, so the start request disables the
+  /// progressive remux and claims `copy_video_mpegts_v1` for HLS.
+  final bool supportsFragmentedMp4;
+
   /// Conservative defaults used when no platform probe has run yet (unknown
   /// platform, or webOS — see [buildWebosCapabilities], which has no
   /// Moonfin-equivalent research behind it yet). Matches
@@ -70,6 +77,7 @@ class TvPlaybackCapabilities {
     bool? hdr,
     int? maxAudioChannels,
     bool? supportsHlsTranscode,
+    bool? supportsFragmentedMp4,
   }) =>
       TvPlaybackCapabilities(
         codecsVideo: codecsVideo ?? this.codecsVideo,
@@ -79,6 +87,7 @@ class TvPlaybackCapabilities {
         hdr: hdr ?? this.hdr,
         maxAudioChannels: maxAudioChannels ?? this.maxAudioChannels,
         supportsHlsTranscode: supportsHlsTranscode ?? this.supportsHlsTranscode,
+        supportsFragmentedMp4: supportsFragmentedMp4 ?? this.supportsFragmentedMp4,
       );
 }
 
@@ -214,6 +223,9 @@ TvPlaybackCapabilities buildTizenCapabilities({
     // See TvPlaybackCapabilities.supportsHlsTranscode doc — confirmed
     // on-device that video_player_videohole cannot play HLS at all.
     supportsHlsTranscode: false,
+    // Copy paths (fMP4) fail on-device with a demux error; encode paths
+    // (MPEG-TS) play. See the Tizen playback notes.
+    supportsFragmentedMp4: false,
   );
 }
 

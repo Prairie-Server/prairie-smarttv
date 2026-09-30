@@ -69,4 +69,17 @@ void main() {
       expect(matchNativeAudioTrack(native, 11, track: mono, sourceTrackCount: 12), isNull);
     });
   });
+
+  test('without fMP4 support the progressive remux is off and HLS asks for TS', () {
+    final body = buildPlaybackStartRequest(
+      const BuildPlaybackStartInput(fileId: 14673, profileId: 'p', supportsFragmentedMp4: false),
+    );
+    final deliveries = (body['client_playback_context'] as Map)['deliveries'] as Map;
+    expect((deliveries['progressive'] as Map)['enabled'], isFalse);
+    expect((deliveries['hls'] as Map)['validated_claims'], contains('copy_video_mpegts_v1'));
+    final defaults = buildPlaybackStartRequest(const BuildPlaybackStartInput(fileId: 1, profileId: 'p'));
+    final d = (defaults['client_playback_context'] as Map)['deliveries'] as Map;
+    expect((d['progressive'] as Map)['enabled'], isTrue);
+    expect((d['hls'] as Map)['validated_claims'], isEmpty);
+  });
 }

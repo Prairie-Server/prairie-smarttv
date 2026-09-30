@@ -38,6 +38,7 @@ class BuildPlaybackStartInput {
     this.hdr,
     this.maxAudioChannels,
     this.audioTrackIndex,
+    this.supportsFragmentedMp4 = true,
     this.playbackAttemptId,
     this.devicePlatform = 'smarttv',
     this.appVersion = '1.0.0',
@@ -58,6 +59,10 @@ class BuildPlaybackStartInput {
 
   /// Source audio stream ordinal to play; null lets the server choose.
   final int? audioTrackIndex;
+
+  /// False drops the fMP4 progressive remux and asks for copied HLS video as
+  /// MPEG-TS (`copy_video_mpegts_v1`), for demuxers that reject fMP4.
+  final bool supportsFragmentedMp4;
 
   /// Stable identity for retrying one playback start. Generated when omitted.
   final String? playbackAttemptId;
@@ -112,7 +117,7 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
       'transformations': const <String>[],
     },
     'progressive': {
-      'enabled': input.forcedPlayMethod == null || input.forcedPlayMethod == PlayMethod.remux,
+      'enabled': (input.forcedPlayMethod == null && input.supportsFragmentedMp4) || input.forcedPlayMethod == PlayMethod.remux,
       'supported_on_device': true,
       'containers': containers,
       'video_codecs': videoCodecs,
@@ -150,7 +155,7 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
       },
       'features': const <String>[],
       'auth_header_refresh': false,
-      'validated_claims': const <String>[],
+      'validated_claims': input.supportsFragmentedMp4 ? const <String>[] : const <String>['copy_video_mpegts_v1'],
       'transformations': const <String>[],
     },
   };
