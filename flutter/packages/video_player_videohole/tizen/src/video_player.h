@@ -5,21 +5,27 @@
 #ifndef FLUTTER_PLUGIN_VIDEO_PLAYER_H_
 #define FLUTTER_PLUGIN_VIDEO_PLAYER_H_
 
+#include <dart_api_dl.h>
 #include <flutter/encodable_value.h>
-#include <flutter/event_channel.h>
 #include <flutter_tizen.h>
 #include <glib.h>
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <utility>
 
-#include "ecore_wl2_window_proxy.h"
-#include "messages.h"
+#include "ffi_messages.h"
 
 namespace video_player_videohole_tizen {
+
+void RegisterDartPort(int64_t dart_port);
+void UnregisterDartPort();
+
+void PostEventToDart(int64_t player_id, const std::string &event_json);
 
 class VideoPlayer {
  public:
@@ -32,7 +38,9 @@ class VideoPlayer {
   virtual ~VideoPlayer();
 
   virtual int64_t Create(const std::string &uri,
-                         const CreateMessage &create_message) = 0;
+                         const CreateMessage &create_message,
+                         bool reuse_existing_id = false) = 0;
+  virtual int Prepare() = 0;
   virtual void Dispose() = 0;
 
   virtual void SetDisplayRoi(int32_t x, int32_t y, int32_t width,
@@ -55,30 +63,26 @@ class VideoPlayer {
                        int64_t resume_time) = 0;
   virtual bool SetDisplayRotate(int64_t rotation) = 0;
 
-  // Prairie patch: native reason for the last failed SeekTo, so the plugin can
-  // return it to Dart instead of a generic message.
-  const std::string &last_seek_error() const { return last_seek_error_; }
-
  protected:
-  std::string last_seek_error_;
-
   virtual void GetVideoSize(int32_t *width, int32_t *height) = 0;
   void *GetWindowHandle();
-  int64_t SetUpEventChannel();
-  void ClearUpEventChannel();
   void SendInitialized();
   void SendBufferingStart();
   void SendBufferingUpdate(int32_t value);
   void SendBufferingEnd();
+  void SendSeekCompleted();
   void SendSubtitleUpdate(int32_t duration, const std::string &text);
   void SendPlayCompleted();
   void SendIsPlayingState(bool is_playing);
   void SendRestored();
   void SendError(const std::string &error_code,
                  const std::string &error_message);
+  void ResetEventDispatchState();
+  bool IsDisposed() const;
+  void MarkDisposed();
 
+  int64_t player_id_;
   std::mutex queue_mutex_;
-  std::unique_ptr<EcoreWl2WindowProxy> ecore_wl2_window_proxy_ = nullptr;
   flutter::BinaryMessenger *binary_messenger_;
   bool is_initialized_ = false;
   FlutterDesktopViewRef flutter_view_;
@@ -91,7 +95,6 @@ class VideoPlayer {
     }
   };
 
-  // Event dispatch state structure for lifecycle management
   struct EventDispatchState {
     std::mutex mutex;
     VideoPlayer *player = nullptr;
@@ -108,9 +111,6 @@ class VideoPlayer {
 
   std::queue<flutter::EncodableValue> encodable_event_queue_;
   std::queue<std::pair<std::string, std::string>> error_event_queue_;
-  std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>>
-      event_channel_;
-  std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
 };
 
 }  // namespace video_player_videohole_tizen
