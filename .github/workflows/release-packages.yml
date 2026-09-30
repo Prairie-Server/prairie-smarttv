@@ -224,6 +224,15 @@ jobs:
           dbus-run-session -- bash -c '
             set -euo pipefail
             echo tizen | gnome-keyring-daemon --unlock
+            # tizen-studio-data is deliberately not cached (signing state must
+            # be fresh per run), and on an SDK cache hit the installer that
+            # creates it does not run. security-profiles add refuses to create
+            # the profiles file itself ("Not found a file of security
+            # profiles"), so seed an empty one and point the CLI at it.
+            PROFILES="$HOME/tizen-studio-data/profile/profiles.xml"
+            mkdir -p "$(dirname "$PROFILES")"
+            [ -f "$PROFILES" ] || printf "%s\n" "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>" "<profiles active=\"\" version=\"3.1\"/>" > "$PROFILES"
+            tizen cli-config "default.profiles.path=$PROFILES"
             tizen certificate -a CI_Sideload -p tizen -f CI_Sideload
             tizen security-profiles add \
               -n CI_Sideload \
