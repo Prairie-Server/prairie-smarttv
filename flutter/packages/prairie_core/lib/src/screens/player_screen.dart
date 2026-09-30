@@ -70,6 +70,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _error;
   bool _controlsVisible = true;
   bool _showStats = false;
+
+  /// Path (no query, so no credentials) of the stream handed to the native
+  /// player, for the stats overlay.
+  String? _attachedStreamPath;
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
@@ -615,6 +619,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await oldBackend?.dispose();
 
     final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
+    _attachedStreamPath = Uri.tryParse(prepared.streamUrl)?.path;
     backend.attach(
       prepared.streamUrl,
       maxResolution: deviceCaps.maxResolution,
@@ -778,6 +783,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await oldBackend?.dispose();
 
       final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
+      _attachedStreamPath = Uri.tryParse(prepared.streamUrl)?.path;
       backend.attach(
         prepared.streamUrl,
         maxResolution: deviceCaps.maxResolution,
@@ -991,6 +997,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       _activeSessionId = prepared.session.sessionId;
       final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
+      _attachedStreamPath = Uri.tryParse(prepared.streamUrl)?.path;
       backend.attach(
         prepared.streamUrl,
         maxResolution: deviceCaps.maxResolution,
@@ -1412,15 +1419,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// on the once-a-second rebuild [_positionSub] already drives) rather than
   /// wiring up dedicated diagnostics streams for a debug-only overlay.
   Widget _buildStatsOverlay(VideoBackend backend) {
+    final session = _playbackSession;
+    final watch = widget.launch.watch;
+    final version = watch == null || session == null ? null : selectFileVersion(watch, session.mediaFileId);
+    final audioIndex = session?.audioTrackIndex;
+    final audioTracks = version?.audioTracks ?? const <AudioTrackInfo>[];
+    final audioLabel = audioIndex != null && audioIndex >= 0 && audioIndex < audioTracks.length
+        ? formatAudioLabel(audioTracks[audioIndex], audioIndex)
+        : null;
+    final diagnostics = backend.recentDiagnostics;
     final lines = [
-      'session: ${_playbackSession?.sessionId ?? '—'}',
-      'playMethod: ${_playbackSession?.playMethod ?? '—'}',
+      'session: ${session?.sessionId ?? '—'}',
+      'playMethod: ${session?.playMethod ?? '—'}  quality: $_activeQualityId',
+      'plan: ${session?.planSummary ?? '—'}',
+      'audio: ${audioIndex ?? '—'}${audioLabel != null ? ' · $audioLabel' : ''}',
+      'stream: ${_attachedStreamPath ?? '—'}',
       'isInitialized: ${backend.isInitialized}',
       'isPlaying: ${backend.isPlaying}',
       'isBuffering: ${backend.isBuffering}',
       'position: ${_formatDuration(_position)} / ${_formatDuration(_totalDuration ?? Duration.zero)}',
       'streamOrigin: ${_formatDuration(_streamOrigin)}',
       if (_error != null) 'error: $_error',
+      if (diagnostics.isNotEmpty) '— player events —',
+      for (final event in diagnostics.length > 8 ? diagnostics.sublist(diagnostics.length - 8) : diagnostics) event,
     ];
     return Positioned(
       top: 24,
@@ -1431,7 +1452,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             color: Colors.black.withValues(alpha: 0.72),
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Padding(
+          child: ConstrainedBox(
+            // Plan summaries and player events run long; wrap them rather than
+            // letting them run off the panel.
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1441,6 +1466,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   Text(line, style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace')),
               ],
             ),
+          ),
           ),
         ),
       ),

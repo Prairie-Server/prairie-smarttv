@@ -31,8 +31,14 @@ class VideoholeVideoBackend implements VideoBackend {
   final ApiClient? beaconClient;
   final String? Function()? beaconServerUrl;
 
+  final _diagnostics = DiagnosticsLog();
+
+  @override
+  List<String> get recentDiagnostics => _diagnostics.events;
+
   @override
   void reportDiagnostic(String event) {
+    _diagnostics.add(event);
     final client = beaconClient;
     final serverUrl = beaconServerUrl?.call();
     if (client == null || serverUrl == null || serverUrl.isEmpty) return;

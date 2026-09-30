@@ -51,6 +51,7 @@ class PlaybackSessionResponse {
     this.clientPlaybackContext = const {},
     this.isProtocolV3 = false,
     this.qualityPreference = 'auto',
+    this.planSummary,
   });
 
   final String sessionId;
@@ -74,6 +75,10 @@ class PlaybackSessionResponse {
   /// Quality preference the current plan was made under. A track change
   /// replans with it so switching audio does not reset the chosen quality.
   final String qualityPreference;
+
+  /// One-line description of the server's protocol-v3 plan (route, reason,
+  /// container, codecs) for the stats overlay; null for legacy sessions.
+  final String? planSummary;
 
   factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) {
     final plan = json['playback_plan'];
@@ -136,11 +141,31 @@ class PlaybackSessionResponse {
         audioCodec: recipe['audio_codec'] as String?,
       ),
       playbackAttemptId: json['playback_attempt_id'] as String?,
+      planSummary: _planSummary(plan, stream, recipe),
       planId: plan['plan_id'] as String?,
       planAttemptKey: plan['plan_attempt_key'] as String?,
       attemptedPlanKeys: const [],
       isProtocolV3: true,
     );
+  }
+
+  static String _planSummary(Map<String, dynamic> plan, Map<String, dynamic> stream, Map<String, dynamic> recipe) {
+    String? str(Object? v) => v == null || v.toString().isEmpty ? null : v.toString();
+    final w = recipe['width'], h = recipe['height'];
+    final video = [
+      str(recipe['video_codec']),
+      if (w != null && h != null) '${w}x$h',
+      str(recipe['dynamic_range']),
+    ].whereType<String>().join(' ');
+    final channels = recipe['audio_channels'];
+    final audio = [str(recipe['audio_codec']), if (channels != null) '${channels}ch'].whereType<String>().join(' ');
+    return [
+      str(plan['delivery']),
+      if (str(plan['decision_reason']) != null) '(${plan['decision_reason']})',
+      if (str(stream['container']) != null) 'container=${stream['container']}',
+      if (video.isNotEmpty) 'video=$video',
+      if (audio.isNotEmpty) 'audio=$audio',
+    ].whereType<String>().join(' ');
   }
 
   static int _intFromDynamic(Object? value) {
@@ -278,6 +303,7 @@ Future<PlaybackSessionResponse> startPlayback(ApiClient client, PrairieSession s
     clientPlaybackContext: Map<String, dynamic>.from(body['client_playback_context'] as Map? ?? const {}),
     isProtocolV3: parsed.isProtocolV3,
     qualityPreference: body['quality_preference'] as String? ?? 'auto',
+    planSummary: parsed.planSummary,
   );
 }
 
@@ -316,6 +342,7 @@ Future<PlaybackSessionResponse> _replanPlayback(ApiClient client, PrairieSession
     clientFeatures: current.clientFeatures, clientCapabilities: current.clientCapabilities, clientPlaybackContext: current.clientPlaybackContext,
     isProtocolV3: true,
     qualityPreference: qualityPreference,
+    planSummary: parsed.planSummary,
   );
 }
 
