@@ -115,6 +115,60 @@ bash flutter/scripts/validate-package-layout.sh
 Or use `./flutter/scripts/build-tizen.sh` (`--package-version`/`--security-profile`/`--obfuscate`
 optional).
 
+### Tizen troubleshooting
+
+#### Direct play won't seek behind a reverse proxy
+
+**Symptom.** Original-file (direct play) titles play, but resume starts at 0 and every seek
+fails with `player_set_play_position(...) failed: Invalid state`, whether the player is `READY`
+or `PLAYING`. The TV's browser/HTML player seeks fine on the same stream.
+
+**Cause.** The TV's native player (Tizen capi-media-player, which `video_player_videohole`
+wraps) decides whether an HTTP source is seekable from its first response and never asks again:
+the server logs show a single `Range: bytes=0-` request per session, with no HEAD and no probe
+for the MKV seek index. It rejects every later seek without touching the network. HAProxy 2.1+
+lowercases every header name it forwards over HTTP/1, so a correct 206 from Prairie reaches the
+TV as `accept-ranges: bytes` / `content-range: ...`, and the player treats the stream as
+unseekable. Found 2026-09-30 on a QN55QN700BFXZA (Tizen 6.5): the same stream fetched straight
+from the backend (canonical-case headers) seeks fine, and through HAProxy it doesn't. Which
+header the player needs in canonical case is inferred, not documented by Samsung.
+
+**Fix (HAProxy).** Restore the canonical case for HTTP/1 clients:
+
+```
+global
+    h1-case-adjust accept-ranges Accept-Ranges
+    h1-case-adjust content-range Content-Range
+    h1-case-adjust content-length Content-Length
+    h1-case-adjust content-type Content-Type
+    h1-case-adjust etag ETag
+    h1-case-adjust last-modified Last-Modified
+
+frontend <your-https-frontend>
+    option h1-case-adjust-bogus-client
+```
+
+HTTP/2 clients (browsers) are unaffected. With a GUI-managed HAProxy (e.g. the OPNsense or
+pfSense plugin), put the `h1-case-adjust` lines in the global custom options and the `option`
+line in the frontend's custom options. To verify, request a stream URL over HTTP/1.1 through the
+proxy and check that the names come back as `Accept-Ranges:` / `Content-Range:`:
+
+```bash
+curl -sS --http1.1 -D - -o /dev/null -r 0-99 '<stream url>'
+```
+
+Other proxies: Go-based ones (Traefik, Caddy) send canonical names, and nginx passes the
+upstream's case through over HTTP/1. Cloudflare was seen sending `content-range` in lowercase,
+so remote playback through Cloudflare may hit the same problem (not yet tested on a TV).
+
+#### Native logs on a retail TV
+
+Retail TVs block `sdb dlog` (`sdb capability` shows `log_enable:disabled`). Run the app with
+`flutter-tizen run --release -d <tv-ip>:26101` instead: flutter-tizen streams the app's
+stdout/stderr over `--tizen-logging-port`. The vendored `video_player_videohole` fork copies the
+plugin's logs to stderr, so native lines such as `[VideoPlayerVideoHolePlugin] ... SeekTo` and
+seek failure reasons show up there, with stream tokens redacted.
+
 ### webOS TV / emulator
 
 Use the webOS emulator if no physical LG TV is available. After `flutter-webos build`, package
