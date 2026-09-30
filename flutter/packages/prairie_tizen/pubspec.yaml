@@ -14,14 +14,14 @@ dependencies:
     path: ../prairie_core
 
   flutter_riverpod: ^2.6.1
-  shared_preferences_tizen: ^2.3.3
-  flutter_secure_storage_tizen: ^0.1.3
+  shared_preferences_tizen: ^2.3.5
+  flutter_secure_storage_tizen: ^0.1.6
   path_provider_tizen: ^2.3.3
   # Path fork of 0.6.0: returns the native seek failure reason to Dart and
   # tees plugin logs to stderr (retail TVs block dlog). See its CHANGELOG.
   video_player_videohole:
     path: ../video_player_videohole
-  device_info_plus_tizen: ^1.4.0
+  device_info_plus_tizen: ^1.4.3
 
 dev_dependencies:
   flutter_test:
