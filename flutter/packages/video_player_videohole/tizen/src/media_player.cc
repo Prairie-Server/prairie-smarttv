@@ -27,6 +27,13 @@ static std::string RotationToString(player_display_rotation_e rotation) {
   return std::string();
 }
 
+// Prairie patch: stream URLs carry an auth token in the query string, and
+// logs now leave the device via stderr, so never log the query.
+static std::string RedactUri(const std::string &uri) {
+  size_t query = uri.find('?');
+  return query == std::string::npos ? uri : uri.substr(0, query) + "?<redacted>";
+}
+
 static std::string StateToString(player_state_e state) {
   switch (state) {
     case PLAYER_STATE_NONE:
@@ -70,8 +77,8 @@ static int64_t player_id_counter = 1;
 int64_t MediaPlayer::Create(const std::string &uri,
                             const CreateMessage &create_message,
                             bool reuse_existing_id) {
-  LOG_INFO("[MediaPlayer] Create: uri=%s, reuse_existing_id=%d", uri.c_str(),
-           reuse_existing_id ? 1 : 0);
+  LOG_INFO("[MediaPlayer] Create: uri=%s, reuse_existing_id=%d",
+           RedactUri(uri).c_str(), reuse_existing_id ? 1 : 0);
 
   if (uri.empty()) {
     LOG_ERROR("[MediaPlayer] The uri must not be empty.");
@@ -869,9 +876,9 @@ bool MediaPlayer::RestorePlayer(const CreateMessage *restore_message,
   LOG_INFO("[MediaPlayer] RestorePlayer: old player cleaned up.");
 
   if (restore_message->uri()) {
-    LOG_INFO("[MediaPlayer] Player previous url: %s", url_.c_str());
+    LOG_INFO("[MediaPlayer] Player previous url: %s", RedactUri(url_).c_str());
     LOG_INFO("[MediaPlayer] Player new url: %s",
-             restore_message->uri()->c_str());
+             RedactUri(*restore_message->uri()).c_str());
     url_ = *restore_message->uri();
     create_message_ = *restore_message;
   } else {
