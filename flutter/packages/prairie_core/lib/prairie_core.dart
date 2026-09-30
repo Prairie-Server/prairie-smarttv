@@ -70,6 +70,7 @@ export 'src/screens/search_screen.dart';
 export 'src/screens/servers_screen.dart';
 export 'src/screens/settings_screen.dart';
 export 'src/widgets/media_row.dart';
+export 'src/widgets/player_scrim.dart';
 export 'src/widgets/poster_card.dart';
 export 'src/widgets/prairie_loading_indicator.dart';
 export 'src/widgets/shell_nav.dart';

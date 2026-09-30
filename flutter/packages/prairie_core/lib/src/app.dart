@@ -107,7 +107,7 @@ class AppRoot extends ConsumerWidget {
         restoreContentId: restoreContentId,
       ),
       SearchRoute(:final restoreContentId) => SearchScreen(restoreContentId: restoreContentId),
-      LiveTvRoute() => const LiveTvScreen(),
+      LiveTvRoute(:final tab, :final restoreChannelId) => LiveTvScreen(initialTab: tab, restoreChannelId: restoreChannelId),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
       SettingsRoute(:final back) => SettingsScreen(back: back),
