@@ -797,7 +797,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         final plan = _playbackSession ?? initial;
         if (plan.attemptCount > _maxRecoveryAttempts || iterations >= _maxRecoveryAttempts) break;
         if (iterations > 0) {
-          await playbackRetryPause(const Duration(seconds: 1));
+          await Future<void>.delayed(const Duration(seconds: 1));
           if (!mounted || _exiting || cancel.isCancelled) break;
         }
         iterations++;
