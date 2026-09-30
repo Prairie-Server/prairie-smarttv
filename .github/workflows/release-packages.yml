@@ -360,11 +360,27 @@ jobs:
             exit 1
           fi
 
+      # A release created in the GitHub UI with "Generate release notes" already
+      # has notes; generating again appends a second copy to the existing body.
+      - name: Check for existing release notes
+        id: existing-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          body="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)"
+          if [[ -n "${body//[[:space:]]/}" ]]; then
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: release-artifacts/*
-          generate_release_notes: true
+          generate_release_notes: ${{ steps.existing-notes.outputs.generate == 'true' }}
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           name: Prairie Smart TV ${{ needs.flutter-verify.outputs.version }}
