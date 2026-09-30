@@ -83,8 +83,17 @@ class SearchRoute extends Route {
   final String? restoreContentId;
 }
 
+enum LiveTvTab { channels, guide, recordings }
+
 class LiveTvRoute extends Route {
-  const LiveTvRoute();
+  const LiveTvRoute({this.tab = LiveTvTab.guide, this.restoreChannelId});
+
+  /// Tab to open on — the one the viewer tuned from, when returning.
+  final LiveTvTab tab;
+
+  /// When returning from the live player, focus this channel's row instead
+  /// of the top of the list.
+  final String? restoreChannelId;
 }
 
 class LiveTvPlayerRoute extends Route {

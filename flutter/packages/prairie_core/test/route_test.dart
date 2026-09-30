@@ -12,6 +12,10 @@ void main() {
       expect(shellTabFor(const LiveTvRoute()), ShellTab.livetv);
     });
 
+    test('keeps a live TV route returning to a channel on the live TV tab', () {
+      expect(shellTabFor(const LiveTvRoute(tab: LiveTvTab.channels, restoreChannelId: 'ch-7')), ShellTab.livetv);
+    });
+
     test('maps a library route to the libraries tab, like its list route', () {
       const library = Library(id: 1, name: 'Movies', type: 'movie');
       expect(shellTabFor(const LibraryRoute(library: library)), ShellTab.libraries);

@@ -367,6 +367,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
               fit: StackFit.expand,
               children: [
                 if (backend != null) Center(child: backend.buildSurface()),
+                PlayerScrim(loading: waiting, chromeVisible: _controlsVisible),
                 if (waiting) const Center(child: PrairieLoadingIndicator()),
                 if (_controlsVisible)
                   Positioned(

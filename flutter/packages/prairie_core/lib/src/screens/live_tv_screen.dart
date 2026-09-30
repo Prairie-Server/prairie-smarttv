@@ -3,13 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
-enum _LiveTvTab { channels, guide, recordings }
-
 /// Mirrors LiveTvScreen.tsx's Channels/Guide/Recordings tabs, including
 /// Record now / Record next scheduling from the guide (Now/Next rows, not an
 /// EPG timeline).
 class LiveTvScreen extends ConsumerStatefulWidget {
-  const LiveTvScreen({super.key});
+  const LiveTvScreen({super.key, this.initialTab = LiveTvTab.guide, this.restoreChannelId});
+
+  final LiveTvTab initialTab;
+
+  /// When returning from the live player, focus this channel's row (see
+  /// [LiveTvRoute.restoreChannelId]).
+  final String? restoreChannelId;
 
   @override
   ConsumerState<LiveTvScreen> createState() => _LiveTvScreenState();
@@ -24,12 +28,20 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   String? _status;
   String? _recordingBusyId;
   String? _cancelBusyId;
-  _LiveTvTab _tab = _LiveTvTab.guide;
+  late LiveTvTab _tab = widget.initialTab;
   /// One node per tab pill — the first row of each list explicitly hands
   /// Up off to its tab's node (see [_EscapeUpToTab]) rather than trusting
   /// geometric directional search, which on real hardware skips right past
   /// this pill row and lands on the ShellNav header above it instead.
-  final _tabFocusNodes = {for (final t in _LiveTvTab.values) t: FocusNode()};
+  final _tabFocusNodes = {for (final t in LiveTvTab.values) t: FocusNode()};
+
+  /// Focus target for the row of [LiveTvScreen.restoreChannelId], plus the
+  /// scroll position of whichever list is showing, used to bring that row
+  /// into being: the lists build lazily, so a channel far down has no widget
+  /// to focus until the list has scrolled near it.
+  final _restoreFocus = FocusNode(debugLabel: 'live-tv-restore');
+  final _listScroll = ScrollController();
+  late bool _restorePending = widget.restoreChannelId != null;
 
   @override
   void initState() {
@@ -42,6 +54,8 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     for (final node in _tabFocusNodes.values) {
       node.dispose();
     }
+    _restoreFocus.dispose();
+    _listScroll.dispose();
     super.dispose();
   }
 
@@ -66,7 +80,10 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = e is ApiError ? e.message : 'Could not load Live TV');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+        if (_restorePending) _restoreChannelFocus();
+      }
     }
   }
 
@@ -80,7 +97,36 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   }
 
   void _tune(LiveTvChannel channel) {
-    ref.read(routeProvider.notifier).go(LiveTvPlayerRoute(channel: channel, back: const LiveTvRoute()));
+    ref.read(routeProvider.notifier).go(
+      LiveTvPlayerRoute(channel: channel, back: LiveTvRoute(tab: _tab, restoreChannelId: channel.id)),
+    );
+  }
+
+  /// Moves focus to the returning channel's row. The first row autofocuses
+  /// as usual; this takes focus from it once the target row is built,
+  /// jumping the list toward it first while it is still off-screen.
+  void _restoreChannelFocus([int attempt = 0]) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_restorePending) return;
+      final target = _restoreFocus.context;
+      if (target != null) {
+        _restorePending = false;
+        _restoreFocus.requestFocus();
+        Scrollable.ensureVisible(target, alignment: 0.35);
+        return;
+      }
+      final index = _channels.indexWhere((c) => c.id == widget.restoreChannelId);
+      if (index < 0 || attempt >= 8 || !_listScroll.hasClients) {
+        _restorePending = false;
+        return;
+      }
+      // Lazily built rows have no exact offsets: aim proportionally and retry,
+      // since each jump refines the list's extent estimate.
+      final position = _listScroll.position;
+      final estimate = (position.maxScrollExtent + position.viewportDimension) * index / _channels.length;
+      _listScroll.jumpTo(estimate.clamp(0.0, position.maxScrollExtent));
+      _restoreChannelFocus(attempt + 1);
+    });
   }
 
   Future<void> _record(LiveTvProgram program) async {
@@ -146,9 +192,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
             child: Row(
               children: [
                 for (final (tab, label) in const [
-                  (_LiveTvTab.channels, 'Channels'),
-                  (_LiveTvTab.guide, 'Guide'),
-                  (_LiveTvTab.recordings, 'Recordings'),
+                  (LiveTvTab.channels, 'Channels'),
+                  (LiveTvTab.guide, 'Guide'),
+                  (LiveTvTab.recordings, 'Recordings'),
                 ])
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -157,8 +203,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       active: _tab == tab,
                       focusNode: _tabFocusNodes[tab],
                       onTap: () {
+                        _restorePending = false;
                         setState(() => _tab = tab);
-                        if (tab == _LiveTvTab.recordings) _loadRecordings();
+                        if (tab == LiveTvTab.recordings) _loadRecordings();
                       },
                     ),
                   ),
@@ -179,14 +226,17 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
             child: _loading
                 ? const Center(child: PrairieLoadingIndicator())
                 : switch (_tab) {
-                    _LiveTvTab.channels => _ChannelsList(
+                    LiveTvTab.channels => _ChannelsList(
                       channels: _channels,
                       index: index,
                       serverUrl: serverUrl,
                       onTune: _tune,
                       escapeUpFocusNode: _tabFocusNodes[_tab],
+                      controller: _listScroll,
+                      restoreChannelId: widget.restoreChannelId,
+                      restoreFocusNode: _restoreFocus,
                     ),
-                    _LiveTvTab.guide => _GuideList(
+                    LiveTvTab.guide => _GuideList(
                       channels: _channels,
                       index: index,
                       serverUrl: serverUrl,
@@ -194,8 +244,11 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       onTune: _tune,
                       onRecord: _record,
                       escapeUpFocusNode: _tabFocusNodes[_tab],
+                      controller: _listScroll,
+                      restoreChannelId: widget.restoreChannelId,
+                      restoreFocusNode: _restoreFocus,
                     ),
-                    _LiveTvTab.recordings => _RecordingsList(
+                    LiveTvTab.recordings => _RecordingsList(
                       recordings: _recordings,
                       cancelBusyId: _cancelBusyId,
                       onCancel: _cancelRecording,
@@ -356,6 +409,9 @@ class _ChannelsList extends StatelessWidget {
     required this.serverUrl,
     required this.onTune,
     this.escapeUpFocusNode,
+    this.controller,
+    this.restoreChannelId,
+    this.restoreFocusNode,
   });
 
   final List<LiveTvChannel> channels;
@@ -363,6 +419,9 @@ class _ChannelsList extends StatelessWidget {
   final String serverUrl;
   final void Function(LiveTvChannel) onTune;
   final FocusNode? escapeUpFocusNode;
+  final ScrollController? controller;
+  final String? restoreChannelId;
+  final FocusNode? restoreFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -370,6 +429,7 @@ class _ChannelsList extends StatelessWidget {
       return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
     }
     return ListView.builder(
+      controller: controller,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       itemCount: channels.length,
       itemBuilder: (context, i) {
@@ -379,6 +439,7 @@ class _ChannelsList extends StatelessWidget {
         final hdSuffix = channel.hd ? ' HD' : '';
         final row = _FocusableRow(
           autofocus: i == 0,
+          focusNode: channel.id == restoreChannelId ? restoreFocusNode : null,
           onTap: () => onTune(channel),
           child: Row(
             children: [
@@ -422,11 +483,12 @@ class _ChannelsList extends StatelessWidget {
 /// amber-ring highlight, matching the rest of the app's TV focus language,
 /// instead of InkWell's barely-there default focus overlay.
 class _FocusableRow extends StatefulWidget {
-  const _FocusableRow({required this.child, this.onTap, this.autofocus = false});
+  const _FocusableRow({required this.child, this.onTap, this.autofocus = false, this.focusNode});
 
   final Widget child;
   final VoidCallback? onTap;
   final bool autofocus;
+  final FocusNode? focusNode;
 
   @override
   State<_FocusableRow> createState() => _FocusableRowState();
@@ -444,6 +506,7 @@ class _FocusableRowState extends State<_FocusableRow> {
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         autofocus: widget.autofocus,
+        focusNode: widget.focusNode,
         borderRadius: BorderRadius.circular(14),
         onTap: widget.onTap,
         onFocusChange: (value) => setState(() => _focused = value),
@@ -478,6 +541,9 @@ class _GuideList extends StatelessWidget {
     required this.onTune,
     required this.onRecord,
     this.escapeUpFocusNode,
+    this.controller,
+    this.restoreChannelId,
+    this.restoreFocusNode,
   });
 
   final List<LiveTvChannel> channels;
@@ -487,6 +553,9 @@ class _GuideList extends StatelessWidget {
   final void Function(LiveTvChannel) onTune;
   final void Function(LiveTvProgram) onRecord;
   final FocusNode? escapeUpFocusNode;
+  final ScrollController? controller;
+  final String? restoreChannelId;
+  final FocusNode? restoreFocusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -494,6 +563,7 @@ class _GuideList extends StatelessWidget {
       return const Center(child: Text('No channels available', style: TextStyle(color: PrairieColors.muted)));
     }
     return ListView.builder(
+      controller: controller,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       itemCount: channels.length,
       itemBuilder: (context, i) {
@@ -550,6 +620,7 @@ class _GuideList extends StatelessWidget {
                   children: [
                     ElevatedButton.icon(
                       autofocus: i == 0,
+                      focusNode: channel.id == restoreChannelId ? restoreFocusNode : null,
                       onPressed: () => onTune(channel),
                       icon: const Icon(Icons.play_arrow),
                       label: const Text('Watch'),

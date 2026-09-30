@@ -1596,6 +1596,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (backend != null) backend.buildSurface(),
+                  PlayerScrim(loading: _loading && _error == null, chromeVisible: _controlsVisible),
                   if (_showStats && backend != null) _buildStatsOverlay(backend),
                   if (_caption != null && _caption!.isNotEmpty)
                     Align(
