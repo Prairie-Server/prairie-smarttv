@@ -788,10 +788,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _prepareCancel?.cancel();
     _prepareCancel = cancel;
     setState(() => _loading = true);
+    // Counted separately from the plan's attempt_count: a replan request that
+    // itself fails (5xx, network) leaves the plan unchanged, so attempt_count
+    // alone would never end the loop.
+    var iterations = 0;
     try {
       while (mounted && !_exiting && !cancel.isCancelled) {
         final plan = _playbackSession ?? initial;
-        if (plan.attemptCount > _maxRecoveryAttempts) break;
+        if (plan.attemptCount > _maxRecoveryAttempts || iterations >= _maxRecoveryAttempts) break;
+        if (iterations > 0) {
+          await playbackRetryPause(const Duration(seconds: 1));
+          if (!mounted || _exiting || cancel.isCancelled) break;
+        }
+        iterations++;
         final client = ref.read(apiClientProvider);
         final session = ref.read(sessionProvider);
         if (session == null) break;
@@ -814,6 +823,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             message: failureMessage,
             positionSeconds: position,
           );
+          // Exit already stopped the session it knew about; this one would
+          // otherwise keep a transcode (or tuner) running.
+          if (!mounted || _exiting || cancel.isCancelled) {
+            unawaited(stopPlaybackSession(client, session, replanned.sessionId).catchError((_) {}));
+            return;
+          }
           // Adopt the plan identity now so a failure preparing it counts
           // toward the next attempt and exit stops the right session.
           _playbackSession = replanned;
@@ -829,7 +844,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             maxResolution: deviceCaps.maxResolution,
             cancelToken: cancel,
           );
-          if (!mounted || _exiting || cancel.isCancelled) return;
+          if (!mounted || _exiting || cancel.isCancelled) {
+            // A repeat stop of a session exit already stopped is harmless.
+            unawaited(stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {}));
+            return;
+          }
           await _attachPrepared(
             prepared: prepared,
             client: client,
