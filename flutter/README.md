@@ -13,7 +13,7 @@ flutter/
     prairie_tizen/   # Samsung Tizen app (flutter-tizen) + AVPlay backend
     prairie_webos/   # LG webOS app (flutter-webos) + video_player_drm backend
     flutter_secure_storage_webos/  # path fork: platform_interface ^2 for secure storage
-    video_player_videohole/        # path fork of 0.5.9: native seek error reasons + stderr logs
+    video_player_videohole/        # path fork of 0.6.0: native seek error reasons + stderr logs
   scripts/
     stamp-tizen-package-version.sh   # stamp the release version into tizen-manifest.xml
     build-tizen.sh                   # build the Tizen TPK

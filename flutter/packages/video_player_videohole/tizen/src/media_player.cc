@@ -27,6 +27,22 @@ static std::string RotationToString(player_display_rotation_e rotation) {
   return std::string();
 }
 
+static std::string StateToString(player_state_e state) {
+  switch (state) {
+    case PLAYER_STATE_NONE:
+      return "NONE";
+    case PLAYER_STATE_IDLE:
+      return "IDLE";
+    case PLAYER_STATE_READY:
+      return "READY";
+    case PLAYER_STATE_PLAYING:
+      return "PLAYING";
+    case PLAYER_STATE_PAUSED:
+      return "PAUSED";
+  }
+  return "UNKNOWN(" + std::to_string(static_cast<int>(state)) + ")";
+}
+
 static player_stream_type_e ConvertTrackType(std::string track_type) {
   if (track_type == "video") {
     return PLAYER_STREAM_TYPE_VIDEO;
@@ -316,6 +332,7 @@ bool MediaPlayer::SeekTo(int64_t position, SeekCompletedCallback callback) {
   LOG_INFO("[MediaPlayer] position: %lld.", position);
 
   if (is_seeking_) {
+    last_seek_error_ = "seek already in progress";
     LOG_ERROR("[MediaPlayer] Seek is already in progress.");
     return false;
   }
@@ -328,10 +345,17 @@ bool MediaPlayer::SeekTo(int64_t position, SeekCompletedCallback callback) {
   if (ret != PLAYER_ERROR_NONE) {
     on_seek_completed_ = nullptr;
     is_seeking_ = false;
-    LOG_ERROR("[MediaPlayer] player_set_play_position failed: %s.",
-              get_error_message(ret));
+    player_state_e state = PLAYER_STATE_NONE;
+    player_get_state(player_, &state);
+    std::ostringstream reason;
+    reason << "player_set_play_position(" << position
+           << ") failed: " << get_error_message(ret) << " (ret=0x" << std::hex
+           << ret << std::dec << ", state=" << StateToString(state) << ")";
+    last_seek_error_ = reason.str();
+    LOG_ERROR("[MediaPlayer] %s.", last_seek_error_.c_str());
     return false;
   }
+  last_seek_error_.clear();
   return true;
 }
 

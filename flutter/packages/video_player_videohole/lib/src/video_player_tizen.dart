@@ -565,7 +565,8 @@ class VideoPlayerTizen extends VideoPlayerPlatform {
           seek,
           PlatformException(
             code: 'FFI_SEEK_TO_FAILED',
-            message: 'FFI seekTo failed with code: $result',
+            message: 'FFI seekTo failed with code: $result: '
+                '${_ffiApi.lastSeekError(playerId)}',
           ),
         );
 

@@ -183,6 +183,9 @@ typedef _FFIPauseDart = int Function(int);
 typedef _FFISeekToNative = ffi.Int32 Function(ffi.Int64, ffi.Int64);
 typedef _FFISeekToDart = int Function(int, int);
 
+typedef _FFIGetLastSeekErrorNative = ffi.Pointer<ffi.Char> Function(ffi.Int64);
+typedef _FFIGetLastSeekErrorDart = ffi.Pointer<ffi.Char> Function(int);
+
 typedef _FFIGetPositionNative = ffi.Int64 Function(ffi.Int64);
 typedef _FFIGetPositionDart = int Function(int);
 
@@ -267,6 +270,7 @@ class VideoPlayerFFIBindings {
   late int Function(int) _ffiPlay;
   late int Function(int) _ffiPause;
   late int Function(int, int) _ffiSeekTo;
+  late ffi.Pointer<ffi.Char> Function(int) _ffiGetLastSeekError;
   late int Function(int) _ffiGetPosition;
   late ffi.Pointer<ffi.Char> Function(int) _ffiGetDuration;
   late int Function(int, double) _ffiSetVolume;
@@ -328,6 +332,11 @@ class VideoPlayerFFIBindings {
       _ffiSeekTo = _lib!
           .lookup<ffi.NativeFunction<_FFISeekToNative>>('ffi_seek_to')
           .asFunction<_FFISeekToDart>();
+
+      _ffiGetLastSeekError = _lib!
+          .lookup<ffi.NativeFunction<_FFIGetLastSeekErrorNative>>(
+              'ffi_get_last_seek_error')
+          .asFunction<_FFIGetLastSeekErrorDart>();
 
       _ffiGetPosition = _lib!
           .lookup<ffi.NativeFunction<_FFIGetPositionNative>>('ffi_get_position')
@@ -501,6 +510,29 @@ class VideoPlayerVideoholeFFIApi {
       bindings.load();
     }
     return bindings._ffiSeekTo(playerId, positionMs);
+  }
+
+  /// Prairie patch: native reason for the last failed [seekTo], or an empty
+  /// string if the last seek was accepted.
+  String lastSeekError(int playerId) {
+    final VideoPlayerFFIBindings bindings = VideoPlayerFFIBindings.instance;
+    if (!bindings.isLoaded) {
+      bindings.load();
+    }
+    final ffi.Pointer<ffi.Char> ptr = bindings._ffiGetLastSeekError(playerId);
+    if (ptr == ffi.nullptr) {
+      return '';
+    }
+    try {
+      final ffi.Pointer<ffi.Uint8> bytes = ptr.cast<ffi.Uint8>();
+      int length = 0;
+      while (bytes[length] != 0) {
+        length++;
+      }
+      return utf8.decode(bytes.asTypedList(length));
+    } finally {
+      bindings._ffiFreeString(ptr);
+    }
   }
 
   /// Returns the current playback position in milliseconds.

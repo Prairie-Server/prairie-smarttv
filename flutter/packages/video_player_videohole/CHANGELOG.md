@@ -1,3 +1,11 @@
+## 0.6.0+prairie.1 (path fork, not published)
+
+* `seekTo` failures include the native reason and player state in the
+  `PlatformException` message (new `ffi_get_last_seek_error`), instead of a
+  bare error code.
+* `LOG_INFO`/`LOG_WARN`/`LOG_ERROR` also write to stderr. Retail TVs block
+  dlog, but flutter-tizen forwards stderr over `--tizen-logging-port`.
+
 ## 0.6.0
 
 * Migrate from Platform Channels to Dart FFI.

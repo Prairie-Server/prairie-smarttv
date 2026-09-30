@@ -272,6 +272,14 @@ int ffi_seek_to(int64_t player_id, int64_t position_ms) {
              : -1;
 }
 
+const char* ffi_get_last_seek_error(int64_t player_id) {
+  auto player = video_player_videohole_tizen::GetPlayer(player_id);
+  if (!player) {
+    return strdup("player not found");
+  }
+  return strdup(player->last_seek_error().c_str());
+}
+
 int64_t ffi_get_position(int64_t player_id) {
   auto player = video_player_videohole_tizen::GetPlayer(player_id);
   if (!player) {

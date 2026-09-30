@@ -33,6 +33,8 @@ FLUTTER_PLUGIN_EXPORT int ffi_dispose(int64_t player_id);
 FLUTTER_PLUGIN_EXPORT int ffi_play(int64_t player_id);
 FLUTTER_PLUGIN_EXPORT int ffi_pause(int64_t player_id);
 FLUTTER_PLUGIN_EXPORT int ffi_seek_to(int64_t player_id, int64_t position_ms);
+// Prairie patch: caller frees the result with ffi_free_string.
+FLUTTER_PLUGIN_EXPORT const char* ffi_get_last_seek_error(int64_t player_id);
 FLUTTER_PLUGIN_EXPORT int64_t ffi_get_position(int64_t player_id);
 FLUTTER_PLUGIN_EXPORT const char* ffi_get_duration(int64_t player_id);
 FLUTTER_PLUGIN_EXPORT int ffi_set_volume(int64_t player_id, double volume);
