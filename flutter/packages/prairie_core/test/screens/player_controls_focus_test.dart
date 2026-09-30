@@ -9,6 +9,15 @@ void main() {
     expect(playerSeekBarStep, const Duration(seconds: 10));
   });
 
+  test('holding Left/Right grows the seek step, starting from the fixed step', () {
+    expect(playerSeekHoldStep(Duration.zero), playerSeekBarStep);
+    expect(playerSeekHoldStep(const Duration(milliseconds: 999)), playerSeekBarStep);
+    expect(playerSeekHoldStep(const Duration(seconds: 1)), const Duration(seconds: 30));
+    expect(playerSeekHoldStep(const Duration(seconds: 3)), const Duration(minutes: 1));
+    expect(playerSeekHoldStep(const Duration(seconds: 6)), const Duration(minutes: 2));
+    expect(playerSeekHoldStep(const Duration(minutes: 5)), const Duration(minutes: 2));
+  });
+
   testWidgets('idle focus catcher can receive D-pad after chrome is gone', (tester) async {
     var showCount = 0;
     final idle = FocusNode(debugLabel: 'test.idle');

@@ -281,8 +281,10 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       final watch = await _resolveWatchDetail(id);
       final fileId = selectPlaybackFileId(watch, preferredFileId: preferredFileId ?? (id == widget.contentId ? _selectedFileId : null));
       if (fileId == null) throw StateError('No playable file for this title');
+      // An explicit 0, not null: omitting the position asks the server to
+      // resume, which is exactly what Start Over must not do.
       final startPosition = startFromBeginning
-          ? null
+          ? 0.0
           : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds);
       if (!mounted) return;
       ref.read(routeProvider.notifier).go(

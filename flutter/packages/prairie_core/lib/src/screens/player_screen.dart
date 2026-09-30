@@ -13,7 +13,19 @@ const _progressIntervalMs = 10000;
 /// default 5% of runtime (which is several minutes on a feature film).
 @visibleForTesting
 const playerSeekBarStep = Duration(seconds: 10);
-const _seekBarStep = playerSeekBarStep;
+
+/// Seek-bar step while Left/Right is held: the longer the hold, the bigger
+/// the step, so crossing a feature film takes seconds rather than minutes.
+@visibleForTesting
+Duration playerSeekHoldStep(Duration heldFor) {
+  if (heldFor < const Duration(seconds: 1)) return playerSeekBarStep;
+  if (heldFor < const Duration(seconds: 3)) return const Duration(seconds: 30);
+  if (heldFor < const Duration(seconds: 6)) return const Duration(minutes: 1);
+  return const Duration(minutes: 2);
+}
+
+/// How long the seek bar waits after the last Left/Right before seeking.
+const _scrubCommitDelay = Duration(milliseconds: 400);
 /// HLS remux/transcode sessions that stop advancing for this long after play
 /// started are treated as a dead encode (ffmpeg exit) rather than forever-buffer.
 const _hlsStallTimeout = Duration(seconds: 20);
@@ -90,6 +102,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// Live scrub/seek preview time shown above the seek bar (trickplay + clock).
   Duration? _seekPreviewTime;
   Timer? _seekPreviewHideTimer;
+  /// Seek-bar scrub in progress: Left/Right move this target (and the
+  /// preview) immediately, and one seek fires once input settles, instead of
+  /// a native seek per key repeat.
+  Duration? _scrubTarget;
+  DateTime? _scrubHeldSince;
+  Timer? _scrubCommitTimer;
   /// When the stream was attached; stall detection runs during prepare too.
   DateTime? _streamAttachedAt;
   bool _exiting = false;
@@ -141,6 +159,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _stallTimer?.cancel();
     _seekDebounce?.cancel();
     _seekPreviewHideTimer?.cancel();
+    _scrubCommitTimer?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -242,17 +261,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   KeyEventResult _onSeekKey(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+    final horizontal = key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.arrowRight;
+    if (event is KeyUpEvent) {
+      if (!horizontal) return KeyEventResult.ignored;
+      // Releasing ends the hold, so the next press starts at the small step.
+      _scrubHeldSince = null;
+      return KeyEventResult.handled;
+    }
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
     _scheduleHideControls();
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      unawaited(_seekBy(-_seekBarStep));
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowRight) {
-      unawaited(_seekBy(_seekBarStep));
+    if (horizontal) {
+      _scrub(key == LogicalKeyboardKey.arrowRight ? 1 : -1, repeat: event is KeyRepeatEvent);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowDown) {
@@ -264,6 +286,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  void _scrub(int direction, {required bool repeat}) {
+    final now = DateTime.now();
+    final heldSince = repeat ? (_scrubHeldSince ??= now) : (_scrubHeldSince = now);
+    final step = playerSeekHoldStep(now.difference(heldSince));
+    var next = (_scrubTarget ?? _position) + step * direction;
+    final duration = _totalDuration;
+    if (next < Duration.zero) next = Duration.zero;
+    if (duration != null && duration > Duration.zero && next > duration) next = duration;
+    _showSeekPreview(next);
+    setState(() => _scrubTarget = next);
+    _scrubCommitTimer?.cancel();
+    _scrubCommitTimer = Timer(_scrubCommitDelay, _commitScrub);
+  }
+
+  void _commitScrub() {
+    _scrubCommitTimer?.cancel();
+    final target = _scrubTarget;
+    _scrubTarget = null;
+    _scrubHeldSince = null;
+    if (target == null || !mounted) return;
+    unawaited(_seekToPosition(target));
   }
 
   String? _sourceResolutionForFile(WatchDetail? detail, int fileId) {
@@ -1793,14 +1838,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  /// TV-friendly seek control: own FocusNode claims Left/Right as fixed
-  /// [_seekBarStep] seeks and Down/Up as focus moves. The Material [Slider]
-  /// is excluded from focus so it can't swallow D-pad with its 5%-of-duration
-  /// keyboard steps.
+  /// TV-friendly seek control: own FocusNode claims Left/Right as scrubs
+  /// (see [playerSeekHoldStep]) and Down/Up as focus moves. The Material
+  /// [Slider] is excluded from focus so it can't swallow D-pad with its
+  /// 5%-of-duration keyboard steps.
   Widget _buildSeekBarWithPreview(VideoBackend backend) {
     final duration = _totalDuration ?? Duration.zero;
     final preview = _seekPreviewTime;
-    final previewSeconds = preview?.inMilliseconds ?? _position.inMilliseconds;
+    final previewSeconds = preview?.inMilliseconds ?? (_scrubTarget ?? _position).inMilliseconds;
     final pct = duration.inMilliseconds > 0
         ? (previewSeconds / duration.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
@@ -1842,7 +1887,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         .toDouble()
         .clamp(1.0, double.infinity)
         .toDouble();
-    final value = _position.inMilliseconds.toDouble().clamp(0.0, maxMs).toDouble();
+    final value = (_scrubTarget ?? _position).inMilliseconds.toDouble().clamp(0.0, maxMs).toDouble();
     return Focus(
       focusNode: _seekFocus,
       onKeyEvent: _onSeekKey,
