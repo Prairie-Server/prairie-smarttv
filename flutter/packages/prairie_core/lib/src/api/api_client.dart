@@ -155,6 +155,13 @@ String appendStreamSeekParam(String url, double seekSeconds) {
 /// mirroring the TS module-level `refreshInFlight` variable — this app has
 /// exactly one active session at a time.
 class ApiClient {
+  /// Client-wide listener for a successful token refresh, in addition to the
+  /// per-call [ApiClientOptions.onTokensRefreshed]. The app wires this to the
+  /// session holder so a refreshed access token is persisted: without it every
+  /// request re-refreshes, and URLs handed to the native player (which cannot
+  /// refresh) carry the expired token and fail with 401.
+  void Function(String accessToken, String? refreshToken)? onTokensRefreshed;
+
   ApiClient({Dio? dio, ClientIdentity identity = const ClientIdentity()})
     : identity = identity,
       _dio = dio ?? Dio(BaseOptions(headers: {HttpHeaders.userAgentHeader: identity.userAgent})) {
@@ -259,6 +266,7 @@ class ApiClient {
             if (result != null) {
               try {
                 options.onTokensRefreshed?.call(result.accessToken, result.refreshToken);
+                onTokensRefreshed?.call(result.accessToken, result.refreshToken);
               } catch (_) {
                 // Listener errors must not mask the refresh result.
               }

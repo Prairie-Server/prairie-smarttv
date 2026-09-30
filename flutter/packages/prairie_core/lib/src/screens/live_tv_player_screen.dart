@@ -64,7 +64,10 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
       _liveSessionId = started.sessionId;
       final raw = playableLiveUrl(started);
       if (raw == null) throw StateError('Live TV session returned no stream URL');
-      final streamUrl = resolveLivePlaybackUrl(session.serverUrl, raw, session.accessToken, session.profileId);
+      // Re-read: the tune above may have refreshed the access token, and the
+      // native player cannot refresh one on its own.
+      final fresh = ref.read(sessionProvider) ?? session;
+      final streamUrl = resolveLivePlaybackUrl(fresh.serverUrl, raw, fresh.accessToken, fresh.profileId);
       final caps = ref.read(tvCapabilitiesProvider);
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
       final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
