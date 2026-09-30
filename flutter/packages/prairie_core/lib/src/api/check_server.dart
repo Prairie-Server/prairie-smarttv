@@ -1,10 +1,11 @@
 import 'api_client.dart';
 import 'api_error.dart';
-import 'auth_api.dart';
 import 'health_api.dart';
 import 'native_api.dart';
 
 const _checkTimeout = Duration(seconds: 6);
+
+const _notPrairieMessage = 'That address is not a Prairie server. Check the URL and port.';
 
 /// Mirrors `buildManualUrlCandidates` from src/api/checkServer.ts: an
 /// explicit scheme keeps only that scheme; a bare host tries https then http.
@@ -67,18 +68,26 @@ Future<CheckServerResult> checkServer(ApiClient client, String serverUrl) async 
     return const CheckServerFailure('Server URL must not include credentials.');
   }
 
-  SetupStatusResponse setup;
+  bool needsSetup;
   try {
     // Prefer the stable native API's public discovery surface. Older Prairie
     // servers keep the frozen v1 bridge, so only a missing v2 route falls back.
+    Object? data;
     try {
-      final native = await fetchNativeSetupStatus(client, serverUrl);
-      setup = SetupStatusResponse(needsSetup: native.needsSetup);
+      data = await client.request<dynamic>(ApiClientOptions(serverUrl: serverUrl), '/api/v2/system/setup');
     } catch (err) {
       if (!isNativeApiUnavailable(err)) rethrow;
-      setup = await fetchSetupStatus(client, serverUrl, timeout: _checkTimeout);
+      data = await client.request<dynamic>(
+        ApiClientOptions(serverUrl: serverUrl, timeout: _checkTimeout),
+        '/api/v1/auth/setup',
+      );
     }
+    // Any web server can answer 200; only Prairie returns a setup payload.
+    if (data is! Map || data['needs_setup'] is! bool) return const CheckServerFailure(_notPrairieMessage);
+    needsSetup = data['needs_setup'] as bool;
   } catch (err) {
+    // Neither setup route exists: something is listening, but it isn't Prairie.
+    if (isNativeApiUnavailable(err)) return const CheckServerFailure(_notPrairieMessage);
     return CheckServerFailure(networkFailureMessage(err));
   }
 
@@ -90,7 +99,7 @@ Future<CheckServerResult> checkServer(ApiClient client, String serverUrl) async 
     // health is optional
   }
 
-  return CheckServerSuccess(serverUrl: serverUrl, needsSetup: setup.needsSetup, serverName: serverName);
+  return CheckServerSuccess(serverUrl: serverUrl, needsSetup: needsSetup, serverName: serverName);
 }
 
 /// Tries candidates in order until one responds to /auth/setup. Mirrors
