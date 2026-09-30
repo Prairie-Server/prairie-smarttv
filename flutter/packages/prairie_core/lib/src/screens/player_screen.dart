@@ -256,6 +256,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    // Remote transport keys act directly, whatever has focus; focused
+    // controls don't claim them, so they bubble up to here.
+    final media = remoteMediaActionFor(event.logicalKey);
+    if (media != null) return _onMediaKey(media, repeat: event is KeyRepeatEvent);
     if (_controlsVisible) {
       _scheduleHideControls();
       return KeyEventResult.ignored;
@@ -266,6 +270,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return KeyEventResult.ignored;
     }
     _showControls(focusPlay: true);
+    return KeyEventResult.handled;
+  }
+
+  KeyEventResult _onMediaKey(RemoteMediaAction action, {required bool repeat}) {
+    if (action == RemoteMediaAction.stop) {
+      if (!repeat) unawaited(_exit());
+      return KeyEventResult.handled;
+    }
+    // Show what the key did; focusing Play keeps the D-pad useful afterwards.
+    if (!_controlsVisible) {
+      _showControls(focusPlay: true);
+    } else {
+      _scheduleHideControls();
+    }
+    final playing = _backend?.isPlaying ?? false;
+    switch (action) {
+      case RemoteMediaAction.playPause:
+        if (!repeat) unawaited(_togglePlayPause());
+      case RemoteMediaAction.play:
+        if (!repeat && !playing) unawaited(_togglePlayPause());
+      case RemoteMediaAction.pause:
+        if (!repeat && playing) unawaited(_togglePlayPause());
+      case RemoteMediaAction.fastForward:
+        unawaited(_seekBy(const Duration(seconds: 15)));
+      case RemoteMediaAction.rewind:
+        unawaited(_seekBy(const Duration(seconds: -15)));
+      case RemoteMediaAction.stop:
+        break;
+    }
     return KeyEventResult.handled;
   }
 
