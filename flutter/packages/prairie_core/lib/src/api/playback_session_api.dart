@@ -483,6 +483,11 @@ class _V2Mutations {
   Future<void> tail = Future<void>.value();
   _ProgressSample? latestSample;
   Map<String, dynamic>? stopBody;
+
+  /// Terminal: the server answered the stop (or the session is gone). The
+  /// entry is kept so late progress is dropped instead of falling through to
+  /// the v1 routes, and a second stop is a no-op.
+  bool stopped = false;
 }
 
 final _v2Sessions = <String, _V2Mutations>{};
@@ -928,6 +933,7 @@ Future<void> stopPlaybackSession(
   final v2 = _v2Sessions[trimmed];
   try {
     if (v2 != null) {
+      if (v2.stopped) return;
       var stopBody = v2.stopBody;
       if (stopBody == null) {
         final _ProgressSample? sample =
@@ -957,7 +963,7 @@ Future<void> stopPlaybackSession(
         budget: _stopRetryBudget,
         maxPause: const Duration(seconds: 1),
       );
-      _v2Sessions.remove(trimmed);
+      v2.stopped = true;
       return;
     }
     if (position != null) {
@@ -970,7 +976,7 @@ Future<void> stopPlaybackSession(
     );
   } on ApiError catch (err) {
     if (isPlaybackSessionGone(err)) {
-      _v2Sessions.remove(trimmed);
+      v2?.stopped = true;
       return;
     }
     rethrow;
