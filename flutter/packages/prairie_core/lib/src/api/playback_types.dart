@@ -167,7 +167,9 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
     'playback_attempt_id': input.playbackAttemptId ?? _newPlaybackAttemptId(),
     'quality_preference': input.forcedPlayMethod == PlayMethod.direct ? 'original' : 'auto',
     'subtitle_fidelity_preference': 'compatible',
-    if (input.startPosition != null && input.startPosition! > 0) 'start_position': input.startPosition,
+    // Omitting start_position asks the server to resume; an explicit 0 is
+    // how Start Over (and any restart at the top) says "from the beginning".
+    if (input.startPosition != null) 'start_position': input.startPosition! < 0 ? 0 : input.startPosition,
     'audio_track_index': ?input.audioTrackIndex,
     'progress_persistence': 'server',
     'metered': false,

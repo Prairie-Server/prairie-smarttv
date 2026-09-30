@@ -28,6 +28,17 @@ void main() {
     expect(deliveries['hls']['enabled'], isFalse);
   });
 
+  test('an explicit zero start position is sent, so Start Over does not resume', () {
+    Map<String, dynamic> body(double? start) => buildPlaybackStartRequest(
+      BuildPlaybackStartInput(fileId: 42, profileId: 'profile-1', startPosition: start, playbackAttemptId: 'attempt-12345678'),
+    );
+
+    expect(body(0)['start_position'], 0);
+    expect(body(12.5)['start_position'], 12.5);
+    // Omitted is the resume request; it must stay distinct from zero.
+    expect(body(null).containsKey('start_position'), isFalse);
+  });
+
   test('force transcode advertises HLS only', () {
     final body = buildPlaybackStartRequest(
       const BuildPlaybackStartInput(
