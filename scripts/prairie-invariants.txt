@@ -1,0 +1,24 @@
+# Prairie Smart TV playback invariants.
+#
+# One invariant per line, tab-separated:
+#   <path>  <count>  <extended regex>  <why>
+# <count> is N (at least N matching lines) or =N (exactly N; =0 = absent).
+# scripts/check-prairie-invariants.sh runs these in CI. Keep patterns on
+# stable identifiers, not formatting.
+
+# --- Protocol v3 stream URLs are server-anchored and signed: never rewritten.
+flutter/packages/prairie_core/lib/src/api/transcode_api.dart	=1	appendStreamSeekParam\(	only the legacy (non-v3) remux path may add seek=; v3 bakes it into the signed stream.url (Iron Man remux 401)
+flutter/packages/prairie_core/lib/src/api/transcode_api.dart	2	protocolV3StartOffsets\(	v3 start positions come from plan.timeline, not the requested seek (Roger Rabbit resume)
+flutter/packages/prairie_core/lib/src/api/transcode_api.dart	1	timeline\.playerStartSeconds	direct play / HLS start at timeline.player_start_seconds
+flutter/packages/prairie_core/lib/src/api/transcode_api.dart	1	timeline\.timelineOffsetSeconds	media time = player time + timeline_offset_seconds
+flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	1	PlaybackTimeline\.fromJson\(	v3 adapter carries the plan timeline
+flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	=0	switchPlaybackAudio|/audio'	PATCH /playback/{id}/audio is gone server-side; audio is a track_change replan
+
+# --- Parity with web/android/apple v3 lifecycle.
+flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	1	seek_reanchor_v1	seek_reanchor is gated on server_features
+flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	1	_startRetryBudget	start retries transient failures with the identical body (web start-v2.ts)
+flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	1	'failure_recovery'	failure_recovery replans before an error screen
+flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	1	/api/v2/playback/route-events	route events reported like web
+flutter/packages/prairie_core/lib/src/screens/player_screen.dart	1	replanPlaybackFailure\(	player errors / stalls recover through the server
+flutter/packages/prairie_core/lib/src/screens/player_screen.dart	1	canSeekLocally\(	seeks outside the plan seek window re-anchor
+flutter/packages/prairie_core/lib/src/screens/live_tv_player_screen.dart	1	heartbeatLiveTvSession\(	live TV heartbeat keeps the tuner claimed (server reclaims after ~90s)

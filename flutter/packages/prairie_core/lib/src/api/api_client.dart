@@ -132,6 +132,11 @@ String buildStreamUrl(String serverUrl, String streamPath, String? token, [Strin
   return '$base$separator${Uri(queryParameters: params).query}';
 }
 
+/// Legacy (non-protocol-v3) sessions only. A v3 plan's `stream.url` is
+/// server-anchored and signed over its whole query — the seek is already
+/// baked in and this rewrite (which re-encodes the query) breaks the
+/// signature; see `prepareProtocolV3Decision`.
+///
 /// Sets/replaces the `seek` query parameter Prairie's progressive remux
 /// stream endpoint reads to respawn ffmpeg with `-ss <seconds>` before `-i`
 /// — the only mechanism that can reposition a remux stream; the native
@@ -250,7 +255,18 @@ class ApiClient {
       final record = data.cast<String, dynamic>();
       if (record['message'] is String) message = record['message'] as String;
       if (message == null && record['error'] is String) message = record['error'] as String;
+      // /api/v2 answers RFC 9457 problem+json: `detail`/`title` carry the
+      // text and the `type` URI's last segment is the code (mirrors web's
+      // `problem.type?.split("?")[0]?.split("/").pop()`).
+      if (message == null && record['detail'] is String && (record['detail'] as String).trim().isNotEmpty) {
+        message = (record['detail'] as String).trim();
+      }
+      if (message == null && record['title'] is String) message = record['title'] as String;
       if (record['code'] is String) code = record['code'] as String;
+      if (code == null && record['type'] is String) {
+        final segment = (record['type'] as String).split('?').first.split('#').first.split('/').last;
+        if (segment.isNotEmpty && segment != 'about:blank') code = segment;
+      }
     }
     return (message: message ?? response.statusMessage ?? 'HTTP ${response.statusCode}', code: code, body: data);
   }

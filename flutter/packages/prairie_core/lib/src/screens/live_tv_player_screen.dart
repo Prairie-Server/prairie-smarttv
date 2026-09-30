@@ -27,6 +27,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
   String? _note;
   bool _exited = false;
   StreamSubscription<String>? _errorSub;
+  Timer? _heartbeat;
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
       final session = ref.read(sessionProvider)!;
       unawaited(releaseLiveTvSession(client, session, _liveSessionId!).catchError((_) {}));
     }
+    _heartbeat?.cancel();
     _errorSub?.cancel();
     _backend?.dispose();
     super.dispose();
@@ -62,6 +64,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
         return;
       }
       _liveSessionId = started.sessionId;
+      _startHeartbeat(started.sessionId);
       final raw = playableLiveUrl(started);
       if (raw == null) throw StateError('Live TV session returned no stream URL');
       // Re-read: the tune above may have refreshed the access token, and the
@@ -111,9 +114,31 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
     }
   }
 
+  /// Keeps the tuner claimed while this screen is open (paused included):
+  /// one heartbeat now, then every [liveTvHeartbeatInterval]. Failures are
+  /// ignored like web's, except a 404 — the session is gone, so stop.
+  void _startHeartbeat(String sessionId) {
+    _heartbeat?.cancel();
+    Future<void> send() async {
+      final session = ref.read(sessionProvider);
+      if (!mounted || _exited || session == null || _liveSessionId != sessionId) return;
+      try {
+        await heartbeatLiveTvSession(ref.read(apiClientProvider), session, sessionId);
+      } on ApiError catch (err) {
+        if (err.status == 404) _heartbeat?.cancel();
+      } catch (_) {
+        // Best effort; the next tick retries.
+      }
+    }
+
+    unawaited(send());
+    _heartbeat = Timer.periodic(liveTvHeartbeatInterval, (_) => unawaited(send()));
+  }
+
   Future<void> _exit() async {
     if (_exited) return;
     _exited = true;
+    _heartbeat?.cancel();
     final sessionId = _liveSessionId;
     _liveSessionId = null;
     final backend = _backend;

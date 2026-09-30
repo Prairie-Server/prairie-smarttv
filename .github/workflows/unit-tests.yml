@@ -106,6 +106,17 @@ jobs:
       - name: Analyze
         run: flutter analyze --fatal-infos prairie_webos flutter_secure_storage_webos
 
+  prairie-invariants:
+    name: Prairie invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Check Prairie invariants
+        run: scripts/check-prairie-invariants.sh
+
   package-layout:
     name: Validate 4-variant package layout
     runs-on: ubuntu-latest
