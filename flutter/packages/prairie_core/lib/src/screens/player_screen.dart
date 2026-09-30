@@ -30,12 +30,18 @@ const _initializeTimeout = Duration(seconds: 90);
 /// How long remux seeking waits for input to pause before committing to an
 /// actual session restart — see [_PlayerScreenState._seekToPosition].
 const _seekDebounceDelay = Duration(milliseconds: 500);
+/// Failure recoveries per plan chain before the error screen (the plan's
+/// `attempt_count`; intent replans reset it). Lower than the protocol's 8
+/// because each attempt on a TV can spend the full startup budget.
+const _maxRecoveryAttempts = 3;
 
-/// Mirrors PlayerScreen.tsx's playback session lifecycle (start/progress
-/// heartbeat/stop), transport controls, and subtitle track/appearance.
+/// Mirrors web's usePlaybackSession/VideoPlayer lifecycle on protocol v3:
+/// start (with transient retry), sequenced progress, stop with the final
+/// sample, timeline-driven seeking (`seek_reanchor` outside the seek window),
+/// `failure_recovery` replans before any error screen, and route events.
 ///
-/// Audio track switching still isn't native — Prairie restarts the stream
-/// via PATCH `/playback/{id}/audio` (same as the TS client).
+/// Audio track switching is a `track_change` replan: TV players take a URL
+/// only, so the server re-anchors the stream on the new track.
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key, required this.launch, required this.back});
 
@@ -77,9 +83,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _progressTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
-  /// Debounce for remux's restart-based seek — see [_seekToPosition].
+  /// Debounce for re-anchoring seeks — see [_seekToPosition].
   Timer? _seekDebounce;
-  Duration? _pendingRemuxSeek;
+  Duration? _pendingReanchorSeek;
   /// Live scrub/seek preview time shown above the seek bar (trickplay + clock).
   Duration? _seekPreviewTime;
   Timer? _seekPreviewHideTimer;
@@ -92,6 +98,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   CancelToken? _prepareCancel;
   bool _busyAudio = false;
   bool _busyQuality = false;
+
+  /// A `failure_recovery` replan is in flight; see [_onPlaybackFailure].
+  bool _recovering = false;
 
   /// Session returned by `/playback/start` — kept so "Original" on a direct
   /// base can drop HLS and reattach the progressive stream_url.
@@ -146,7 +155,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider);
       if (session != null) {
-        unawaited(stopPlaybackSession(client, session, sessionId).catchError((_) {}));
+        unawaited(
+          stopPlaybackSession(client, session, sessionId, position: _position.inMilliseconds / 1000.0)
+              .catchError((_) {}),
+        );
       }
     }
     final backend = _backend;
@@ -300,8 +312,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// `_prepareCancel?.cancel()`), that newer call owns those flags now and
   /// clearing them here would let a third call slip past the `_busyAudio`
   /// guard while the newer one is still running.
-  void _clearAudioBusyIfCurrent(CancelToken cancel) {
-    if (!mounted || !identical(_prepareCancel, cancel)) return;
+  void _clearAudioBusyIfCurrent([CancelToken? cancel]) {
+    if (!mounted || (cancel != null && !identical(_prepareCancel, cancel))) return;
     setState(() {
       _busyAudio = false;
       _loading = false;
@@ -377,7 +389,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _switchQuality(String qualityId, {bool fromAdvice = false}) async {
     final current = _playbackSession;
     final base = _basePlaybackSession;
-    if (current == null || base == null || _busyQuality || _busyAudio || _exiting) return;
+    if (current == null || base == null || _busyQuality || _busyAudio || _exiting || _recovering) return;
     if (!fromAdvice && qualityId == _activeQualityId) return;
 
     final fileId = current.mediaFileId;
@@ -428,7 +440,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }) async {
     final current = _playbackSession;
     final base = _basePlaybackSession;
-    if (current == null || base == null || _busyQuality || _busyAudio || _exiting) return;
+    if (current == null || base == null || _busyQuality || _busyAudio || _exiting || _recovering) return;
 
     setState(() {
       _busyQuality = true;
@@ -444,19 +456,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _prepareCancel = cancel;
     final position = _position.inMilliseconds / 1000.0;
     final fileId = current.mediaFileId;
+    final backendBefore = _backend;
 
     try {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
-      final deviceCaps = applyAudioChannelOverride(
-        applyAv1AdvertiseOverrides(
-          ref.read(tvCapabilitiesProvider),
-          forceAv1: settings.forceAv1,
-          disableAv1: settings.disableAv1,
-        ),
-        is8KPanel: settings.is8KPanel,
-      );
+      final deviceCaps = _deviceCaps(settings);
 
       if (current.isProtocolV3) {
         final qualityPreference = fromAdvice && playingRungId != null ? playingRungId : menuId;
@@ -587,6 +593,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _busyQuality = false;
           _loading = false;
         });
+        // Past the point the old stream was torn down: recover instead of
+        // leaving a dead surface.
+        if (!identical(_backend, backendBefore) || _backend == null) unawaited(_onPlaybackFailure(e));
       }
     }
   }
@@ -600,6 +609,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
+  /// Attaches [prepared] as the playing stream: disposes the previous
+  /// backend, mounts the new surface, initializes at the plan's player start,
+  /// plays, and wires position / caption / error streams. Shared by start,
+  /// quality/track changes, seek re-anchors and failure recovery so they all
+  /// honour the plan timeline the same way.
   Future<void> _attachPrepared({
     required PreparedPlayback prepared,
     required ApiClient client,
@@ -608,6 +622,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     required PlaybackSettings settings,
     required TvPlaybackCapabilities deviceCaps,
     required void Function([CancelToken?]) clearBusy,
+    String? subtitleLanguage,
   }) async {
     _activeSessionId = prepared.session.sessionId;
     await _positionSub?.cancel();
@@ -625,6 +640,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       maxResolution: deviceCaps.maxResolution,
       contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
     );
+    // Mount the hole-punch surface BEFORE initialize — PlusPlayer prepares
+    // against the display rect; awaiting init with no VideoPlayer in the
+    // tree leaves Direct Play streaming on the server while Flutter spins.
     final origin = Duration(milliseconds: (prepared.streamOriginSeconds * 1000).round());
     setState(() {
       _backend = backend;
@@ -635,6 +653,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _caption = null;
     });
     _streamAttachedAt = DateTime.now();
+    unawaited(reportPlaybackRouteEvent(client, session, prepared.session, 'plan_selected'));
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || _exiting || cancel.isCancelled) {
       await backend.dispose();
@@ -643,11 +662,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
+    // Initialize has its own [_initializeTimeout] budget (matched to the
+    // upstream HLS-readiness wait) — the stall timer below must not start
+    // until playback has actually begun, or it preempts that budget with a
+    // much tighter one.
+    final startAt = prepared.playerStartSeconds > 0
+        ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
+        : null;
     await _initializeBackend(
       backend,
-      startPosition: prepared.playerStartSeconds > 0
-          ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
-          : null,
+      startPosition: startAt,
       playMethod: prepared.session.playMethod,
       playbackSession: prepared.session,
     );
@@ -679,29 +703,204 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (mounted) setState(() => _caption = text);
     });
     _errorSub = backend.errorStream.listen((message) {
-      if (!mounted || _exiting || _error != null) return;
-      setState(() {
-        _error = message;
-        _loading = false;
-      });
+      if (!mounted || _exiting || _error != null || !identical(_backend, backend)) return;
+      unawaited(_onPlaybackFailure(message));
     });
-    unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
+    _progressTimer ??= Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
+    unawaited(reportPlaybackRouteEvent(client, session, prepared.session, 'first_frame'));
+    if (startAt != null) unawaited(_verifyStartPosition(backend, prepared.session, startAt));
+    unawaited(_autoSelectSubtitleTrack(backend, subtitleLanguage ?? settings.preferredSubtitleLanguage));
     _showControls();
   }
 
+  /// Direct play resumes by seeking the native player to the plan's
+  /// `player_start_seconds` right after initialize. Some Tizen sources
+  /// silently drop that seek (or an original-file audio-track selection
+  /// resets it), so playback would start at 0 with a resume point on screen.
+  /// Check the first real position tick and re-seek once if it missed.
+  Future<void> _verifyStartPosition(VideoBackend backend, PlaybackSessionResponse plan, Duration target) async {
+    if (plan.playMethod != 'direct') return;
+    Duration first;
+    try {
+      first = await backend.positionStream.first.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      return;
+    }
+    if (!mounted || _exiting || !identical(_backend, backend)) return;
+    if ((first - target).abs() < const Duration(seconds: 5)) return;
+    backend.reportDiagnostic('start:resume-missed:at=${first.inSeconds}:want=${target.inSeconds}');
+    try {
+      await backend.seekTo(target);
+    } on PlatformException catch (err) {
+      backend.reportDiagnostic('start:reseek-failed:${err.message ?? err.code}');
+    }
+  }
+
+  void _clearLoadingIfCurrent([CancelToken? cancel]) {
+    if (!mounted) return;
+    if (cancel != null && !identical(_prepareCancel, cancel)) return;
+    setState(() => _loading = false);
+  }
+
+  /// Fatal, user-facing error: recovery is exhausted or not possible.
+  void _showFatal(String message) {
+    if (!mounted || _exiting) return;
+    _stallTimer?.cancel();
+    setState(() {
+      _error = message;
+      _loading = false;
+      _busyAudio = false;
+      _busyQuality = false;
+    });
+  }
+
+  String _describeFailure(Object e) {
+    if (e is String) return e;
+    if (e is ApiError) return e.message;
+    if (e is HlsProbeAuthError) return 'Not authorized to play this stream. Try signing in again.';
+    if (e is TranscodeStartupTimeoutError) return e.message;
+    if (e is PlaybackTerminalError) return e.message;
+    if (e is PlaybackRecoveryExhaustedError) return e.toString();
+    if (e is PlatformException) return 'Playback failed: ${e.message ?? e.code}';
+    return 'Playback failed: $e';
+  }
+
+  /// Mirrors web's `recoverFromFailure`: the device could not play the plan
+  /// (native player error, fatal decode, startup/transport stall), so ask the
+  /// server for another route with a `failure_recovery` replan — the failed
+  /// plan's key joins `attempted_plan_keys` and the server excludes it — and
+  /// play that before giving up. Bounded by [_maxRecoveryAttempts] (the
+  /// plan's `attempt_count`, which intent replans reset). Only when no
+  /// recovery is possible does the error screen appear.
+  Future<void> _onPlaybackFailure(Object cause, {String? classification}) async {
+    if (!mounted || _exiting || _recovering || _error != null) return;
+    var failureClass = classification ?? classifyPlaybackFailure(cause);
+    var failureMessage = _describeFailure(cause);
+    final initial = _playbackSession;
+    if (initial == null || !initial.isProtocolV3 || initial.planId == null) {
+      _showFatal(failureMessage);
+      return;
+    }
+    _recovering = true;
+    _stallTimer?.cancel();
+    _seekDebounce?.cancel();
+    final cancel = CancelToken();
+    _prepareCancel?.cancel();
+    _prepareCancel = cancel;
+    setState(() => _loading = true);
+    // Counted separately from the plan's attempt_count: a replan request that
+    // itself fails (5xx, network) leaves the plan unchanged, so attempt_count
+    // alone would never end the loop.
+    var iterations = 0;
+    try {
+      while (mounted && !_exiting && !cancel.isCancelled) {
+        final plan = _playbackSession ?? initial;
+        if (plan.attemptCount > _maxRecoveryAttempts || iterations >= _maxRecoveryAttempts) break;
+        if (iterations > 0) {
+          await Future<void>.delayed(const Duration(seconds: 1));
+          if (!mounted || _exiting || cancel.isCancelled) break;
+        }
+        iterations++;
+        final client = ref.read(apiClientProvider);
+        final session = ref.read(sessionProvider);
+        if (session == null) break;
+        final position = _position.inMilliseconds / 1000.0;
+        _backend?.reportDiagnostic('recover:$failureClass:attempt=${plan.attemptCount}');
+        unawaited(reportPlaybackRouteEvent(
+          client,
+          session,
+          plan,
+          'plan_failed',
+          failureClassification: failureClass,
+          diagnostics: {'error_cause': failureMessage},
+        ));
+        try {
+          final replanned = await replanPlaybackFailure(
+            client,
+            session,
+            plan,
+            classification: failureClass,
+            message: failureMessage,
+            positionSeconds: position,
+          );
+          // Exit already stopped the session it knew about; this one would
+          // otherwise keep a transcode (or tuner) running.
+          if (!mounted || _exiting || cancel.isCancelled) {
+            unawaited(stopPlaybackSession(client, session, replanned.sessionId).catchError((_) {}));
+            return;
+          }
+          // Adopt the plan identity now so a failure preparing it counts
+          // toward the next attempt and exit stops the right session.
+          _playbackSession = replanned;
+          _activeSessionId = replanned.sessionId;
+          final settings = await loadPlaybackSettings(SharedPreferencesAsync());
+          final deviceCaps = _deviceCaps(settings);
+          final prepared = await preparePlayableSession(
+            client,
+            ref.read(sessionProvider) ?? session,
+            replanned,
+            position,
+            sourceResolution: _sourceResolutionForFile(widget.launch.watch, replanned.mediaFileId),
+            maxResolution: deviceCaps.maxResolution,
+            cancelToken: cancel,
+          );
+          if (!mounted || _exiting || cancel.isCancelled) {
+            // A repeat stop of a session exit already stopped is harmless.
+            unawaited(stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {}));
+            return;
+          }
+          await _attachPrepared(
+            prepared: prepared,
+            client: client,
+            session: session,
+            cancel: cancel,
+            settings: settings,
+            deviceCaps: deviceCaps,
+            clearBusy: _clearLoadingIfCurrent,
+          );
+          return;
+        } on PlaybackRecoveryExhaustedError {
+          break;
+        } catch (e, stack) {
+          debugPrint('prairie.player_screen: failure recovery attempt failed: $e\n$stack');
+          failureMessage = _describeFailure(e);
+          // A refused replan (4xx / terminal outcome) means the server has no
+          // other route; retrying the same request cannot change that.
+          if (e is PlaybackTerminalError || (e is ApiError && e.status >= 400 && e.status < 500)) break;
+          failureClass = classifyPlaybackFailure(e);
+        }
+      }
+    } finally {
+      _recovering = false;
+    }
+    if (!cancel.isCancelled) _showFatal(failureMessage);
+  }
+
+  TvPlaybackCapabilities _deviceCaps(PlaybackSettings settings) => applyAudioChannelOverride(
+    applyAv1AdvertiseOverrides(
+      ref.read(tvCapabilitiesProvider),
+      forceAv1: settings.forceAv1,
+      disableAv1: settings.disableAv1,
+    ),
+    is8KPanel: settings.is8KPanel,
+  );
+
   /// Restarts the active playback session at [audioTrackIndex] /
   /// [positionSeconds] via a protocol-v3 replan (`track_change`, or
-  /// `seek_reanchor` when the track is unchanged; legacy sessions use PATCH
-  /// `/playback/{id}/audio`) + a fresh
-  /// [preparePlayableSession] — the same server round trip whether the
-  /// track actually changes or not, since the endpoint's job is "give me a
-  /// stream for this track starting at this position." Used both for
-  /// explicit audio-track switches and, in [_seekToPosition], as the seek
-  /// fallback for streams whose native player can't seek in place.
+  /// `seek_reanchor` when the track is unchanged) + a fresh
+  /// [preparePlayableSession]. Used both for explicit audio-track switches
+  /// and, in [_seekToPosition], for seeks the current transport cannot
+  /// serve (outside the plan's seek window, or any progressive-remux seek).
   Future<void> _restartSessionAt({required int audioTrackIndex, required double positionSeconds}) async {
     final current = _playbackSession;
     final sessionId = _activeSessionId ?? current?.sessionId;
-    if (current == null || sessionId == null || _busyAudio || _busyQuality || _exiting) return;
+    if (current == null || sessionId == null || _busyAudio || _busyQuality || _exiting || _recovering) return;
+    if (!current.isProtocolV3) {
+      // Legacy (non-v3) sessions had PATCH /playback/{id}/audio, which the
+      // server no longer serves; there is nothing to restart with.
+      _notify('This server does not support switching tracks mid-playback.');
+      return;
+    }
 
     setState(() {
       _busyAudio = true;
@@ -712,46 +911,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final cancel = CancelToken();
     _prepareCancel?.cancel();
     _prepareCancel = cancel;
+    final backendBefore = _backend;
 
     try {
       final client = ref.read(apiClientProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
-      final deviceCaps = applyAudioChannelOverride(
-        applyAv1AdvertiseOverrides(
-          ref.read(tvCapabilitiesProvider),
-          forceAv1: settings.forceAv1,
-          disableAv1: settings.disableAv1,
-        ),
-        is8KPanel: settings.is8KPanel,
-      );
+      final deviceCaps = _deviceCaps(settings);
 
       final position = positionSeconds < 0 ? 0.0 : positionSeconds;
-      final PlaybackSessionResponse nextSession;
-      if (current.isProtocolV3) {
-        nextSession = audioTrackIndex == current.audioTrackIndex
-            ? await replanPlaybackSeek(client, session, current, positionSeconds: position)
-            : await replanPlaybackAudio(
-                client,
-                session,
-                current,
-                audioTrackIndex: audioTrackIndex,
-                positionSeconds: position,
-              );
-      } else {
-        final updated = await switchPlaybackAudio(client, session, sessionId, audioTrackIndex, position);
-        nextSession = PlaybackSessionResponse(
-          sessionId: current.sessionId,
-          mediaFileId: current.mediaFileId,
-          playMethod: updated.playMethod.isNotEmpty ? updated.playMethod : current.playMethod,
-          position: position,
-          isPaused: current.isPaused,
-          streamUrl: updated.streamUrl.isNotEmpty ? updated.streamUrl : current.streamUrl,
-          audioTrackIndex: updated.audioTrackIndex,
-          durationSeconds: current.durationSeconds,
-          playbackInfo: updated.playbackInfo ?? current.playbackInfo,
-        );
-      }
+      final isSeek = audioTrackIndex == current.audioTrackIndex;
+      if (isSeek) unawaited(reportPlaybackRouteEvent(client, session, current, 'seek_reanchor_requested'));
+      final nextSession = isSeek
+          ? await replanPlaybackSeek(client, session, current, positionSeconds: position)
+          : await replanPlaybackAudio(
+              client,
+              session,
+              current,
+              audioTrackIndex: audioTrackIndex,
+              positionSeconds: position,
+            );
       if (!mounted || _exiting || cancel.isCancelled) {
         _clearAudioBusyIfCurrent(cancel);
         return;
@@ -773,99 +952,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      _activeSessionId = prepared.session.sessionId;
-      await _positionSub?.cancel();
-      await _captionSub?.cancel();
-      await _errorSub?.cancel();
-      _stallTimer?.cancel();
-      final oldBackend = _backend;
-      _backend = null;
-      await oldBackend?.dispose();
-
-      final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
-      _attachedStreamPath = Uri.tryParse(prepared.streamUrl)?.path;
-      backend.attach(
-        prepared.streamUrl,
-        maxResolution: deviceCaps.maxResolution,
-        contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
+      await _attachPrepared(
+        prepared: prepared,
+        client: client,
+        session: session,
+        cancel: cancel,
+        settings: settings,
+        deviceCaps: deviceCaps,
+        clearBusy: _clearAudioBusyIfCurrent,
       );
-      final origin = Duration(milliseconds: (prepared.streamOriginSeconds * 1000).round());
-      setState(() {
-        _backend = backend;
-        _playbackSession = prepared.session;
-        _streamOrigin = origin;
-        _position = origin + Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
-        _selectedSubtitleTrackId = null;
-        _caption = null;
-      });
-      _streamAttachedAt = DateTime.now();
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || _exiting || cancel.isCancelled) {
-        await backend.dispose();
-        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
-        _clearAudioBusyIfCurrent(cancel);
-        return;
-      }
-
-      // See the matching comment in [_start]: the stall timer must not start
-      // until playback has actually begun, or it preempts [_initializeTimeout].
-      await _initializeBackend(
-        backend,
-        startPosition: prepared.playerStartSeconds > 0
-            ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
-            : null,
-        playMethod: prepared.session.playMethod,
-        playbackSession: prepared.session,
-      );
-      await backend.play();
-      if (!mounted || _exiting || cancel.isCancelled) {
-        await backend.dispose();
-        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
-        _clearAudioBusyIfCurrent(cancel);
-        return;
-      }
-
-      setState(() {
-        _loading = false;
-        _busyAudio = false;
-      });
-      _lastProgressPosition = _position;
-      _lastProgressAt = DateTime.now();
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
-      _positionSub = backend.positionStream.listen((pos) {
-        if (!mounted) return;
-        final absolute = _streamOrigin + pos;
-        if (absolute != _lastProgressPosition) {
-          _lastProgressPosition = absolute;
-          _lastProgressAt = DateTime.now();
-        }
-        setState(() => _position = absolute);
-      });
-      _captionSub = backend.captionStream.listen((text) {
-        if (mounted) setState(() => _caption = text);
-      });
-      _errorSub = backend.errorStream.listen((message) {
-        if (!mounted || _exiting || _error != null) return;
-        setState(() {
-          _error = message;
-          _loading = false;
-        });
-      });
-      unawaited(_autoSelectSubtitleTrack(backend, settings.preferredSubtitleLanguage));
-      _showControls();
+      if (isSeek) unawaited(reportPlaybackRouteEvent(client, session, prepared.session, 'seek_reanchored'));
     } catch (e, stack) {
       debugPrint('prairie.player_screen: _restartSessionAt failed: $e\n$stack');
-      if (mounted && !_exiting) {
-        setState(() {
-          _error = e is ApiError ? e.message : 'Could not restart playback';
-          _loading = false;
-          _busyAudio = false;
-        });
+      if (!mounted || _exiting) return;
+      setState(() => _busyAudio = false);
+      if (!identical(_backend, backendBefore) || _backend == null) {
+        // The old stream is already gone; recover rather than strand the
+        // viewer on a dead surface.
+        unawaited(_onPlaybackFailure(e));
+        return;
       }
+      // The replan was refused before anything was torn down: the previous
+      // stream keeps playing, like web leaves the plan on screen.
+      setState(() => _loading = false);
+      _notify(_describeFailure(e));
     }
+  }
+
+  /// Non-fatal notice over a stream that keeps playing.
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _pickAudioTrack() async {
@@ -902,20 +1019,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _prepareCancel?.cancel();
     _prepareCancel = cancel;
 
-    String? startedSessionId;
+    PlaybackSessionResponse? started;
     try {
       final client = ref.read(apiClientProvider);
       final identity = ref.read(clientIdentityProvider);
       final session = ref.read(sessionProvider)!;
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
-      final deviceCaps = applyAudioChannelOverride(
-        applyAv1AdvertiseOverrides(
-          ref.read(tvCapabilitiesProvider),
-          forceAv1: settings.forceAv1,
-          disableAv1: settings.disableAv1,
-        ),
-        is8KPanel: settings.is8KPanel,
-      );
+      final deviceCaps = _deviceCaps(settings);
       final forcedMethod = switch (resolveForcedPlayMethod(settings)) {
         'direct' => PlayMethod.direct,
         'transcode' => PlayMethod.transcode,
@@ -932,7 +1042,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             deviceCaps.codecsAudio,
             deviceCaps.maxAudioChannels,
           );
-      final started = await startPlayback(
+      final startedSession = await startPlayback(
         client,
         session,
         BuildPlaybackStartInput(
@@ -952,10 +1062,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           appBuild: identity.appBuild,
           appChannel: identity.appChannel,
         ),
+        cancelToken: cancel,
       );
-      startedSessionId = started.sessionId;
-      _activeSessionId = started.sessionId;
-      _basePlaybackSession = started;
+      started = startedSession;
+      _activeSessionId = startedSession.sessionId;
+      _basePlaybackSession = startedSession;
       prefetchQualityLadder(client, session);
       unawaited(
         fetchQualityLadder(client, session).then((ladder) {
@@ -965,27 +1076,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
 
       if (!mounted || _exiting || cancel.isCancelled) {
-        await stopPlaybackSession(client, session, started.sessionId).catchError((_) {});
+        await stopPlaybackSession(client, session, startedSession.sessionId).catchError((_) {});
         _activeSessionId = null;
         return;
       }
 
-      final seekAt = widget.launch.startPositionSeconds ?? started.position;
+      // Protocol v3 positions come from the plan timeline; the requested
+      // position is only the legacy fallback.
+      final seekAt = widget.launch.startPositionSeconds ?? startedSession.position;
       final PreparedPlayback prepared;
       try {
         prepared = await preparePlayableSession(
           client,
           // Fresh: a preceding call may have refreshed the access token.
           ref.read(sessionProvider) ?? session,
-          started,
+          startedSession,
           seekAt,
-          sourceResolution: _sourceResolutionForFile(widget.launch.watch, started.mediaFileId),
+          sourceResolution: _sourceResolutionForFile(widget.launch.watch, startedSession.mediaFileId),
           maxResolution: deviceCaps.maxResolution,
           cancelToken: cancel,
         );
       } catch (prepErr) {
-        await stopPlaybackSession(client, session, started.sessionId).catchError((_) {});
-        _activeSessionId = null;
+        // A v3 plan that cannot be prepared (HLS never ready, auth) is a
+        // plan failure: keep the session so failure recovery can replan it.
+        if (!startedSession.isProtocolV3) {
+          await stopPlaybackSession(client, session, startedSession.sessionId).catchError((_) {});
+          _activeSessionId = null;
+        }
         rethrow;
       }
 
@@ -995,115 +1112,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      _activeSessionId = prepared.session.sessionId;
-      final backend = ref.read(videoBackendFactoryProvider)(enableDiagnostics: settings.enableDiagnosticsBeacon);
-      _attachedStreamPath = Uri.tryParse(prepared.streamUrl)?.path;
-      backend.attach(
-        prepared.streamUrl,
-        maxResolution: deviceCaps.maxResolution,
-        contentAspectRatio: contentAspectRatioForFile(widget.launch.watch, prepared.session.mediaFileId),
+      setState(() => _subtitleAppearance = settings.subtitleAppearance);
+      await _attachPrepared(
+        prepared: prepared,
+        client: client,
+        session: session,
+        cancel: cancel,
+        settings: settings,
+        deviceCaps: deviceCaps,
+        clearBusy: _clearLoadingIfCurrent,
+        subtitleLanguage: widget.launch.initialSubtitleLanguage,
       );
-      // Mount the hole-punch surface BEFORE initialize — PlusPlayer prepares
-      // against the display rect; awaiting init with no VideoPlayer in the
-      // tree leaves Direct Play streaming on the server while Flutter spins.
-      final origin = Duration(milliseconds: (prepared.streamOriginSeconds * 1000).round());
-      setState(() {
-        _backend = backend;
-        _playbackSession = prepared.session;
-        _subtitleAppearance = settings.subtitleAppearance;
-        _streamOrigin = origin;
-        _position = origin + Duration(milliseconds: (prepared.playerStartSeconds * 1000).round());
-      });
-      _streamAttachedAt = DateTime.now();
-      await WidgetsBinding.instance.endOfFrame;
-
-      if (!mounted || _exiting || cancel.isCancelled) {
-        await backend.dispose();
-        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
-        _activeSessionId = null;
-        return;
-      }
-
-      // Initialize has its own [_initializeTimeout] budget (matched to the
-      // upstream HLS-readiness wait) — the stall timer below must not start
-      // until playback has actually begun, or it preempts that budget with a
-      // much tighter one (see the "stall timer preempts initialize" bug this
-      // fixed: the 20s stall check used to fire while a 90s-budgeted encode
-      // was still legitimately starting up).
-      await _initializeBackend(
-        backend,
-        startPosition: prepared.playerStartSeconds > 0
-            ? Duration(milliseconds: (prepared.playerStartSeconds * 1000).round())
-            : null,
-        playMethod: prepared.session.playMethod,
-        playbackSession: prepared.session,
-      );
-      await backend.play();
-
-      if (!mounted || _exiting || cancel.isCancelled) {
-        await backend.dispose();
-        await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
-        _activeSessionId = null;
-        return;
-      }
-
-      setState(() => _loading = false);
-      _lastProgressPosition = _position;
-      _lastProgressAt = DateTime.now();
-      if (needsHlsBootstrap(prepared.session.playMethod)) {
-        _stallTimer?.cancel();
-        _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
-      }
-      _positionSub = backend.positionStream.listen((position) {
-        if (!mounted) return;
-        final absolute = _streamOrigin + position;
-        if (absolute != _lastProgressPosition) {
-          _lastProgressPosition = absolute;
-          _lastProgressAt = DateTime.now();
-        }
-        setState(() => _position = absolute);
-      });
-      _captionSub = backend.captionStream.listen((text) {
-        if (mounted) setState(() => _caption = text);
-      });
-      _errorSub = backend.errorStream.listen((message) {
-        if (!mounted || _exiting || _error != null) return;
-        setState(() {
-          _error = message;
-          _loading = false;
-        });
-      });
-      _progressTimer = Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
-      unawaited(_autoSelectSubtitleTrack(backend, widget.launch.initialSubtitleLanguage ?? settings.preferredSubtitleLanguage));
+      if (!mounted || _exiting || cancel.isCancelled) return;
       final initialAudio = widget.launch.initialAudioTrackIndex;
       if (initialAudio != null && initialAudio != (_playbackSession?.audioTrackIndex ?? 0)) {
         unawaited(_chooseAudio(initialAudio));
       }
-    } catch (e) {
-      if (startedSessionId != null && _activeSessionId == startedSessionId) {
-        // Leave stop to the catch path only when we didn't already stop above.
+    } catch (e, stack) {
+      debugPrint('prairie.player_screen: _start failed: $e\n$stack');
+      if (!mounted || _exiting || cancel.isCancelled) return;
+      final plan = _playbackSession ?? started;
+      if (plan != null && plan.isProtocolV3) {
+        // The start produced a plan the device could not play: recover
+        // through the server before showing an error.
+        _playbackSession ??= plan;
+        unawaited(_onPlaybackFailure(e));
+        return;
       }
-      if (mounted && !_exiting) {
-        setState(() {
-          _error = e is ApiError
-              ? e.message
-              : e is HlsProbeAuthError
-                  ? 'Not authorized to play this stream. Try signing in again.'
-                  : e is TranscodeStartupTimeoutError
-                      ? e.message
-                      : 'Playback failed: $e';
-          _loading = false;
-        });
-      }
+      _showFatal(_describeFailure(e));
     }
   }
 
   void _checkHlsStall() {
-    if (!mounted || _exiting || _error != null) return;
+    if (!mounted || _exiting || _error != null || _recovering) return;
     final backend = _backend;
     if (backend == null) return;
-    // The timer only ever starts after a successful `play()` (see [_start] /
-    // [_chooseAudio]), so this is purely a post-start "stopped producing
+    // The timer only ever starts after a successful `play()` (see
+    // [_attachPrepared]), so this is purely a post-start "stopped producing
     // media" detector — not a substitute for [_initializeTimeout]. A user
     // pause freezes `_lastProgressAt` (it only advances on a position-stream
     // tick), so a paused stream must not be judged stalled just for sitting
@@ -1112,11 +1157,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final lastAt = _lastProgressAt ?? _streamAttachedAt;
     if (lastAt == null) return;
     if (DateTime.now().difference(lastAt) < _hlsStallTimeout) return;
-    setState(() {
-      _error = 'Playback stalled — the stream stopped producing media.';
-      _loading = false;
-    });
     _stallTimer?.cancel();
+    unawaited(_onPlaybackFailure(
+      'Playback stalled — the stream stopped producing media.',
+      classification: 'transport_stall',
+    ));
   }
 
   Future<void> _initializeBackend(
@@ -1259,24 +1304,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _errorSub?.cancel();
     _errorSub = null;
     if (sessionId != null) {
-      // The session fields are already cleared above, so report against the
-      // captured id directly; _reportProgress would find nothing and the
-      // resume point would never be saved.
-      final progressSession = ref.read(sessionProvider);
-      if (progressSession != null) {
-        await reportPlaybackProgress(
-          ref.read(apiClientProvider),
-          progressSession,
-          sessionId,
-          _position.inSeconds.toDouble(),
-          true,
-        ).then((_) {}, onError: (_) {});
-      }
       // Await stop so Back cannot race a new play against a still-open session
-      // on the single hardware decoder / server encode slot.
+      // on the single hardware decoder / server encode slot. The stop carries
+      // the final position sample (v2), so the resume point is saved with it.
       final session = ref.read(sessionProvider);
       if (session != null) {
-        await stopPlaybackSession(ref.read(apiClientProvider), session, sessionId).catchError((_) {});
+        await stopPlaybackSession(
+          ref.read(apiClientProvider),
+          session,
+          sessionId,
+          position: _position.inMilliseconds / 1000.0,
+        ).catchError((_) {});
       }
     }
     await backend?.dispose();
@@ -1318,59 +1356,85 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return _backend?.duration;
   }
 
-  /// Remux is copy-mode video piped live over plain progressive HTTP with
-  /// no in-place seek support at all — confirmed on-device:
-  /// `video_player_videohole` throws `PlatformException(SeekTo, Player seek
-  /// to failed, ...)` unconditionally for this content, both mid-playback
-  /// and on resume-to-position. The server's stream handler instead reads a
-  /// `?seek=` query param and respawns ffmpeg with `-ss` before `-i` — see
-  /// [preparePlayableSession] — so every remux seek goes straight to a full
-  /// session restart at the target position, without wasting a doomed
-  /// native seekTo call first. Direct/transcode still try the cheap
-  /// in-place native seek, which works for them.
+  /// Media time the current transport has produced up to, as far as the TV
+  /// player can tell (it exposes no seekable ranges): the native duration of
+  /// a growing playlist, or at least the last position it actually played.
+  double _producedEndSeconds() {
+    final played = _lastProgressPosition.inMilliseconds / 1000.0;
+    final native = _backend?.duration;
+    if (native == null || native <= Duration.zero) return played;
+    final produced = (_streamOrigin + native).inMilliseconds / 1000.0;
+    return produced > played ? produced : played;
+  }
+
+  /// Seeks against the plan timeline, like VideoPlayer.tsx's
+  /// `performPlayerSeek`:
+  /// - inside the transport's seek window (or anywhere, when the plan says
+  ///   `can_seek_anywhere`) the native player seeks in place, in player time
+  ///   (media time − the timeline offset);
+  /// - outside it, a `seek_reanchor` replan opens a fresh transport at the
+  ///   target — only when the server negotiated `seek_reanchor_v1`.
   ///
-  /// Restarting is expensive enough (network round trip, fresh ffmpeg, a new
-  /// `initialize()`) that firing one per D-pad repeat tick or ±15s mash
-  /// drops every seek after the first behind [_restartSessionAt]'s
-  /// `_busyAudio` guard — the stream never advances past whatever the first
-  /// tick asked for. Debounced: the displayed position updates immediately
-  /// on every call for responsive visual feedback, but the actual restart
-  /// only fires once input has paused, using the latest target.
+  /// Progressive remux is always a re-anchor: it is copy-mode video piped
+  /// live with no Range support, and `video_player_videohole` throws
+  /// `PlatformException(SeekTo, Player seek to failed, ...)` for it
+  /// unconditionally (confirmed on-device), so a native seek is never tried.
+  /// A native seek that fails elsewhere also falls back to a re-anchor.
+  ///
+  /// Re-anchoring is expensive (network round trip, fresh transport, a new
+  /// `initialize()`), so it is debounced: the displayed position updates on
+  /// every call for responsive feedback, and the replan fires once input
+  /// pauses, using the latest target.
   Future<void> _seekToPosition(Duration target) async {
     final backend = _backend;
-    if (backend == null) return;
+    if (backend == null || _recovering) return;
     final duration = _totalDuration ?? Duration.zero;
     var next = target < Duration.zero ? Duration.zero : target;
     if (duration > Duration.zero && next > duration) next = duration;
 
-    final isRemux = (_playbackSession?.playMethod ?? '').trim().toLowerCase() == 'remux';
-    if (isRemux) {
-      _showSeekPreview(next);
-      setState(() => _position = next);
-      _showControls();
-      _pendingRemuxSeek = next;
-      _seekDebounce?.cancel();
-      _seekDebounce = Timer(_seekDebounceDelay, () {
-        final pending = _pendingRemuxSeek;
-        _pendingRemuxSeek = null;
-        if (pending == null || !mounted) return;
-        final audioIndex = _playbackSession?.audioTrackIndex ?? 0;
-        unawaited(_restartSessionAt(audioTrackIndex: audioIndex, positionSeconds: pending.inMilliseconds / 1000.0));
-      });
+    final plan = _playbackSession;
+    final canReanchor = plan?.supportsSeekReanchor ?? false;
+    final isRemux = (plan?.playMethod ?? '').trim().toLowerCase() == 'remux';
+    final targetSeconds = next.inMilliseconds / 1000.0;
+    final timeline = plan?.timeline;
+    final outsideWindow = timeline != null &&
+        !timeline.canSeekLocally(targetSeconds, producedEndSeconds: _producedEndSeconds());
+    if (canReanchor && (isRemux || outsideWindow || next < _streamOrigin)) {
+      _scheduleReanchor(next);
       return;
     }
 
+    final nativeTarget = next - _streamOrigin;
     try {
-      await backend.seekTo(next);
+      await backend.seekTo(nativeTarget < Duration.zero ? Duration.zero : nativeTarget);
       if (mounted) {
         _showSeekPreview(next);
         setState(() => _position = next);
       }
     } on PlatformException catch (err) {
       debugPrint('prairie.player_screen: native seekTo failed: $err');
-      backend.reportDiagnostic('seek:failed:${_playbackSession?.playMethod}:${err.message ?? err.code}');
+      backend.reportDiagnostic('seek:failed:${plan?.playMethod}:${err.message ?? err.code}');
+      if (canReanchor) {
+        _scheduleReanchor(next);
+        return;
+      }
     }
     _showControls();
+  }
+
+  void _scheduleReanchor(Duration next) {
+    _showSeekPreview(next);
+    setState(() => _position = next);
+    _showControls();
+    _pendingReanchorSeek = next;
+    _seekDebounce?.cancel();
+    _seekDebounce = Timer(_seekDebounceDelay, () {
+      final pending = _pendingReanchorSeek;
+      _pendingReanchorSeek = null;
+      if (pending == null || !mounted) return;
+      final audioIndex = _playbackSession?.audioTrackIndex ?? 0;
+      unawaited(_restartSessionAt(audioTrackIndex: audioIndex, positionSeconds: pending.inMilliseconds / 1000.0));
+    });
   }
 
   /// Overrides the app theme's flat `IconButton`/`TextButton` foreground:

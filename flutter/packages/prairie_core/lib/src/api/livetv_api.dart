@@ -233,6 +233,19 @@ Future<void> releaseLiveTvSession(ApiClient client, PrairieSession session, Stri
   method: 'DELETE',
 );
 
+/// How often an open live player checks in; mirrors web's
+/// LIVETV_HEARTBEAT_INTERVAL_MS. The server reclaims a tuner after ~90s
+/// without a heartbeat, and a paused player stops fetching segments.
+const liveTvHeartbeatInterval = Duration(seconds: 30);
+
+/// Mirrors `useLiveTVSessionHeartbeat`: `POST /livetv/sessions/{id}/heartbeat`
+/// (no body, 204) keeps the live session's tuner claimed.
+Future<void> heartbeatLiveTvSession(ApiClient client, PrairieSession session, String liveSessionId) => client.request<dynamic>(
+  _sessionOptions(session),
+  '/api/v1/livetv/sessions/${Uri.encodeComponent(liveSessionId)}/heartbeat',
+  method: 'POST',
+);
+
 /// Mirrors `fetchLiveTvRecordings`, also treating 404 as empty.
 Future<List<LiveTvRecording>> fetchLiveTvRecordings(ApiClient client, PrairieSession session) async {
   try {
