@@ -69,6 +69,10 @@ abstract class VideoBackend {
   /// backend itself doesn't observe, like [initialize]'s own call site.
   void reportDiagnostic(String event);
 
+  /// The most recent [reportDiagnostic] events, oldest first, recorded whether
+  /// or not a beacon is wired up. Shown by the player's stats overlay.
+  List<String> get recentDiagnostics;
+
   /// Text tracks the native player found in the current stream. Empty
   /// until after [initialize] resolves; may also be empty if the file has no
   /// embedded subtitles.
