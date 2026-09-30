@@ -9,6 +9,17 @@ void main() {
     expect(playerSeekBarStep, const Duration(seconds: 10));
   });
 
+  test('seek preview is centered on the thumb whatever its width, and stays on the bar', () {
+    // Mid-bar: a narrow timecode and a wide trickplay tile share one center.
+    expect(seekPreviewLeft(1000, 70, 0.5, 18) + 35, 500);
+    expect(seekPreviewLeft(1000, 176, 0.5, 18) + 88, 500);
+    // The thumb rides the inset track, not the full width.
+    expect(seekPreviewLeft(1000, 70, 0.25, 18) + 35, 18 + 964 * 0.25);
+    // Clamped at either end instead of hanging off the bar.
+    expect(seekPreviewLeft(1000, 176, 0, 18), 0);
+    expect(seekPreviewLeft(1000, 176, 1, 18), 1000 - 176);
+  });
+
   test('holding Left/Right grows the seek step, starting from the fixed step', () {
     expect(playerSeekHoldStep(Duration.zero), playerSeekBarStep);
     expect(playerSeekHoldStep(const Duration(milliseconds: 999)), playerSeekBarStep);

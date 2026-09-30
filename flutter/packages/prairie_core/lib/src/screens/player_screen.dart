@@ -24,6 +24,15 @@ Duration playerSeekHoldStep(Duration heldFor) {
   return const Duration(minutes: 2);
 }
 
+/// Left edge for a seek preview of [bubbleWidth] centered on the thumb at
+/// [fraction] of a bar [barWidth] wide whose track is inset [trackInset] on
+/// each side, clamped so the bubble stays within the bar.
+@visibleForTesting
+double seekPreviewLeft(double barWidth, double bubbleWidth, double fraction, double trackInset) {
+  final thumbX = trackInset + (barWidth - trackInset * 2) * fraction.clamp(0.0, 1.0);
+  return (thumbX - bubbleWidth / 2).clamp(0.0, math.max(0.0, barWidth - bubbleWidth)).toDouble();
+}
+
 /// How long the seek bar waits after the last Left/Right before seeking.
 const _scrubCommitDelay = Duration(milliseconds: 400);
 /// HLS remux/transcode sessions that stop advancing for this long after play
@@ -247,6 +256,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    // Remote transport keys act directly, whatever has focus; focused
+    // controls don't claim them, so they bubble up to here.
+    final media = remoteMediaActionFor(event.logicalKey);
+    if (media != null) return _onMediaKey(media, repeat: event is KeyRepeatEvent);
     if (_controlsVisible) {
       _scheduleHideControls();
       return KeyEventResult.ignored;
@@ -257,6 +270,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return KeyEventResult.ignored;
     }
     _showControls(focusPlay: true);
+    return KeyEventResult.handled;
+  }
+
+  KeyEventResult _onMediaKey(RemoteMediaAction action, {required bool repeat}) {
+    if (action == RemoteMediaAction.stop) {
+      if (!repeat) unawaited(_exit());
+      return KeyEventResult.handled;
+    }
+    // Show what the key did; focusing Play keeps the D-pad useful afterwards.
+    if (!_controlsVisible) {
+      _showControls(focusPlay: true);
+    } else {
+      _scheduleHideControls();
+    }
+    final playing = _backend?.isPlaying ?? false;
+    switch (action) {
+      case RemoteMediaAction.playPause:
+        if (!repeat) unawaited(_togglePlayPause());
+      case RemoteMediaAction.play:
+        if (!repeat && !playing) unawaited(_togglePlayPause());
+      case RemoteMediaAction.pause:
+        if (!repeat && playing) unawaited(_togglePlayPause());
+      case RemoteMediaAction.fastForward:
+        unawaited(_seekBy(const Duration(seconds: 15)));
+      case RemoteMediaAction.rewind:
+        unawaited(_seekBy(const Duration(seconds: -15)));
+      case RemoteMediaAction.stop:
+        break;
+    }
     return KeyEventResult.handled;
   }
 
@@ -1854,30 +1896,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         : resolveTrickplayTile(_activeTrickplay, preview.inMilliseconds / 1000.0);
     final serverUrl = ref.read(sessionProvider)?.serverUrl ?? '';
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const bubbleHalf = 88.0;
-        final left = (pct * constraints.maxWidth - bubbleHalf)
-            .clamp(0.0, math.max(0.0, constraints.maxWidth - bubbleHalf * 2))
-            .toDouble();
-        return Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            if (preview != null)
-              Positioned(
-                left: left,
-                bottom: 36,
-                child: _SeekPreviewBubble(
-                  timeLabel: _formatDuration(preview),
-                  tile: tile,
-                  serverUrl: serverUrl,
-                ),
+    // The Slider insets its track by the overlay radius on each side (see
+    // [_buildSeekBar]'s theme), so the thumb travels that inset range, not the
+    // full width.
+    final trackInset = _seekFocus.hasFocus ? 18.0 : 14.0;
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        if (preview != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 36,
+            child: CustomSingleChildLayout(
+              delegate: _SeekPreviewLayout(fraction: pct.toDouble(), trackInset: trackInset),
+              child: _SeekPreviewBubble(
+                timeLabel: _formatDuration(preview),
+                tile: tile,
+                serverUrl: serverUrl,
               ),
-            _buildSeekBar(backend),
-          ],
-        );
-      },
+            ),
+          ),
+        _buildSeekBar(backend),
+      ],
     );
   }
 
@@ -1922,6 +1964,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
   }
+}
+
+/// Centers the seek preview on the slider thumb, whatever the bubble's width
+/// (a bare timecode is far narrower than a trickplay tile), and keeps it
+/// inside the bar at either end.
+class _SeekPreviewLayout extends SingleChildLayoutDelegate {
+  const _SeekPreviewLayout({required this.fraction, required this.trackInset});
+
+  final double fraction;
+  final double trackInset;
+
+  @override
+  Size getSize(BoxConstraints constraints) => Size(constraints.maxWidth, _height);
+
+  // The bubble's height is only known once laid out; the row reserves none,
+  // because the bubble floats above the bar.
+  static const _height = 0.0;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) => BoxConstraints(maxWidth: constraints.maxWidth);
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      Offset(seekPreviewLeft(size.width, childSize.width, fraction, trackInset), -childSize.height);
+
+  @override
+  bool shouldRelayout(_SeekPreviewLayout oldDelegate) => oldDelegate.fraction != fraction || oldDelegate.trackInset != trackInset;
 }
 
 /// Seek scrub preview: optional trickplay tile + timecode, matching web SeekBar.

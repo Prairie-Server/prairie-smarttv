@@ -231,6 +231,12 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    // Remote transport keys act directly, whatever has focus.
+    final media = remoteMediaActionFor(event.logicalKey);
+    if (media != null) {
+      if (event is KeyDownEvent) _onMediaKey(media);
+      return KeyEventResult.handled;
+    }
     if (_controlsVisible) {
       _scheduleHideControls();
       return KeyEventResult.ignored;
@@ -241,6 +247,26 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
     }
     _showControls();
     return KeyEventResult.handled;
+  }
+
+  void _onMediaKey(RemoteMediaAction action) {
+    if (action == RemoteMediaAction.stop) {
+      unawaited(_exit());
+      return;
+    }
+    final backend = _backend;
+    // A live stream has nothing to fast-forward or rewind into, and a stream
+    // that never started (or failed) has nothing to toggle.
+    if (backend == null || _error != null) return;
+    final toggle = switch (action) {
+      RemoteMediaAction.playPause => true,
+      RemoteMediaAction.play => !backend.isPlaying,
+      RemoteMediaAction.pause => backend.isPlaying,
+      _ => false,
+    };
+    if (!toggle) return;
+    if (!_controlsVisible) _showControls();
+    unawaited(_togglePlayPause());
   }
 
   /// Keeps the tuner claimed while this screen is open (paused included):
