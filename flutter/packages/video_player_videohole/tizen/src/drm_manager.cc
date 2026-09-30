@@ -245,11 +245,12 @@ int DrmManager::SetChallenge(const std::string &media_url) {
 int DrmManager::OnChallengeData(void *session_id, int message_type,
                                 void *message, int message_length,
                                 void *user_data) {
-  LOG_INFO("[DrmManager] challenge data: %s, challenge length: %d", message,
-           message_length);
+  // Prairie patch: the challenge is binary (not NUL-terminated), and the
+  // license URL may carry credentials; logs now leave the device via stderr.
+  LOG_INFO("[DrmManager] challenge length: %d", message_length);
   DrmManager *self = static_cast<DrmManager *>(user_data);
   LOG_INFO("[DrmManager] drm_type: %d, license server: %s", self->drm_type_,
-           self->license_server_url_.c_str());
+           RedactUriForLog(self->license_server_url_).c_str());
   DataForLicenseProcess process_message(session_id, message, message_length);
   self->PushLicenseRequestData(process_message);
   return DM_ERROR_NONE;

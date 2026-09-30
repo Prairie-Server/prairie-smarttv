@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <sstream>
+#include <stdexcept>
 
 #include "log.h"
 
@@ -27,12 +28,6 @@ static std::string RotationToString(player_display_rotation_e rotation) {
   return std::string();
 }
 
-// Prairie patch: stream URLs carry an auth token in the query string, and
-// logs now leave the device via stderr, so never log the query.
-static std::string RedactUri(const std::string &uri) {
-  size_t query = uri.find('?');
-  return query == std::string::npos ? uri : uri.substr(0, query) + "?<redacted>";
-}
 
 static std::string StateToString(player_state_e state) {
   switch (state) {
@@ -78,7 +73,7 @@ int64_t MediaPlayer::Create(const std::string &uri,
                             const CreateMessage &create_message,
                             bool reuse_existing_id) {
   LOG_INFO("[MediaPlayer] Create: uri=%s, reuse_existing_id=%d",
-           RedactUri(uri).c_str(), reuse_existing_id ? 1 : 0);
+           RedactUriForLog(uri).c_str(), reuse_existing_id ? 1 : 0);
 
   if (uri.empty()) {
     LOG_ERROR("[MediaPlayer] The uri must not be empty.");
@@ -457,13 +452,16 @@ bool MediaPlayer::SetDisplay() {
       flutter_common::GetValue(window_geometry, "height", (int64_t)0);
   if (width <= 0 || height <= 0) {
     LOG_ERROR(
-        "[MediaPlayer] Invalid window geometry size: width[%d], height[%d].",
-        width, height);
+        "[MediaPlayer] Invalid window geometry size: width[%lld], "
+        "height[%lld].",
+        static_cast<long long>(width), static_cast<long long>(height));
     return false;
   }
   LOG_INFO(
-      "[MediaPlayer] Window geometry: x[%d], y[%d], width[%d], height[%d].", x,
-      y, width, height);
+      "[MediaPlayer] Window geometry: x[%lld], y[%lld], width[%lld], "
+      "height[%lld].",
+      static_cast<long long>(x), static_cast<long long>(y),
+      static_cast<long long>(width), static_cast<long long>(height));
 
   int ret = media_player_proxy_->player_set_ecore_wl_display(
       player_, PLAYER_DISPLAY_TYPE_OVERLAY, native_window, x, y, width, height);
@@ -524,8 +522,20 @@ std::pair<int64_t, int64_t> MediaPlayer::GetLiveDuration() {
   if (live_duration_str.empty()) {
     return std::make_pair(0, 0);
   }
+  // Prairie patch: expect "start|end"; don't index or throw on anything else.
   std::vector<std::string> time_vec = split(live_duration_str, '|');
-  return std::make_pair(std::stoll(time_vec[0]), std::stoll(time_vec[1]));
+  if (time_vec.size() < 2) {
+    LOG_ERROR("[MediaPlayer] Unexpected live duration: %s",
+              live_duration_str.c_str());
+    return std::make_pair(0, 0);
+  }
+  try {
+    return std::make_pair(std::stoll(time_vec[0]), std::stoll(time_vec[1]));
+  } catch (const std::exception &) {
+    LOG_ERROR("[MediaPlayer] Unparsable live duration: %s",
+              live_duration_str.c_str());
+    return std::make_pair(0, 0);
+  }
 }
 
 flutter::EncodableList MediaPlayer::GetTrackInfo(std::string track_type) {
@@ -876,9 +886,9 @@ bool MediaPlayer::RestorePlayer(const CreateMessage *restore_message,
   LOG_INFO("[MediaPlayer] RestorePlayer: old player cleaned up.");
 
   if (restore_message->uri()) {
-    LOG_INFO("[MediaPlayer] Player previous url: %s", RedactUri(url_).c_str());
+    LOG_INFO("[MediaPlayer] Player previous url: %s", RedactUriForLog(url_).c_str());
     LOG_INFO("[MediaPlayer] Player new url: %s",
-             RedactUri(*restore_message->uri()).c_str());
+             RedactUriForLog(*restore_message->uri()).c_str());
     url_ = *restore_message->uri();
     create_message_ = *restore_message;
   } else {

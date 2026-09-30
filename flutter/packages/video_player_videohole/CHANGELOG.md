@@ -5,6 +5,10 @@
   bare error code.
 * `LOG_INFO`/`LOG_WARN`/`LOG_ERROR` also write to stderr. Retail TVs block
   dlog, but flutter-tizen forwards stderr over `--tizen-logging-port`.
+* Redact URL query strings (stream and DRM license URLs) in logs, and log
+  only the length of the binary DRM challenge.
+* Fix `int64_t` window-geometry log format specifiers.
+* Guard the live-duration parse against malformed player responses.
 
 ## 0.6.0
 

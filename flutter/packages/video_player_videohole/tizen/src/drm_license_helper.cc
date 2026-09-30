@@ -434,7 +434,8 @@ DRM_RESULT HttpStartTransaction(
 
   LOG_INFO("[DrmLicenseHelper] HttpStartTransaction: type(%d)", type);
   if (http_url) {
-    LOG_INFO("[DrmLicenseHelper] http_url: %s", http_url);
+    LOG_INFO("[DrmLicenseHelper] http_url: %s",
+             RedactUriForLog(http_url).c_str());
   }
 
   // 2. Set Header type

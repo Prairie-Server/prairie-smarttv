@@ -31,4 +31,15 @@
 #define LOG_WARN(fmt, args...) LOG_STDERR(DLOG_WARN, fmt, ##args)
 #define LOG_ERROR(fmt, args...) LOG_STDERR(DLOG_ERROR, fmt, ##args)
 
+#ifdef __cplusplus
+#include <string>
+
+// Prairie patch: stream and license URLs can carry tokens in the query
+// string, and logs now leave the device via stderr, so never log the query.
+inline std::string RedactUriForLog(const std::string &uri) {
+  size_t query = uri.find('?');
+  return query == std::string::npos ? uri : uri.substr(0, query) + "?<redacted>";
+}
+#endif
+
 #endif  // __LOG_H__
