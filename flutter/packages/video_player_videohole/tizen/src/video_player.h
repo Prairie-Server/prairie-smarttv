@@ -55,7 +55,13 @@ class VideoPlayer {
                        int64_t resume_time) = 0;
   virtual bool SetDisplayRotate(int64_t rotation) = 0;
 
+  // Prairie patch: native reason for the last failed SeekTo, so the plugin can
+  // return it to Dart instead of a generic message.
+  const std::string &last_seek_error() const { return last_seek_error_; }
+
  protected:
+  std::string last_seek_error_;
+
   virtual void GetVideoSize(int32_t *width, int32_t *height) = 0;
   void *GetWindowHandle();
   int64_t SetUpEventChannel();

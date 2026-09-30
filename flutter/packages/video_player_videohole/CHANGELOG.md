@@ -1,3 +1,10 @@
+## 0.5.9+prairie.1 (path fork, not published)
+
+* `SeekTo` failures return the native reason and player state in the
+  `FlutterError` message instead of a bare "Player seek to failed".
+* `LOG_INFO`/`LOG_WARN`/`LOG_ERROR` also write to stderr. Retail TVs block
+  dlog, but flutter-tizen forwards stderr over `--tizen-logging-port`.
+
 ## 0.5.9
 
 * Adds compatibility with `http` 1.0 in example.

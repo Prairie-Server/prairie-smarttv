@@ -288,7 +288,8 @@ void VideoPlayerTizenPlugin::SeekTo(
   }
   if (!player->SeekTo(msg.position(),
                       [result]() -> void { result(std::nullopt); })) {
-    result(FlutterError("SeekTo", "Player seek to failed"));
+    result(FlutterError("SeekTo",
+                        "Player seek to failed: " + player->last_seek_error()));
   }
 }
 
