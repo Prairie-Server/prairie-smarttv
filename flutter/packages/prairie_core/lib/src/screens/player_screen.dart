@@ -256,6 +256,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    if (isSystemRemoteKey(event.logicalKey)) return KeyEventResult.ignored;
     // Remote transport keys act directly, whatever has focus; focused
     // controls don't claim them, so they bubble up to here.
     final media = remoteMediaActionFor(event.logicalKey);

@@ -16,3 +16,14 @@ RemoteMediaAction? remoteMediaActionFor(LogicalKeyboardKey key) {
   if (key == LogicalKeyboardKey.mediaRewind) return RemoteMediaAction.rewind;
   return null;
 }
+
+/// Remote keys the TV itself acts on (volume, mute and Home). The players let
+/// these pass untouched: otherwise they counted as "any key", so changing the
+/// volume brought the chrome up and Home took a second press.
+bool isSystemRemoteKey(LogicalKeyboardKey key) =>
+    key == LogicalKeyboardKey.audioVolumeUp ||
+    key == LogicalKeyboardKey.audioVolumeDown ||
+    key == LogicalKeyboardKey.audioVolumeMute ||
+    key == LogicalKeyboardKey.goHome ||
+    key == LogicalKeyboardKey.browserHome ||
+    key == LogicalKeyboardKey.home;

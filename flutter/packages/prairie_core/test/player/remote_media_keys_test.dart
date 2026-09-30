@@ -17,4 +17,18 @@ void main() {
       expect(remoteMediaActionFor(key), isNull);
     }
   });
+
+  test('treats volume, mute and Home as system keys', () {
+    for (final key in [
+      LogicalKeyboardKey.audioVolumeUp,
+      LogicalKeyboardKey.audioVolumeDown,
+      LogicalKeyboardKey.audioVolumeMute,
+      LogicalKeyboardKey.goHome,
+      LogicalKeyboardKey.browserHome,
+    ]) {
+      expect(isSystemRemoteKey(key), isTrue);
+      expect(remoteMediaActionFor(key), isNull);
+    }
+    expect(isSystemRemoteKey(LogicalKeyboardKey.select), isFalse);
+  });
 }

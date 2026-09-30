@@ -231,6 +231,7 @@ class _LiveTvPlayerScreenState extends ConsumerState<LiveTvPlayerScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    if (isSystemRemoteKey(event.logicalKey)) return KeyEventResult.ignored;
     // Remote transport keys act directly, whatever has focus.
     final media = remoteMediaActionFor(event.logicalKey);
     if (media != null) {
