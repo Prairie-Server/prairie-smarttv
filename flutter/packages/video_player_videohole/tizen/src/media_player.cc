@@ -303,6 +303,9 @@ bool MediaPlayer::SetPlaybackSpeed(double speed) {
 bool MediaPlayer::SeekTo(int64_t position, SeekCompletedCallback callback) {
   LOG_INFO("[MediaPlayer] position: %lld.", position);
 
+  // OnSeekCompleted clears the callback, so a non-null one means the previous
+  // seek has not completed yet (0.6.0 upstream guards against this overlap).
+  bool seek_in_flight = static_cast<bool>(on_seek_completed_);
   on_seek_completed_ = std::move(callback);
   int ret =
       player_set_play_position(player_, position, true, OnSeekCompleted, this);
@@ -313,7 +316,8 @@ bool MediaPlayer::SeekTo(int64_t position, SeekCompletedCallback callback) {
     std::ostringstream reason;
     reason << "player_set_play_position(" << position
            << ") failed: " << get_error_message(ret) << " (ret=0x" << std::hex
-           << ret << std::dec << ", state=" << StateToString(state) << ")";
+           << ret << std::dec << ", state=" << StateToString(state)
+           << ", seek_in_flight=" << (seek_in_flight ? "yes" : "no") << ")";
     last_seek_error_ = reason.str();
     LOG_ERROR("[MediaPlayer] %s.", last_seek_error_.c_str());
     return false;
