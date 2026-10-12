@@ -1,5 +1,4 @@
 import '../api/catalog_api.dart';
-import '../models/catalog_item.dart';
 
 /// Mirrors `formatRuntimeMinutes` from src/lib/detailMetadata.ts.
 String? formatRuntimeMinutes(int? runtimeMinutes) {
@@ -109,16 +108,11 @@ String? starringText(ItemDetail detail) {
   return 'Starring ${names.join(', ')}';
 }
 
-/// Mirrors `isContinueStyleSection` / `usesLandscapeCards` from browseCards.ts.
+/// Continue-style rails render as landscape cards for movies and episodes alike.
 bool isContinueStyleSection(String? sectionType) {
   if (sectionType == null) return false;
   final t = sectionType.toLowerCase();
   return t == 'continue_watching' || t == 'next_up' || t == 'on_deck';
-}
-
-bool usesLandscapeCards(String? sectionType, List<CatalogItem> items) {
-  if (!isContinueStyleSection(sectionType)) return false;
-  return items.any((item) => item.type == 'episode');
 }
 
 /// Preferred file among [versions] using last-played preference.

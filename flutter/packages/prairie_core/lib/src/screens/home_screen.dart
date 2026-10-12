@@ -250,7 +250,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required bool autofocusFirst,
     int? restoreItemIndex,
   }) {
-    final landscape = usesLandscapeCards(section.sectionType, section.items);
+    final landscape = isContinueStyleSection(section.sectionType);
     if (landscape) {
       return MediaRow<CatalogItem>(
         title: section.title,
