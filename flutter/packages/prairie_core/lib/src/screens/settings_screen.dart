@@ -69,13 +69,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = SharedPreferencesAsync();
     final mode = await loadPerformanceMode(prefs);
     final settings = await loadPlaybackSettings(prefs);
-    if (mounted) {
-      setState(() {
-        _mode = mode;
-        _settings = settings;
-        _loaded = true;
-      });
-    }
+    // `ref` is unusable once disposed, so bail before reading the session.
+    if (!mounted) return;
+    setState(() {
+      _mode = mode;
+      _settings = settings;
+      _loaded = true;
+    });
     final session = ref.read(sessionProvider);
     if (session == null) return;
     try {
