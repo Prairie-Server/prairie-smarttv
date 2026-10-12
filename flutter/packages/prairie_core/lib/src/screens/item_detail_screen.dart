@@ -916,10 +916,13 @@ class _Hero extends StatelessWidget {
                                 Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
                               ],
                             ),
-                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null) ...[
+                            // ponytail: community rating is as of page load; rating here doesn't refetch it.
+                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null || detail.communityRating != null) ...[
                               const SizedBox(height: 6),
                               Text(
                                 [
+                                  if (detail.communityRating case final c?)
+                                    'Community ${c.average.toStringAsFixed(1)}/5 (${c.count})',
                                   if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
                                   if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
                                 ].join(' · '),

@@ -46,4 +46,12 @@ void main() {
     expect(ItemDetail.fromJson({...base, 'user_rating': 3}).userRating, 3);
     expect(ItemDetail.fromJson(base).userRating, isNull);
   });
+
+  test('ItemDetail parses community_rating when present', () {
+    final base = {'content_id': 'movie:heat-1995', 'title': 'Heat', 'type': 'movie'};
+    final c = ItemDetail.fromJson({...base, 'community_rating': {'average': 4, 'count': 7}}).communityRating!;
+    expect(c.average, 4.0);
+    expect(c.count, 7);
+    expect(ItemDetail.fromJson(base).communityRating, isNull);
+  });
 }
