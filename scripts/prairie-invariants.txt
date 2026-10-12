@@ -24,3 +24,7 @@ flutter/packages/prairie_core/lib/src/screens/player_screen.dart	1	canSeekLocall
 flutter/packages/prairie_core/lib/src/screens/live_tv_player_screen.dart	1	heartbeatLiveTvSession\(	live TV heartbeat keeps the tuner claimed (server reclaims after ~90s)
 flutter/packages/prairie_core/lib/src/api/playback_session_api.dart	=0	/api/v1/	playback is /api/v2-only; no v1 bridge fallback (#131)
 flutter/packages/prairie_core/lib/src/api/transcode_api.dart	=0	/api/v1/	no legacy /api/v1/playback/transcode/start path (#131)
+flutter/packages/prairie_core/lib/src/api/livetv_api.dart	=0	/api/v1/	live TV API is /api/v2 (#131); play stream_url exactly as returned
+flutter/packages/prairie_core/lib/src/api/quality_ladder.dart	=0	/api/v1/	quality ladder is /api/v2/playback/quality-ladder (#131)
+flutter/packages/prairie_tizen/lib/platform/videohole_video_backend.dart	=0	settings/effective|dbg	diagnostics beacon is POST /api/v2/diagnostics/client-events (#131)
+flutter/packages/prairie_webos/lib/platform/webos_video_backend.dart	=0	settings/effective|dbg	diagnostics beacon is POST /api/v2/diagnostics/client-events (#131)

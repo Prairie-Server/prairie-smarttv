@@ -72,7 +72,7 @@ void main() {
   group('fetchQualityLadder', () {
     test('serves the server ladder once loaded', () async {
       final adapter = FakeHttpAdapter((options) {
-        expect(options.uri.path, contains('/api/v1/playback/quality-ladder'));
+        expect(options.uri.path, contains('/api/v2/playback/quality-ladder'));
         return jsonResponse(
           '{"rungs":[{"id":"540p","label":"540p","resolution":"540p","height":540,"bitrate_kbps":1800}],"modes":["auto","original"]}',
           200,

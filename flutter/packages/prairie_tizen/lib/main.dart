@@ -36,7 +36,7 @@ Future<void> main() async {
         videoBackendFactoryProvider.overrideWith(
           (ref) => ({bool enableDiagnostics = false}) => VideoholeVideoBackend(
             beaconClient: enableDiagnostics ? ref.read(apiClientProvider) : null,
-            beaconServerUrl: enableDiagnostics ? () => ref.read(sessionProvider)?.serverUrl : null,
+            beaconSession: enableDiagnostics ? () => ref.read(sessionProvider) : null,
           ),
         ),
         tvCapabilitiesProvider.overrideWithValue(caps),

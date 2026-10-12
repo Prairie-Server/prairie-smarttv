@@ -11,15 +11,16 @@ import 'package:video_player_drm/video_player.dart';
 /// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
 /// underlying plugin but not yet wired up here — same gap as Tizen AVPlay.
 class WebosVideoBackend implements VideoBackend {
-  /// Diagnostics-only: rides a `dbg=` param on a request the server already
-  /// logs (see Tizen's `AvplayVideoBackend`, where this pattern started —
-  /// same shape here so a support report from either platform ships the same
-  /// way). Fire-and-forget; never let a beacon failure affect playback. Both
-  /// are null unless the user opted into `PlaybackSettings.enableDiagnosticsBeacon`.
-  WebosVideoBackend({this.beaconClient, this.beaconServerUrl});
+  /// Diagnostics-only: posts state changes to
+  /// `POST /api/v2/diagnostics/client-events`, same as Tizen's
+  /// `VideoholeVideoBackend`, so a support report from either platform ships
+  /// the same way. Fire-and-forget; never let a beacon failure affect
+  /// playback. Both are null unless the user opted into
+  /// `PlaybackSettings.enableDiagnosticsBeacon`.
+  WebosVideoBackend({this.beaconClient, this.beaconSession});
 
   final ApiClient? beaconClient;
-  final String? Function()? beaconServerUrl;
+  final PrairieSession? Function()? beaconSession;
 
   final _diagnostics = DiagnosticsLog();
 
@@ -30,20 +31,9 @@ class WebosVideoBackend implements VideoBackend {
   void reportDiagnostic(String event) {
     _diagnostics.add(event);
     final client = beaconClient;
-    final serverUrl = beaconServerUrl?.call();
-    if (client == null || serverUrl == null || serverUrl.isEmpty) return;
-    unawaited(_sendBeacon(client, serverUrl, event));
-  }
-
-  static Future<void> _sendBeacon(ApiClient client, String serverUrl, String event) async {
-    try {
-      await client.dio.get<void>(
-        '$serverUrl/api/v1/settings/effective',
-        queryParameters: {'keys': 'playback.auto_skip_intro', 'dbg': event},
-      );
-    } catch (_) {
-      // Diagnostics must never affect playback.
-    }
+    final session = beaconSession?.call();
+    if (client == null || session == null || session.serverUrl.isEmpty) return;
+    unawaited(sendClientDiagnosticEvent(client, session, event));
   }
 
   VideoPlayerController? _controller;

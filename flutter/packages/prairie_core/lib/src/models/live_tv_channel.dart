@@ -10,7 +10,6 @@ class LiveTvChannel {
     this.logoUrl,
     required this.hd,
     required this.enabled,
-    this.streamUrl,
     this.guideStationId,
   });
 
@@ -23,6 +22,5 @@ class LiveTvChannel {
   final String? logoUrl;
   final bool hd;
   final bool enabled;
-  final String? streamUrl;
   final String? guideStationId;
 }

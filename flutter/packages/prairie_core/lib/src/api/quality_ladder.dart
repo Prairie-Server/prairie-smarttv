@@ -39,7 +39,7 @@ class QualityLadderRung {
   };
 }
 
-/// Picker payload from `GET /api/v1/playback/quality-ladder`.
+/// Picker payload from `GET /api/v2/playback/quality-ladder`.
 class QualityLadderResponse {
   const QualityLadderResponse({
     required this.rungs,
@@ -157,7 +157,7 @@ Future<List<QualityLadderRung>> _loadLadder(ApiClient client, PrairieSession ses
         // that want a source-capped menu pass sourceHeight to [fetchQualityLadder]
         // (or hit `?source_height=` themselves); we filter locally so a 1080p
         // session cannot pin a truncated cache for a later 4K file.
-        '/api/v1/playback/quality-ladder',
+        '/api/v2/playback/quality-ladder',
         method: 'GET',
       );
       final resp = QualityLadderResponse.fromJson(json);
