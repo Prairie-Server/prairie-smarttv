@@ -326,7 +326,7 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC1090
           source "$WEBOS_FLUTTER_NDK_ENV"
-          bash flutter/scripts/build-webos.sh
+          bash flutter/scripts/build-webos.sh --package-version "${{ needs.flutter-verify.outputs.version }}"
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

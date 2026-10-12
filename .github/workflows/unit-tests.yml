@@ -189,7 +189,8 @@ jobs:
         run: |
           set -euo pipefail
           source "${WEBOS_FLUTTER_NDK_ENV}"
-          bash flutter/scripts/build-webos.sh
+          # A dummy version exercises the --dart-define path release builds use.
+          bash flutter/scripts/build-webos.sh --package-version 0.0.0-ci
 
       - name: Verify IPK
         run: |
