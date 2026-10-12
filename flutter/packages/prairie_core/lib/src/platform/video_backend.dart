@@ -52,6 +52,12 @@ abstract class VideoBackend {
   /// Without this, a server encode that dies mid-play leaves the UI buffering.
   Stream<String> get errorStream;
 
+  /// Fires once when the native player reaches end of stream. Both plugins
+  /// react to their own `completed` event by pausing and seeking to the
+  /// duration, which leaves the last frame (or last second, re-played) on
+  /// screen unless the player screen acts on this.
+  Stream<void> get completedStream;
+
   Duration? get duration;
   bool get isPlaying;
   bool get isInitialized;

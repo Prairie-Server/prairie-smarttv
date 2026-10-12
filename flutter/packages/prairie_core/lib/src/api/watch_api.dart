@@ -4,8 +4,10 @@ import '../models/auth.dart';
 import '../models/watch_detail.dart';
 import 'api_client.dart';
 
-/// Mirrors `fetchWatchDetail` from src/api/watch.ts.
-Future<WatchDetail> fetchWatchDetail(ApiClient client, PrairieSession session, String contentId) async {
+/// v2 `getWatchState`. [fileId] selects the version whose markers the server
+/// fills in (it only populates one); omitted, the server picks its default.
+Future<WatchDetail> fetchWatchDetail(ApiClient client, PrairieSession session, String contentId, {int? fileId}) async {
+  final query = fileId != null && fileId > 0 ? '?file_id=$fileId' : '';
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(
       serverUrl: session.serverUrl,
@@ -14,7 +16,7 @@ Future<WatchDetail> fetchWatchDetail(ApiClient client, PrairieSession session, S
       profileId: session.profileId,
       profileToken: session.profileToken,
     ),
-    '/api/v1/watch/${Uri.encodeComponent(contentId)}',
+    '/api/v2/watch/${Uri.encodeComponent(contentId)}$query',
   );
   return WatchDetail.fromJson(json);
 }

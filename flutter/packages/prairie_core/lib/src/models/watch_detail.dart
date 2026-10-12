@@ -1,3 +1,4 @@
+import '../player/playback_markers.dart';
 import '../player/trickplay.dart';
 
 /// Mirrors `AudioTrackInfo` from src/api/watch.ts.
@@ -126,6 +127,7 @@ class FileVersion {
     this.audioTracks = const [],
     this.subtitleTracks = const [],
     this.trickplay,
+    this.markers = const [],
   });
 
   final int fileId;
@@ -139,18 +141,32 @@ class FileVersion {
   final List<SubtitleTrackInfo> subtitleTracks;
   final TrickplayInfo? trickplay;
 
+  /// Intro/credits/recap/preview occurrences for this file, source time.
+  /// The server only fills these for the file the watch read selected.
+  final List<MarkerRegion> markers;
+
   factory FileVersion.fromJson(Map<String, dynamic> json) => FileVersion(
-    fileId: json['file_id'] as int,
+    fileId: idFromJson(json['file_id']) ?? 0,
     resolution: json['resolution'] as String?,
     codecVideo: json['codec_video'] as String?,
     codecAudio: json['codec_audio'] as String?,
     container: json['container'] as String?,
-    duration: json['duration'] as int?,
+    // v1 `duration`, v2 `duration_seconds`.
+    duration: ((json['duration'] ?? json['duration_seconds']) as num?)?.toInt(),
     videoTracks: (json['video_tracks'] as List<dynamic>? ?? []).map((j) => VideoTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     audioTracks: (json['audio_tracks'] as List<dynamic>? ?? []).map((j) => AudioTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     subtitleTracks: (json['subtitle_tracks'] as List<dynamic>? ?? []).map((j) => SubtitleTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     trickplay: json['trickplay'] != null ? TrickplayInfo.fromJson(json['trickplay'] as Map<String, dynamic>) : null,
+    markers: parseMarkerRegions(json),
   );
+}
+
+/// v1 sends integer ids, v2 opaque string ids that are integers for files.
+int? idFromJson(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
 }
 
 /// Mirrors `WatchUserData` from src/api/watch.ts.
@@ -167,7 +183,7 @@ class WatchUserData {
     isInProgress: json['is_in_progress'] as bool?,
     positionSeconds: (json['position_seconds'] as num?)?.toDouble(),
     durationSeconds: (json['duration_seconds'] as num?)?.toDouble(),
-    lastFileId: json['last_file_id'] as int?,
+    lastFileId: idFromJson(json['last_file_id']),
   );
 }
 
@@ -184,6 +200,7 @@ class WatchDetail {
     this.versions = const [],
     this.userData,
     this.seriesId,
+    this.seriesTitle,
     this.seasonNumber,
     this.episodeNumber,
   });
@@ -198,6 +215,7 @@ class WatchDetail {
   final List<FileVersion> versions;
   final WatchUserData? userData;
   final String? seriesId;
+  final String? seriesTitle;
   final int? seasonNumber;
   final int? episodeNumber;
 
@@ -212,6 +230,7 @@ class WatchDetail {
     versions: (json['versions'] as List<dynamic>? ?? []).map((j) => FileVersion.fromJson(j as Map<String, dynamic>)).toList(),
     userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
     seriesId: json['series_id'] as String?,
+    seriesTitle: json['series_title'] as String?,
     seasonNumber: json['season_number'] as int?,
     episodeNumber: json['episode_number'] as int?,
   );

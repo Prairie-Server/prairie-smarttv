@@ -44,6 +44,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   PerformanceMode _mode = defaultPerformanceMode;
   PlaybackSettings _settings = const PlaybackSettings();
+  /// Profile-level skip/autoplay settings stored on the server; null until
+  /// read (or when there's no session / the read failed).
+  PlaybackSkipSettings? _skip;
   bool _loaded = false;
   _Section _section = _Section.playback;
   final _sidebarFocusNodes = {for (final s in _Section.values) s: FocusNode()};
@@ -66,12 +69,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = SharedPreferencesAsync();
     final mode = await loadPerformanceMode(prefs);
     final settings = await loadPlaybackSettings(prefs);
-    if (mounted) {
-      setState(() {
-        _mode = mode;
-        _settings = settings;
-        _loaded = true;
-      });
+    // `ref` is unusable once disposed, so bail before reading the session.
+    if (!mounted) return;
+    setState(() {
+      _mode = mode;
+      _settings = settings;
+      _loaded = true;
+    });
+    final session = ref.read(sessionProvider);
+    if (session == null) return;
+    try {
+      final skip = await fetchPlaybackSkipSettings(ref.read(apiClientProvider), session);
+      if (mounted) setState(() => _skip = skip);
+    } catch (e) {
+      debugPrint('prairie.settings: skip settings unavailable: $e');
+    }
+  }
+
+  /// Optimistic: shows [next] at once, reverts if the server refuses it.
+  Future<void> _updateSkip(PlaybackSkipSettings next, String key, Object value) async {
+    final previous = _skip;
+    final session = ref.read(sessionProvider);
+    if (previous == null || session == null) return;
+    setState(() => _skip = next);
+    try {
+      await savePlaybackSkipSetting(ref.read(apiClientProvider), session, key, value);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _skip = previous);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(e is ApiError ? e.message : 'Could not save setting')),
+      );
     }
   }
 
@@ -237,6 +265,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         value: _settings.is8KPanel,
         onChanged: (v) => _updateSettings((s) => s.copyWith(is8KPanel: v)),
       ),
+      ..._skipSettingsRows(),
       const SizedBox(height: 24),
       const Text('Diagnostics', style: TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600)),
       const SizedBox(height: 10),
@@ -259,6 +288,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         hint: 'Sends player state to the server request log during playback. Extra network traffic — leave off unless debugging.',
         value: _settings.enableDiagnosticsBeacon,
         onChanged: (v) => _updateSettings((s) => s.copyWith(enableDiagnosticsBeacon: v)),
+      ),
+    ];
+  }
+
+  /// Saved to the profile on the server, so they follow the viewer to every
+  /// Prairie client. Hidden when they couldn't be read.
+  List<Widget> _skipSettingsRows() {
+    final skip = _skip;
+    if (skip == null) return const [];
+    return [
+      const SizedBox(height: 24),
+      const Text('Skipping & autoplay', style: TextStyle(color: PrairieColors.amber, fontSize: 13, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 4),
+      const Text('Saved to your profile — applies on every device.', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
+      const SizedBox(height: 10),
+      _SettingsRow(
+        label: 'Skip intros',
+        hint: 'Ask shows a Skip Intro button; Always skips with a chance to undo.',
+        value: switch (skip.introSkipMode) {
+          IntroSkipMode.never => 'Never',
+          IntroSkipMode.ask => 'Ask',
+          IntroSkipMode.always => 'Always',
+        },
+        onTap: () {
+          final next = IntroSkipMode.values[(skip.introSkipMode.index + 1) % IntroSkipMode.values.length];
+          _updateSkip(skip.copyWith(introSkipMode: next), PlaybackSkipSettings.introSkipModeKey, next.name);
+        },
+      ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: 'Skip recaps',
+        hint: 'Jump past "previously on" segments automatically.',
+        value: skip.autoSkipRecap,
+        onChanged: (v) => _updateSkip(skip.copyWith(autoSkipRecap: v), PlaybackSkipSettings.autoSkipRecapKey, v),
+      ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: 'Skip credits',
+        hint: 'Jump past end credits automatically.',
+        value: skip.autoSkipCredits,
+        onChanged: (v) => _updateSkip(skip.copyWith(autoSkipCredits: v), PlaybackSkipSettings.autoSkipCreditsKey, v),
+      ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: 'Autoplay next episode',
+        hint: 'Count down and start the next episode when one ends.',
+        value: skip.autoPlayNext,
+        onChanged: (v) => _updateSkip(skip.copyWith(autoPlayNext: v), PlaybackSkipSettings.autoPlayNextKey, v),
+      ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: 'Up next during previews',
+        hint: 'Offer the next episode as soon as a next-episode preview starts, not only at the credits.',
+        value: skip.autoPlayNextPreview,
+        onChanged: (v) => _updateSkip(skip.copyWith(autoPlayNextPreview: v), PlaybackSkipSettings.autoPlayNextPreviewKey, v),
       ),
     ];
   }

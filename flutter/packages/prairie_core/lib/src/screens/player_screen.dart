@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' hide Route;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
+import 'package:prairie_core/src/lib/detail_metadata.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _progressIntervalMs = 10000;
@@ -55,6 +56,15 @@ const _seekDebounceDelay = Duration(milliseconds: 500);
 /// `attempt_count`; intent replans reset it). Lower than the protocol's 8
 /// because each attempt on a TV can spend the full startup budget.
 const _maxRecoveryAttempts = 3;
+/// Transport-row skip buttons.
+const _skipButtonStep = Duration(seconds: 10);
+/// How long "Skip Intro" / "Watch Intro" stays up (web INTRO_PROMPT_SECONDS).
+const _introPromptDuration = Duration(seconds: 5);
+/// Up-next countdown before the next episode starts (web/Android).
+const _upNextCountdownSeconds = 10;
+/// A skip landing this close to the end is the end — finish the episode
+/// instead of seeking to a frame the stream may never produce.
+const _endSlackSeconds = 2.0;
 
 /// Mirrors web's usePlaybackSession/VideoPlayer lifecycle on protocol v3:
 /// start (with transient retry), sequenced progress, stop with the final
@@ -83,6 +93,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<String?>? _captionSub;
   StreamSubscription<String>? _errorSub;
+  StreamSubscription<void>? _completedSub;
   Duration _position = Duration.zero;
   /// Absolute-position anchor for the currently attached backend — see
   /// [PreparedPlayback.streamOriginSeconds]. Zero for direct/transcode
@@ -146,6 +157,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final FocusNode _backFocus = FocusNode(debugLabel: 'player.back');
   final FocusNode _seekFocus = FocusNode(debugLabel: 'player.seek');
   final FocusNode _playFocus = FocusNode(debugLabel: 'player.play');
+  /// The primary button of whichever overlay is up (skip pill / up next), so
+  /// OK acts on it while the chrome is hidden.
+  final FocusNode _overlayFocus = FocusNode(debugLabel: 'player.overlay');
+
+  /// Server-side skip/autoplay preferences; null until loaded, during which
+  /// nothing is skipped automatically.
+  PlaybackSkipSettings? _skip;
+  /// Marker regions of the playing file, source time.
+  List<MarkerRegion> _markers = const [];
+  /// Episodes around this one; null for movies or until loaded.
+  SeriesContext? _series;
+  /// Markers already acted on (skipped, prompted and answered) this session.
+  final Set<String> _resolvedMarkers = {};
+  /// Intro the "Skip Intro" / "Watch Intro" pill is for, if one is up.
+  MarkerRegion? _introPrompt;
+  bool _introPromptIsUndo = false;
+  /// Intro already offered in "ask" mode while the playhead stays inside it,
+  /// so the pill doesn't come back after timing out; cleared on leaving it.
+  String? _introOfferedKey;
+  Timer? _introPromptTimer;
+  bool _upNextVisible = false;
+  /// Viewer cancelled up next; stays cancelled for this episode.
+  bool _upNextDismissed = false;
+  int? _upNextSecondsLeft;
+  Timer? _upNextTimer;
+  /// Playback reached the end of the stream (or the credits were skipped
+  /// to it); the player is now leaving or counting down to the next episode.
+  bool _ended = false;
+  bool _switchingEpisode = false;
+
+  String? get _contentId => widget.launch.contentId ?? widget.launch.watch?.contentId;
+  EpisodeRef? get _previousEpisode => _contentId == null ? null : _series?.previousOf(_contentId!);
+  EpisodeRef? get _nextEpisode => _contentId == null ? null : _series?.nextOf(_contentId!);
+
+  /// The source runtime, from the plan. Deliberately not the native duration:
+  /// that is the remaining runtime for remux and the produced-so-far edge of
+  /// a growing HLS playlist, either of which would end playback early.
+  double? get _sourceDurationSeconds {
+    final seconds = _playbackSession?.durationSeconds;
+    return seconds != null && seconds > 0 ? seconds : null;
+  }
 
   @override
   void initState() {
@@ -154,7 +206,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _playFocus.addListener(_onControlFocusChanged);
     _backFocus.addListener(_onControlFocusChanged);
     _start();
+    unawaited(_loadPlaybackExtras());
     _scheduleHideControls();
+  }
+
+  /// Skip preferences, the playing file's markers and the series
+  /// neighborhood — none blocks playback, and each degrades to "feature off".
+  Future<void> _loadPlaybackExtras() async {
+    final client = ref.read(apiClientProvider);
+    final session = ref.read(sessionProvider);
+    if (session == null) return;
+    unawaited(
+      fetchPlaybackSkipSettings(client, session)
+          .catchError((Object e) {
+            debugPrint('prairie.player_screen: skip settings unavailable, using defaults: $e');
+            return const PlaybackSkipSettings();
+          })
+          .then((skip) {
+            if (mounted) setState(() => _skip = skip);
+          }),
+    );
+    final contentId = _contentId;
+    if (contentId == null) return;
+    // Re-read with file_id: the server fills markers in for one version
+    // only, and the launch's copy may have been read for a different one.
+    WatchDetail? watch;
+    try {
+      watch = await fetchWatchDetail(client, session, contentId, fileId: widget.launch.fileId);
+    } catch (e) {
+      debugPrint('prairie.player_screen: watch detail for markers failed: $e');
+      watch = widget.launch.watch;
+    }
+    if (!mounted || watch == null) return;
+    final markers = selectFileVersion(watch, widget.launch.fileId)?.markers ?? const <MarkerRegion>[];
+    setState(() => _markers = markers);
+    final seriesId = watch.seriesId;
+    final season = watch.seasonNumber;
+    if (seriesId == null || seriesId.isEmpty || season == null) return;
+    try {
+      final series = await loadSeriesContext(
+        client,
+        ref.read(sessionProvider) ?? session,
+        seriesId: seriesId,
+        seriesTitle: watch.seriesTitle,
+        currentSeason: season,
+      );
+      if (mounted) setState(() => _series = series);
+    } catch (e) {
+      debugPrint('prairie.player_screen: series episodes unavailable: $e');
+    }
   }
 
   @override
@@ -163,12 +263,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _positionSub?.cancel();
     _captionSub?.cancel();
     _errorSub?.cancel();
+    _completedSub?.cancel();
     _progressTimer?.cancel();
     _hideControlsTimer?.cancel();
     _stallTimer?.cancel();
     _seekDebounce?.cancel();
     _seekPreviewHideTimer?.cancel();
     _scrubCommitTimer?.cancel();
+    _introPromptTimer?.cancel();
+    _upNextTimer?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -176,6 +279,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _backFocus.dispose();
     _seekFocus.dispose();
     _playFocus.dispose();
+    _overlayFocus.dispose();
     // Widget teardown that bypasses [_exit] (route replace, error boundary)
     // must still stop the Prairie session and free the hardware decoder.
     final sessionId = _activeSessionId;
@@ -218,9 +322,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _seekPreviewTime = null;
     });
     // Controls leave the tree with their FocusNodes — park focus on the
-    // idle catcher so the next D-pad event has somewhere to land.
+    // idle catcher (or an overlay button, so OK acts on it) so the next
+    // D-pad event has somewhere to land.
+    _focusIdleOrOverlay();
+  }
+
+  bool get _overlayVisible => _introPrompt != null || _upNextVisible || _manualSkipRegion != null;
+
+  void _focusIdleOrOverlay() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_controlsVisible) _idleFocus.requestFocus();
+      if (!mounted || _controlsVisible) return;
+      if (_overlayVisible && _overlayFocus.context != null) {
+        _overlayFocus.requestFocus();
+      } else {
+        _idleFocus.requestFocus();
+      }
     });
   }
 
@@ -717,6 +833,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _positionSub?.cancel();
     await _captionSub?.cancel();
     await _errorSub?.cancel();
+    await _completedSub?.cancel();
     _stallTimer?.cancel();
     final oldBackend = _backend;
     _backend = null;
@@ -787,6 +904,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _lastProgressAt = DateTime.now();
       }
       setState(() => _position = absolute);
+      _onPlaybackTick();
+    });
+    _completedSub = backend.completedStream.listen((_) {
+      if (!mounted || !identical(_backend, backend)) return;
+      _onPlaybackEnded();
     });
     _captionSub = backend.captionStream.listen((text) {
       if (mounted) setState(() => _caption = text);
@@ -1378,7 +1500,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  Future<void> _exit() async {
+  /// Stops the session, frees the decoder, and routes to [to] — the next
+  /// episode's player — or back where the player was opened from.
+  Future<void> _exit({Route? to}) async {
     if (_exiting) return;
     _exiting = true;
     _prepareCancel?.cancel();
@@ -1390,8 +1514,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _progressTimer?.cancel();
     _stallTimer?.cancel();
     _seekDebounce?.cancel();
+    _introPromptTimer?.cancel();
+    _upNextTimer?.cancel();
     await _errorSub?.cancel();
     _errorSub = null;
+    await _completedSub?.cancel();
+    _completedSub = null;
     if (sessionId != null) {
       // Await stop so Back cannot race a new play against a still-open session
       // on the single hardware decoder / server encode slot. The stop carries
@@ -1408,7 +1536,228 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     await backend?.dispose();
     if (!mounted) return;
-    ref.read(routeProvider.notifier).go(widget.back);
+    ref.read(routeProvider.notifier).go(to ?? widget.back);
+  }
+
+  /// Runs on every position tick: end-of-stream fallback, intro/recap/
+  /// credits handling and the up-next trigger, all against source time.
+  void _onPlaybackTick() {
+    if (_loading || _exiting || _ended || _switchingEpisode || _recovering || _error != null) return;
+    if (_scrubTarget != null || _pendingReanchorSeek != null) return;
+    final t = _position.inMilliseconds / 1000.0;
+    final total = _sourceDurationSeconds;
+    // Not every stream raises the native completion event (the plugins'
+    // own handler pauses and seeks to the end, which can replay the last
+    // second), so reaching the source runtime counts as the end too.
+    if (total != null && t >= total - 1) {
+      _onPlaybackEnded();
+      return;
+    }
+    final skip = _skip;
+    if (skip == null) return;
+
+    final intro = activeMarker(_markers, MarkerKind.intro, t);
+    if (intro == null || intro.key != _introOfferedKey) _introOfferedKey = null;
+    final prompt = _introPrompt;
+    if (prompt != null && !_introPromptIsUndo && intro != prompt) {
+      _hideIntroPrompt(); // Seeked out of the intro.
+    } else if (intro != null && prompt == null && !_resolvedMarkers.contains(intro.key) && _introOfferedKey != intro.key) {
+      switch (skip.introSkipMode) {
+        case IntroSkipMode.never:
+          _resolvedMarkers.add(intro.key);
+        case IntroSkipMode.ask:
+          _introOfferedKey = intro.key;
+          _showIntroPrompt(intro, undo: false);
+        case IntroSkipMode.always:
+          _resolvedMarkers.add(intro.key);
+          _skipTo(intro.end);
+          _showIntroPrompt(intro, undo: true);
+          return;
+      }
+    }
+
+    for (final (kind, auto) in [(MarkerKind.recap, skip.autoSkipRecap), (MarkerKind.credits, skip.autoSkipCredits)]) {
+      final region = activeMarker(_markers, kind, t);
+      if (!auto || region == null || _resolvedMarkers.contains(region.key)) continue;
+      _resolvedMarkers.add(region.key);
+      _skipTo(region.end);
+      return;
+    }
+
+    _updateUpNext(t);
+    // A manual-skip pill comes and goes with the playhead rather than an
+    // event; move focus only when that changes, never off a button the
+    // viewer navigated to.
+    final overlay = _overlayVisible;
+    if (overlay != _overlayWasVisible) {
+      _overlayWasVisible = overlay;
+      if (!_controlsVisible) _focusIdleOrOverlay();
+    }
+  }
+
+  bool _overlayWasVisible = false;
+
+  /// Seeks past a marker, or finishes the episode when that lands at its end.
+  void _skipTo(double seconds) {
+    final total = _sourceDurationSeconds;
+    if (total != null && seconds >= total - _endSlackSeconds) {
+      _onPlaybackEnded();
+      return;
+    }
+    unawaited(_seekToPosition(Duration(milliseconds: (seconds * 1000).round()), revealChrome: false));
+  }
+
+  /// Recap/credits/preview the viewer can skip by hand: the active one that
+  /// isn't skipped automatically, while no intro pill or up-next card is up.
+  MarkerRegion? get _manualSkipRegion {
+    if (_introPrompt != null || _upNextVisible || _ended || _loading || _error != null) return null;
+    final t = _position.inMilliseconds / 1000.0;
+    for (final kind in const [MarkerKind.recap, MarkerKind.credits, MarkerKind.preview]) {
+      final region = activeMarker(_markers, kind, t);
+      if (region != null && !_resolvedMarkers.contains(region.key)) return region;
+    }
+    return null;
+  }
+
+  void _showIntroPrompt(MarkerRegion intro, {required bool undo}) {
+    _introPromptTimer?.cancel();
+    setState(() {
+      _introPrompt = intro;
+      _introPromptIsUndo = undo;
+    });
+    // ponytail: wall-clock timeout; web freezes it while paused.
+    _introPromptTimer = Timer(_introPromptDuration, _hideIntroPrompt);
+    if (!_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  void _hideIntroPrompt() {
+    _introPromptTimer?.cancel();
+    if (!mounted || _introPrompt == null) return;
+    final hadFocus = _overlayFocus.hasFocus;
+    setState(() => _introPrompt = null);
+    if (hadFocus && !_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  void _onIntroPromptPressed() {
+    final intro = _introPrompt;
+    if (intro == null) return;
+    _resolvedMarkers.add(intro.key);
+    final undo = _introPromptIsUndo;
+    _hideIntroPrompt();
+    _skipTo(undo ? intro.start : intro.end);
+  }
+
+  /// Shows up next on entering the trailing credits/preview run, when the
+  /// series has a next episode. Leaving the run (seek back) hides it again.
+  void _updateUpNext(double t) {
+    final next = _nextEpisode;
+    final skip = _skip;
+    final total = _sourceDurationSeconds;
+    final start = next == null || skip == null || total == null
+        ? null
+        : autoplayRegionStart(_markers, total, allowPreview: skip.autoPlayNextPreview);
+    if (start == null || t < start) {
+      if (_upNextVisible) _hideUpNext();
+      return;
+    }
+    if (_upNextVisible || _upNextDismissed) return;
+    _showUpNext(countdown: skip!.autoPlayNext);
+  }
+
+  void _showUpNext({required bool countdown}) {
+    _upNextTimer?.cancel();
+    setState(() {
+      _upNextVisible = true;
+      _upNextSecondsLeft = countdown ? _upNextCountdownSeconds : null;
+    });
+    if (countdown) {
+      _upNextTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        // Holds while the viewer has paused (not once the stream has ended).
+        if (!_ended && !(_backend?.isPlaying ?? false)) return;
+        final left = (_upNextSecondsLeft ?? 1) - 1;
+        if (left > 0) {
+          setState(() => _upNextSecondsLeft = left);
+          return;
+        }
+        _upNextTimer?.cancel();
+        final next = _nextEpisode;
+        if (next != null) unawaited(_playEpisode(next));
+      });
+    }
+    if (!_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  void _hideUpNext() {
+    _upNextTimer?.cancel();
+    final hadFocus = _overlayFocus.hasFocus;
+    setState(() {
+      _upNextVisible = false;
+      _upNextSecondsLeft = null;
+    });
+    if (hadFocus && !_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  void _dismissUpNext() {
+    _upNextDismissed = true;
+    _hideUpNext();
+    if (_ended) unawaited(_exit());
+  }
+
+  /// End of the episode: count down to the next one when autoplay is on
+  /// (unless the viewer already cancelled it), otherwise leave the player —
+  /// never sit on the last frame.
+  void _onPlaybackEnded() {
+    if (_ended || _exiting || _switchingEpisode) return;
+    _ended = true;
+    _introPromptTimer?.cancel();
+    _introPrompt = null;
+    final next = _nextEpisode;
+    if (next != null && (_skip?.autoPlayNext ?? true) && !_upNextDismissed) {
+      unawaited(_backend?.pause());
+      if (!(_upNextVisible && _upNextSecondsLeft != null)) _showUpNext(countdown: true);
+      return;
+    }
+    unawaited(_exit());
+  }
+
+  /// Replaces this player with one for [episode], stopping the current
+  /// session first so the two never hold the decoder at once.
+  Future<void> _playEpisode(EpisodeRef episode) async {
+    if (_switchingEpisode || _exiting) return;
+    _switchingEpisode = true;
+    _upNextTimer?.cancel();
+    setState(() => _loading = true);
+    try {
+      final watch = await fetchWatchDetail(ref.read(apiClientProvider), ref.read(sessionProvider)!, episode.contentId);
+      final fileId = selectPlaybackFileId(watch);
+      if (fileId == null) throw StateError('No playable file for ${episode.code}');
+      if (!mounted || _exiting) return;
+      await _exit(
+        to: PlayerRoute(
+          launch: PlayerLaunch(
+            fileId: fileId,
+            title: watch.title.isNotEmpty ? watch.title : episode.title,
+            contentId: episode.contentId,
+            startPositionSeconds: resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds) ?? 0.0,
+            watch: watch,
+            // Keep the viewer's subtitle choice; audio is per file.
+            initialSubtitleLanguage: widget.launch.initialSubtitleLanguage,
+          ),
+          back: widget.back,
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint('prairie.player_screen: _playEpisode failed: $e\n$stack');
+      if (!mounted || _exiting) return;
+      _switchingEpisode = false;
+      if (_ended) {
+        unawaited(_exit());
+        return;
+      }
+      setState(() => _loading = false);
+      _notify('Could not start ${episode.code}');
+    }
   }
 
   Future<void> _togglePlayPause() async {
@@ -1474,7 +1823,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// `initialize()`), so it is debounced: the displayed position updates on
   /// every call for responsive feedback, and the replan fires once input
   /// pauses, using the latest target.
-  Future<void> _seekToPosition(Duration target) async {
+  ///
+  /// [revealChrome] false keeps the controls hidden — automatic marker skips
+  /// shouldn't pop the whole transport up.
+  Future<void> _seekToPosition(Duration target, {bool revealChrome = true}) async {
     final backend = _backend;
     if (backend == null || _recovering) return;
     final generation = ++_seekGeneration;
@@ -1490,7 +1842,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final outsideWindow = timeline != null &&
         !timeline.canSeekLocally(targetSeconds, producedEndSeconds: _producedEndSeconds());
     if (canReanchor && (isRemux || outsideWindow || next < _streamOrigin)) {
-      _scheduleReanchor(next);
+      _scheduleReanchor(next, revealChrome: revealChrome);
       return;
     }
 
@@ -1506,11 +1858,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       debugPrint('prairie.player_screen: native seekTo failed: $err');
       backend.reportDiagnostic('seek:failed:${plan?.playMethod}:${err.message ?? err.code}');
       if (canReanchor) {
-        _scheduleReanchor(next);
+        _scheduleReanchor(next, revealChrome: revealChrome);
         return;
       }
     }
-    _showControls();
+    if (revealChrome) _showControls();
   }
 
   /// Records where a native seek actually landed, for the stats overlay and
@@ -1534,10 +1886,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  void _scheduleReanchor(Duration next) {
+  void _scheduleReanchor(Duration next, {bool revealChrome = true}) {
     _showSeekPreview(next);
     setState(() => _position = next);
-    _showControls();
+    if (revealChrome) _showControls();
     _pendingReanchorSeek = next;
     _seekDebounce?.cancel();
     _seekDebounce = Timer(_seekDebounceDelay, () {
@@ -1548,21 +1900,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       unawaited(_restartSessionAt(audioTrackIndex: audioIndex, positionSeconds: pending.inMilliseconds / 1000.0));
     });
   }
-
-  /// Overrides the app theme's flat `IconButton`/`TextButton` foreground:
-  /// passing a plain `color:` locks the icon/text color for every state,
-  /// but the shared theme still flips these buttons' *background* to
-  /// [PrairieColors.ink] on D-pad focus — combined, that made the
-  /// audio/subtitle/stats controls (which pass `color: PrairieColors.ink`)
-  /// paint an ink-colored icon on an ink-colored background when focused,
-  /// i.e. invisible. This keeps [color] unfocused and flips to
-  /// [PrairieColors.bg] focused, matching the background flip everywhere
-  /// else in the app.
-  ButtonStyle _transportForegroundStyle(Color color) => ButtonStyle(
-    foregroundColor: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.focused) ? PrairieColors.bg : color,
-    ),
-  );
 
   String _formatDuration(Duration d) {
     final h = d.inHours;
@@ -1799,54 +2136,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                     Text(_formatDuration(_totalDuration ?? Duration.zero), style: const TextStyle(color: PrairieColors.muted)),
                                   ],
                                 ),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    TextButton(
-                                      style: _transportForegroundStyle(PrairieColors.ink),
-                                      onPressed: () => _seekBy(const Duration(seconds: -15)),
-                                      child: const Text('-15s', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      focusNode: _playFocus,
-                                      autofocus: true,
-                                      iconSize: 48,
-                                      style: _transportForegroundStyle(PrairieColors.amber),
-                                      onPressed: _togglePlayPause,
-                                      icon: Icon(backend.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    TextButton(
-                                      style: _transportForegroundStyle(PrairieColors.ink),
-                                      onPressed: () => _seekBy(const Duration(seconds: 15)),
-                                      child: const Text('+15s', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                    ),
-                                    if (_audioTracks.length > 1) ...[
-                                      const SizedBox(width: 8),
+                                PlayerTransportCluster(
+                                  playFocus: _playFocus,
+                                  isPlaying: backend.isPlaying,
+                                  onPlayPause: _togglePlayPause,
+                                  skipStep: _skipButtonStep,
+                                  onSkipBack: () => _seekBy(-_skipButtonStep),
+                                  onSkipForward: () => _seekBy(_skipButtonStep),
+                                  onPreviousEpisode: _previousEpisode == null ? null : () => _playEpisode(_previousEpisode!),
+                                  onNextEpisode: _nextEpisode == null ? null : () => _playEpisode(_nextEpisode!),
+                                  trailing: [
+                                    if (_audioTracks.length > 1)
                                       IconButton(
                                         iconSize: 28,
-                                        style: _transportForegroundStyle(_busyAudio ? PrairieColors.muted : PrairieColors.ink),
+                                        style: playerTransportStyle(_busyAudio ? PrairieColors.muted : PrairieColors.ink),
                                         onPressed: _busyAudio || _busyQuality ? null : _pickAudioTrack,
                                         icon: const Icon(Icons.audiotrack),
                                         tooltip: 'Audio',
                                       ),
-                                    ],
-                                    if (backend.subtitleTracks.isNotEmpty) ...[
-                                      const SizedBox(width: 8),
+                                    if (backend.subtitleTracks.isNotEmpty)
                                       IconButton(
                                         iconSize: 28,
-                                        style: _transportForegroundStyle(_selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink),
+                                        style: playerTransportStyle(_selectedSubtitleTrackId != null ? PrairieColors.amber : PrairieColors.ink),
                                         onPressed: _busyQuality ? null : _pickSubtitleTrack,
                                         icon: const Icon(Icons.closed_caption),
                                         tooltip: 'Subtitles',
                                       ),
-                                    ],
-                                    if (_qualityOptions.isNotEmpty) ...[
-                                      const SizedBox(width: 8),
+                                    if (_qualityOptions.isNotEmpty)
                                       IconButton(
                                         iconSize: 28,
-                                        style: _transportForegroundStyle(
+                                        style: playerTransportStyle(
                                           _busyQuality
                                               ? PrairieColors.muted
                                               : (_activeQualityId != 'original' ? PrairieColors.amber : PrairieColors.ink),
@@ -1855,11 +2174,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                         icon: const Icon(Icons.high_quality),
                                         tooltip: 'Quality',
                                       ),
-                                    ],
-                                    const SizedBox(width: 8),
                                     IconButton(
                                       iconSize: 28,
-                                      style: _transportForegroundStyle(_showStats ? PrairieColors.amber : PrairieColors.ink),
+                                      style: playerTransportStyle(_showStats ? PrairieColors.amber : PrairieColors.ink),
                                       onPressed: () => setState(() => _showStats = !_showStats),
                                       icon: const Icon(Icons.query_stats),
                                       tooltip: 'Stats for nerds',
@@ -1872,12 +2189,58 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                       ),
                     ),
+                  if (backend != null && _error == null) _buildMarkerOverlay(),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// Skip Intro / Watch Intro / Skip Recap·Credits·Preview pill, or the up
+  /// next card, bottom right — above the transport while it is showing.
+  Widget _buildMarkerOverlay() {
+    Widget? child;
+    final next = _nextEpisode;
+    final intro = _introPrompt;
+    final manual = _manualSkipRegion;
+    if (_upNextVisible && next != null) {
+      child = PlayerUpNextCard(
+        episodeCode: next.code,
+        title: next.title,
+        secondsLeft: _upNextSecondsLeft,
+        playFocus: _overlayFocus,
+        onPlayNow: () => _playEpisode(next),
+        onDismiss: _dismissUpNext,
+      );
+    } else if (intro != null) {
+      child = PlayerSkipButton(
+        label: _introPromptIsUndo ? 'Watch Intro' : 'Skip Intro',
+        caption: _introPromptIsUndo ? 'Intro skipped' : null,
+        focusNode: _overlayFocus,
+        onPressed: _onIntroPromptPressed,
+      );
+    } else if (manual != null && !_loading) {
+      child = PlayerSkipButton(
+        label: switch (manual.kind) {
+          MarkerKind.recap => 'Skip Recap',
+          MarkerKind.credits => 'Skip Credits',
+          _ => 'Skip Preview',
+        },
+        focusNode: _overlayFocus,
+        onPressed: () {
+          _resolvedMarkers.add(manual.key);
+          _skipTo(manual.end);
+        },
+      );
+    }
+    if (child == null) return const SizedBox.shrink();
+    return Positioned(
+      right: 48,
+      bottom: _controlsVisible ? 168 : 56,
+      child: child,
     );
   }
 
