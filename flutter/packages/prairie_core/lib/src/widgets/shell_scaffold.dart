@@ -38,6 +38,7 @@ class ShellScaffold extends ConsumerWidget {
           ShellTab.collections => const CollectionsRoute(),
           ShellTab.search => const SearchRoute(),
           ShellTab.livetv => const LiveTvRoute(),
+          ShellTab.calendar => const CalendarRoute(),
         }),
         onProfiles: () => ref.read(routeProvider.notifier).go(ProfilesRoute(auth: session.asAuthTokens)),
         onSettings: () => ref.read(routeProvider.notifier).go(SettingsRoute(back: switch (active) {
@@ -46,6 +47,7 @@ class ShellScaffold extends ConsumerWidget {
           ShellTab.collections => const CollectionsRoute(),
           ShellTab.search => const SearchRoute(),
           ShellTab.livetv => const LiveTvRoute(),
+          ShellTab.calendar => const CalendarRoute(),
         })),
         onDisconnect: () async {
           await ref.read(sessionProvider.notifier).clear();

@@ -5,6 +5,7 @@
 library;
 
 export 'src/models/auth.dart';
+export 'src/models/calendar_event.dart';
 export 'src/models/catalog_item.dart';
 export 'src/models/collection.dart';
 export 'src/models/episode.dart';
@@ -20,6 +21,7 @@ export 'src/lib/artwork_url.dart';
 export 'src/api/api_client.dart';
 export 'src/api/api_error.dart';
 export 'src/api/auth_api.dart';
+export 'src/api/calendar_api.dart';
 export 'src/api/catalog_api.dart';
 export 'src/api/check_server.dart';
 export 'src/api/collections_api.dart';
@@ -58,6 +60,7 @@ export 'src/storage/server_registry_store.dart';
 export 'src/storage/session_store.dart';
 export 'src/theme/prairie_theme.dart';
 export 'src/app.dart';
+export 'src/screens/calendar_screen.dart';
 export 'src/screens/collection_browse_screen.dart';
 export 'src/screens/collections_screen.dart';
 export 'src/screens/connect_screen.dart';
