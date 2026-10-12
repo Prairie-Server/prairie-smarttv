@@ -1,4 +1,4 @@
-/// Tokens returned from `/api/v1/auth/login`, before a profile is chosen.
+/// Tokens returned from `/api/v2/auth/login`, before a profile is chosen.
 ///
 /// Mirrors `AuthTokens` from src/api/auth.ts / src/storage/session.ts.
 class AuthTokens {

@@ -1,3 +1,4 @@
+import '../models/watch_detail.dart' show idFromJson;
 import 'api_client.dart';
 
 /// Mirrors `LoginRequest`/`LoginResponse`/`LoginUser` from src/api/auth.ts.
@@ -11,11 +12,11 @@ class LoginRequest {
 
 class LoginUser {
   const LoginUser({required this.id, required this.username});
-  final int id;
+  final int? id;
   final String username;
 
   factory LoginUser.fromJson(Map<String, dynamic> json) =>
-      LoginUser(id: json['id'] as int, username: json['username'] as String);
+      LoginUser(id: idFromJson(json['id']), username: json['username'] as String);
 }
 
 class LoginResponse {
@@ -43,7 +44,7 @@ class LoginResponse {
 Future<LoginResponse> login(ApiClient client, String serverUrl, LoginRequest credentials) async {
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(serverUrl: serverUrl),
-    '/api/v1/auth/login',
+    '/api/v2/auth/login',
     method: 'POST',
     body: credentials.toJson(),
   );
@@ -82,9 +83,9 @@ class Profile {
 Future<List<Profile>> listProfiles(ApiClient client, String serverUrl, String accessToken) async {
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(serverUrl: serverUrl, accessToken: accessToken),
-    '/api/v1/profiles',
+    '/api/v2/profiles',
   );
-  final profiles = json['profiles'] as List<dynamic>?;
+  final profiles = (json['items'] ?? json['profiles']) as List<dynamic>?;
   return profiles?.map((p) => Profile.fromJson(p as Map<String, dynamic>)).toList() ?? [];
 }
 
@@ -113,7 +114,7 @@ Future<VerifyPinResponse> verifyProfilePin(
 ) async {
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(serverUrl: serverUrl, accessToken: accessToken),
-    '/api/v1/profiles/${Uri.encodeComponent(profileId)}/verify-pin',
+    '/api/v2/profiles/${Uri.encodeComponent(profileId)}/verify-pin',
     method: 'POST',
     body: {'pin': pin},
   );
@@ -145,7 +146,7 @@ Future<SetupStatusResponse> fetchSetupStatus(
 }) async {
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(serverUrl: serverUrl, timeout: timeout ?? const Duration(seconds: 30)),
-    '/api/v1/auth/setup',
+    '/api/v2/system/setup',
   );
   return SetupStatusResponse.fromJson(json);
 }
@@ -207,13 +208,17 @@ class DeviceLoginPollResponse {
   final String? refreshToken;
   final String? username;
 
-  factory DeviceLoginPollResponse.fromJson(Map<String, dynamic> json) => DeviceLoginPollResponse(
-    status: json['status'] as String,
-    pollAfter: json['poll_after'] as int? ?? 0,
-    accessToken: json['access_token'] as String?,
-    refreshToken: json['refresh_token'] as String?,
-    username: (json['user'] as Map<String, dynamic>?)?['username'] as String?,
-  );
+  /// v2 nests the approved tokens under `tokens`; v1 sent them top-level.
+  factory DeviceLoginPollResponse.fromJson(Map<String, dynamic> json) {
+    final tokens = json['tokens'] as Map<String, dynamic>? ?? json;
+    return DeviceLoginPollResponse(
+      status: json['status'] as String,
+      pollAfter: json['poll_after'] as int? ?? 0,
+      accessToken: tokens['access_token'] as String?,
+      refreshToken: tokens['refresh_token'] as String?,
+      username: (tokens['user'] as Map<String, dynamic>?)?['username'] as String?,
+    );
+  }
 }
 
 /// Mirrors `startDeviceLogin` from src/api/auth.ts.
@@ -225,7 +230,7 @@ Future<DeviceLoginStartResponse> startDeviceLogin(
 }) async {
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(serverUrl: serverUrl),
-    '/api/v1/auth/device/start',
+    '/api/v2/auth/device/start',
     method: 'POST',
     body: {'device_name': deviceName, 'device_platform': devicePlatform},
   );
@@ -236,7 +241,7 @@ Future<DeviceLoginStartResponse> startDeviceLogin(
 Future<DeviceLoginPollResponse> pollDeviceLogin(ApiClient client, String serverUrl, String deviceCode) async {
   final json = await client.request<Map<String, dynamic>>(
     ApiClientOptions(serverUrl: serverUrl),
-    '/api/v1/auth/device/poll',
+    '/api/v2/auth/device/poll',
     method: 'POST',
     body: {'device_code': deviceCode},
   );

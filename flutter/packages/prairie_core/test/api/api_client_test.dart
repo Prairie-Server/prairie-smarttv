@@ -54,6 +54,8 @@ void main() {
       expect(isAuthLoginPath('/api/v1/auth/login?x=1'), true);
       expect(isAuthLoginPath('/api/v1/auth/login/'), true);
       expect(isAuthLoginPath('/api/v1/home/sections'), false);
+      expect(isAuthLoginPath('/api/v2/auth/login'), true);
+      expect(isAuthLoginPath('/api/v2/auth/refresh'), true);
     });
   });
 
@@ -124,7 +126,7 @@ void main() {
       String? refreshedRefresh;
 
       final client = _clientWith((options) {
-        if (options.path.endsWith('/api/v1/auth/refresh')) {
+        if (options.path.endsWith('/api/v2/auth/refresh')) {
           return jsonResponse('{"access_token":"new-tok","refresh_token":"refresh-2","expires_in":3600}', 200);
         }
         homeCalls++;
@@ -178,7 +180,7 @@ void main() {
     test('calls onUnauthorized when the refresh call itself fails', () async {
       var unauthorizedCalls = 0;
       final client = _clientWith((options) {
-        if (options.path.endsWith('/api/v1/auth/refresh')) {
+        if (options.path.endsWith('/api/v2/auth/refresh')) {
           return jsonResponse('nope', 401);
         }
         return jsonResponse('{"message":"expired"}', 401);
@@ -205,7 +207,7 @@ void main() {
       var tokensRefreshedCalls = 0;
 
       final client = _clientWith((options) {
-        if (options.path.endsWith('/api/v1/auth/refresh')) {
+        if (options.path.endsWith('/api/v2/auth/refresh')) {
           return jsonResponse('{"access_token":"new","refresh_token":"ref2","expires_in":60}', 200);
         }
         homeCalls++;

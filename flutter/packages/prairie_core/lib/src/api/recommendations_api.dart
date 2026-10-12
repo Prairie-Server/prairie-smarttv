@@ -21,9 +21,9 @@ Future<SimilarItemsResult> fetchSimilarItems(ApiClient client, PrairieSession se
       profileId: session.profileId,
       profileToken: session.profileToken,
     ),
-    '/api/v1/recommendations/similar/${Uri.encodeComponent(contentId)}',
+    '/api/v2/recommendations/similar/${Uri.encodeComponent(contentId)}',
   );
-  final cards = (json['cards'] as List<dynamic>? ?? [])
+  final cards = ((json['items'] ?? json['cards']) as List<dynamic>? ?? [])
       .map((j) => catalogItemFromJson(j as Map<String, dynamic>))
       .where((c) => c.contentId.isNotEmpty)
       .toList();
