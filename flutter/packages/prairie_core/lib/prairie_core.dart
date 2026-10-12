@@ -31,7 +31,6 @@ export 'src/api/playback_session_api.dart';
 export 'src/api/playback_types.dart';
 export 'src/api/quality_ladder.dart';
 export 'src/api/recommendations_api.dart';
-export 'src/api/target_resolution.dart';
 export 'src/api/transcode_api.dart';
 export 'src/api/user_state_api.dart';
 export 'src/api/wait_for_hls_manifest.dart';

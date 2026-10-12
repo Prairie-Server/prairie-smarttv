@@ -150,29 +150,4 @@ void main() {
       expect(cachedOrFallbackQualityLadder(), isNotEmpty);
     });
   });
-
-  group('resolveQualityTargets', () {
-    test('maps rung ids to resolution + bitrate from the ladder', () {
-      final options = buildQualityOptions(ladder: fallbackQualityLadder, nativeHeight: 2160);
-      final targets = resolveQualityTargets(
-        qualityId: '1080p-high',
-        options: options,
-        playMethod: 'direct',
-        ladder: fallbackQualityLadder,
-      );
-      expect(targets?.resolution, '1080p');
-      expect(targets?.bitrateKbps, 10000);
-      expect(targets?.copyVideo, isFalse);
-    });
-
-    test('original on direct returns null (drop HLS)', () {
-      final targets = resolveQualityTargets(
-        qualityId: 'original',
-        options: const [],
-        playMethod: 'direct',
-        ladder: fallbackQualityLadder,
-      );
-      expect(targets, isNull);
-    });
-  });
 }

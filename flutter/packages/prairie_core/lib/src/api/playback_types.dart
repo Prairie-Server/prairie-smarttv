@@ -5,10 +5,6 @@ import '../models/watch_detail.dart';
 /// Mirrors `PlayMethod`/`ForcedPlayMethod` from src/platform/types.ts.
 enum PlayMethod { direct, remux, transcode }
 
-extension PlayMethodJson on PlayMethod {
-  String get wireValue => name;
-}
-
 /// Conservative TV capability advertisement for foundation playback. Mirrors
 /// `DEFAULT_TV_CAPABILITIES` from src/player/types.ts.
 class TvCapabilities {
@@ -20,10 +16,7 @@ class TvCapabilities {
   static const maxAudioChannels = 6;
 }
 
-/// Mirrors the playback-v3 start contract used by both the native /api/v2
-/// endpoint and the frozen /api/v1 bridge. The bridge now rejects pre-v3
-/// request bodies, so this client must speak protocol v3 even while keeping
-/// the legacy lifecycle endpoints for compatibility.
+/// Mirrors the playback-v3 start contract (`POST /api/v2/playback/start`).
 
 class BuildPlaybackStartInput {
   const BuildPlaybackStartInput({
@@ -74,8 +67,8 @@ String _newPlaybackAttemptId() {
 }
 
 
-/// Mirrors `buildPlaybackStartRequest`: builds the POST /api/v1/playback/start
-/// body, omitting `play_method` when unset so Prairie can prefer remux/auto.
+/// Mirrors `buildPlaybackStartRequest`: builds the playback start body (see
+/// `startPlayback`, which adapts it for /api/v2).
 Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
   final videoCodecs = input.codecsVideo ?? TvCapabilities.codecsVideo;
   final audioCodecs = input.codecsAudio ?? TvCapabilities.codecsAudio;
@@ -211,17 +204,6 @@ Map<String, dynamic> buildPlaybackStartRequest(BuildPlaybackStartInput input) {
       'deliveries': deliveries,
     },
   };
-}
-
-/// Mirrors `withPlayMethod`.
-Map<String, dynamic> withPlayMethod(Map<String, dynamic> body, PlayMethod? method) {
-  final next = Map<String, dynamic>.from(body);
-  if (method == null) {
-    next.remove('play_method');
-  } else {
-    next['play_method'] = method.wireValue;
-  }
-  return next;
 }
 
 /// Picks a source audio track the device can decode when the container

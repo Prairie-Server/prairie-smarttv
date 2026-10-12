@@ -197,33 +197,6 @@ void main() {
     });
   });
 
-  group('buildTranscodeStartRequest', () {
-    test('uses codec copy for remux', () {
-      final body = buildTranscodeStartRequest(
-        const TranscodeStartInput(sessionId: 's1', seekSeconds: 40, playMethod: 'remux'),
-      );
-      expect(body['target_codec_video'], 'copy');
-      expect(body['target_codec_audio'], 'copy');
-      expect(body['target_resolution'], '');
-      expect(body['target_bitrate_kbps'], 0);
-    });
-
-    test('omits target video codec for transcode', () {
-      final body = buildTranscodeStartRequest(
-        const TranscodeStartInput(
-          sessionId: 's1',
-          seekSeconds: 0,
-          playMethod: 'transcode',
-          sourceResolution: '2160p',
-          maxResolution: '1080p',
-        ),
-      );
-      expect(body.containsKey('target_codec_video'), isFalse);
-      expect(body['target_resolution'], '1080p');
-      expect(body['target_codec_audio'], 'aac');
-    });
-  });
-
   group('firstMediaSegmentUrl', () {
     test('resolves relative segments and carries query auth', () {
       expect(
@@ -246,13 +219,6 @@ void main() {
 
     test('returns null when the playlist has no #EXT-X-MAP (mpegts)', () {
       expect(initSegmentUrl('https://x/a.m3u8', '#EXTM3U\n#EXTINF:1,\nseg.ts\n'), isNull);
-    });
-  });
-
-  group('resolveTargetResolution', () {
-    test('never upscales past panel max', () {
-      expect(resolveTargetResolution('2160p', '1080p'), '1080p');
-      expect(resolveTargetResolution('720p', '2160p'), '720p');
     });
   });
 }

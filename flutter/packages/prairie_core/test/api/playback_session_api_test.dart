@@ -26,60 +26,6 @@ void main() {
     });
   });
 
-  group('reportPlaybackProgress', () {
-    test('POSTs position and optional buffering, returns advice when opted in', () async {
-      final adapter = FakeHttpAdapter((options) {
-        expect(options.method, 'POST');
-        expect(options.uri.path, contains('/api/v1/playback/sess-1/progress'));
-        expect(options.uri.queryParameters['advice'], '1');
-        expect(options.data.toString(), contains('is_buffering: true'));
-        expect(options.data.toString(), contains('throughput_kbps: 1800'));
-        return jsonResponse(
-          '{"advice":{"rung_id":"720p","resolution":"720p","bitrate_kbps":2000,"direction":"down","reason":"rebuffering","observed_kbps":1800}}',
-          200,
-        );
-      });
-      final client = ApiClient(dio: Dio()..httpClientAdapter = adapter);
-      const session = PrairieSession(
-        serverUrl: 'https://prairie.example',
-        username: 'u',
-        profileId: 'p',
-        accessToken: 'tok',
-      );
-
-      final advice = await reportPlaybackProgress(
-        client,
-        session,
-        'sess-1',
-        12.5,
-        false,
-        throughputKbps: 1800,
-        isBuffering: true,
-        requestAdvice: true,
-      );
-      expect(advice?.rungId, '720p');
-      expect(advice?.direction, 'down');
-      expect(advice?.bitrateKbps, 2000);
-    });
-
-    test('returns null advice on 204 without opt-in', () async {
-      final adapter = FakeHttpAdapter((options) {
-        expect(options.uri.queryParameters.containsKey('advice'), isFalse);
-        return ResponseBody.fromString('', 204);
-      });
-      final client = ApiClient(dio: Dio()..httpClientAdapter = adapter);
-      const session = PrairieSession(
-        serverUrl: 'https://prairie.example',
-        username: 'u',
-        profileId: 'p',
-        accessToken: 'tok',
-      );
-
-      final advice = await reportPlaybackProgress(client, session, 'sess-1', 1, false);
-      expect(advice, isNull);
-    });
-  });
-
   group('protocol v2 lifecycle', () {
     const session = PrairieSession(
       serverUrl: 'https://prairie.example',
@@ -162,18 +108,17 @@ void main() {
       await replanPlaybackAudio(client, session, started, audioTrackIndex: 1, positionSeconds: 30);
     });
 
-    test('falls back to the v1 bridge when v2 playback is absent', () async {
+    test('refuses to start when the server offers no installation', () async {
       final adapter = FakeHttpAdapter((o) {
-        if (o.uri.path == '/api/v2/playback/capabilities') return jsonResponse('{}', 404);
-        if (o.uri.path.endsWith('/progress')) return ResponseBody.fromString('', 204);
-        expect(o.uri.path, '/api/v1/playback/start');
-        expect(body(o)['file_id'], 515);
-        return jsonResponse(decision, 201);
+        expect(o.uri.path, '/api/v2/playback/capabilities');
+        return jsonResponse('{"protocol_versions":[3],"state":"not_configured","allowed":false}', 200);
       });
       final client = ApiClient(dio: Dio()..httpClientAdapter = adapter);
-      await startPlayback(client, session, input);
-      await reportPlaybackProgress(client, session, 's1', 1, false);
-      expect(adapter.requests.last.uri.path, '/api/v1/playback/s1/progress');
+      await expectLater(
+        startPlayback(client, session, input),
+        throwsA(isA<PlaybackTerminalError>().having((e) => e.message, 'message', "This server can't start playback.")),
+      );
+      expect(adapter.requests, hasLength(1));
     });
   });
 }
