@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart' hide Route;
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
@@ -118,7 +117,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               items: day.events,
                               // ponytail: builds the whole rail — fine for a day's
                               // releases; a restore index on MediaRow if one gets huge.
-                              scrollCacheExtent: restorable ? const ScrollCacheExtent.pixels(100000) : null,
+                              cacheExtent: restorable ? 100000 : null,
                               itemBuilder: (context, event, index) => PosterCard(
                                 title: event.title,
                                 subtitle: event.episodeLabel,
