@@ -49,6 +49,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   /// 0 = cleared locally, so `null` can still mean "no override".
   int? _ratingOverride;
 
+  /// Null (unknown) hides "Add to collection".
+  CollectionCapabilities? _collectionCapabilities;
+
   final _watchCache = <String, WatchDetail>{};
   final _scrollController = ScrollController();
   final _playFocus = FocusNode(debugLabel: 'detail-play');
@@ -80,6 +83,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     super.initState();
     FocusManager.instance.addListener(_onFocusManagerChange);
     _load();
+    _loadCollectionCapabilities();
   }
 
   @override
@@ -379,6 +383,79 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     }
   }
 
+  Future<void> _loadCollectionCapabilities() async {
+    try {
+      final capabilities = await fetchCollectionCapabilities(ref.read(apiClientProvider), ref.read(sessionProvider)!);
+      if (mounted) setState(() => _collectionCapabilities = capabilities);
+    } catch (_) {}
+  }
+
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Picks one of the profile's own manual collections (or makes a new one)
+  /// and adds this title; picking a collection that already holds it removes
+  /// it instead, mirroring the web dialog's ticks.
+  Future<void> _addToCollection() async {
+    final capabilities = _collectionCapabilities;
+    if (capabilities == null || _detail == null || _busyAction) return;
+    final client = ref.read(apiClientProvider);
+    final session = ref.read(sessionProvider)!;
+    setState(() => _busyAction = true);
+    try {
+      final collections = (await fetchPersonalCollections(
+        client,
+        session,
+        containsItem: capabilities.containsItem ? widget.contentId : null,
+      )).where((c) => c.isManual && canEditCollection(capabilities, c, session.profileId)).toList();
+      if (!mounted) return;
+      // A record so dismissing the sheet (null) differs from "New collection…".
+      final choice = await showModalBottomSheet<({CollectionCard? collection})>(
+        context: context,
+        backgroundColor: PrairieColors.bgElevated,
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                autofocus: true,
+                leading: const Icon(Icons.add, color: PrairieColors.amber),
+                title: const Text('New collection…', style: TextStyle(color: PrairieColors.ink)),
+                onTap: () => Navigator.pop(context, (collection: null)),
+              ),
+              for (final collection in collections)
+                ListTile(
+                  title: Text(collection.displayTitle, style: const TextStyle(color: PrairieColors.ink)),
+                  trailing: collection.contains == true ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                  onTap: () => Navigator.pop(context, (collection: collection)),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (choice == null || !mounted) return;
+      var target = choice.collection;
+      if (target == null) {
+        final name = await showCollectionNameDialog(context, title: 'New collection', confirmLabel: 'Create');
+        if (name == null || !mounted) return;
+        target = await createCollection(client, session, name);
+      }
+      if (target.contains == true) {
+        await removeCollectionItem(client, session, target.id, widget.contentId);
+        _notify('Removed from “${target.displayTitle}”');
+      } else {
+        await addCollectionItem(client, session, target.id, widget.contentId);
+        _notify('Added to “${target.displayTitle}”');
+      }
+    } catch (e) {
+      _notify(e is ApiError ? e.message : 'Could not update the collection');
+    } finally {
+      if (mounted) setState(() => _busyAction = false);
+    }
+  }
+
   String _playLabel({required bool isSeries, EpisodeSummary? nextUp}) {
     if (_busyPlay) return 'Starting…';
     final detail = _detail;
@@ -502,6 +579,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   onToggleWatchlist: _toggleWatchlist,
                   onToggleWatched: _toggleWatched,
                   onRate: _rate,
+                  onAddToCollection: (_collectionCapabilities?.allowed ?? false) ? _addToCollection : null,
                   audioTracks: _currentPlaybackVersion(isSeries)?.audioTracks ?? const [],
                   subtitleTracks: _currentPlaybackVersion(isSeries)?.subtitleTracks ?? const [],
                   selectedAudioTrackIndex: _selectedAudioTrackIndex,
@@ -734,6 +812,7 @@ class _Hero extends StatelessWidget {
     required this.onToggleWatchlist,
     required this.onToggleWatched,
     required this.onRate,
+    this.onAddToCollection,
     this.audioTracks = const [],
     this.subtitleTracks = const [],
     this.selectedAudioTrackIndex,
@@ -763,6 +842,8 @@ class _Hero extends StatelessWidget {
   final VoidCallback onToggleWatchlist;
   final VoidCallback onToggleWatched;
   final ValueChanged<int?> onRate;
+  /// Null hides the action (capabilities don't allow collection editing).
+  final VoidCallback? onAddToCollection;
   final List<AudioTrackInfo> audioTracks;
   final List<SubtitleTrackInfo> subtitleTracks;
   final int? selectedAudioTrackIndex;
@@ -1053,6 +1134,12 @@ class _Hero extends StatelessWidget {
                                   icon: Icon(played ? Icons.check_circle : Icons.check_circle_outline, color: PrairieColors.amber),
                                   tooltip: 'Watched',
                                 ),
+                                if (onAddToCollection != null)
+                                  IconButton(
+                                    onPressed: busyAction ? null : onAddToCollection,
+                                    icon: const Icon(Icons.playlist_add, color: PrairieColors.amber),
+                                    tooltip: 'Add to collection',
+                                  ),
                                 _TrackPickerButton(
                                   icon: userRating == null ? Icons.star_border : Icons.star,
                                   valueLabel: userRating == null ? 'Rate' : '$userRating / 5',

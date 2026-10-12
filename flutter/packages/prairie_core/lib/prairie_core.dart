@@ -73,6 +73,7 @@ export 'src/screens/profiles_screen.dart';
 export 'src/screens/search_screen.dart';
 export 'src/screens/servers_screen.dart';
 export 'src/screens/settings_screen.dart';
+export 'src/widgets/collection_dialogs.dart';
 export 'src/widgets/media_row.dart';
 export 'src/widgets/player_controls.dart';
 export 'src/widgets/player_scrim.dart';
