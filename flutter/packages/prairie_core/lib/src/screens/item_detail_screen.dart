@@ -46,6 +46,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   bool? _favoriteOverride;
   bool? _watchlistOverride;
   bool? _playedOverride;
+  /// 0 = cleared locally, so `null` can still mean "no override".
+  int? _ratingOverride;
 
   final _watchCache = <String, WatchDetail>{};
   final _scrollController = ScrollController();
@@ -68,6 +70,10 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   bool get _isFavorite => _favoriteOverride ?? _detail?.item.userState?.isFavorite ?? false;
   bool get _inWatchlist => _watchlistOverride ?? _detail?.item.userState?.inWatchlist ?? false;
   bool get _played => _playedOverride ?? _detail?.item.userState?.played ?? false;
+  int? get _userRating {
+    final r = _ratingOverride ?? _detail?.userRating;
+    return r == 0 ? null : r;
+  }
 
   @override
   void initState() {
@@ -131,6 +137,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _favoriteOverride = null;
       _watchlistOverride = null;
       _playedOverride = null;
+      _ratingOverride = null;
       _watchCache.clear();
       _userMovedFocus = false;
       _heroPinned = false;
@@ -356,6 +363,22 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     }
   }
 
+  Future<void> _rate(int? rating) async {
+    if (_detail == null || _busyAction) return;
+    final previous = _ratingOverride;
+    setState(() {
+      _ratingOverride = rating ?? 0;
+      _busyAction = true;
+    });
+    try {
+      await setUserRating(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId, rating);
+    } catch (e) {
+      if (mounted) setState(() => _ratingOverride = previous);
+    } finally {
+      if (mounted) setState(() => _busyAction = false);
+    }
+  }
+
   String _playLabel({required bool isSeries, EpisodeSummary? nextUp}) {
     if (_busyPlay) return 'Starting…';
     final detail = _detail;
@@ -452,6 +475,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   isFavorite: _isFavorite,
                   inWatchlist: _inWatchlist,
                   played: _played,
+                  userRating: _userRating,
                   playLabel: playLabel,
                   showStartOver: showStartOver,
                   playEnabled: !isSeries || nextUp != null,
@@ -477,6 +501,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   onToggleFavorite: _toggleFavorite,
                   onToggleWatchlist: _toggleWatchlist,
                   onToggleWatched: _toggleWatched,
+                  onRate: _rate,
                   audioTracks: _currentPlaybackVersion(isSeries)?.audioTracks ?? const [],
                   subtitleTracks: _currentPlaybackVersion(isSeries)?.subtitleTracks ?? const [],
                   selectedAudioTrackIndex: _selectedAudioTrackIndex,
@@ -695,6 +720,7 @@ class _Hero extends StatelessWidget {
     required this.isFavorite,
     required this.inWatchlist,
     required this.played,
+    required this.userRating,
     required this.playLabel,
     required this.showStartOver,
     required this.playEnabled,
@@ -707,6 +733,7 @@ class _Hero extends StatelessWidget {
     required this.onToggleFavorite,
     required this.onToggleWatchlist,
     required this.onToggleWatched,
+    required this.onRate,
     this.audioTracks = const [],
     this.subtitleTracks = const [],
     this.selectedAudioTrackIndex,
@@ -722,6 +749,7 @@ class _Hero extends StatelessWidget {
   final bool isFavorite;
   final bool inWatchlist;
   final bool played;
+  final int? userRating;
   final String playLabel;
   final bool showStartOver;
   final bool playEnabled;
@@ -734,6 +762,7 @@ class _Hero extends StatelessWidget {
   final VoidCallback onToggleFavorite;
   final VoidCallback onToggleWatchlist;
   final VoidCallback onToggleWatched;
+  final ValueChanged<int?> onRate;
   final List<AudioTrackInfo> audioTracks;
   final List<SubtitleTrackInfo> subtitleTracks;
   final int? selectedAudioTrackIndex;
@@ -1020,6 +1049,42 @@ class _Hero extends StatelessWidget {
                                   onPressed: busyAction ? null : onToggleWatched,
                                   icon: Icon(played ? Icons.check_circle : Icons.check_circle_outline, color: PrairieColors.amber),
                                   tooltip: 'Watched',
+                                ),
+                                _TrackPickerButton(
+                                  icon: userRating == null ? Icons.star_border : Icons.star,
+                                  valueLabel: userRating == null ? 'Rate' : '$userRating / 5',
+                                  onTap: () async {
+                                    // A record so dismissing the sheet (null) differs from "Clear".
+                                    final choice = await showModalBottomSheet<({int? rating})>(
+                                      context: context,
+                                      backgroundColor: PrairieColors.bgElevated,
+                                      builder: (context) => SafeArea(
+                                        child: ListView(
+                                          shrinkWrap: true,
+                                          children: [
+                                            for (var stars = 5; stars >= 1; stars--)
+                                              ListTile(
+                                                autofocus: stars == (userRating ?? 5),
+                                                title: Row(
+                                                  children: [
+                                                    for (var i = 1; i <= 5; i++)
+                                                      Icon(i <= stars ? Icons.star : Icons.star_border, color: PrairieColors.amber, size: 22),
+                                                  ],
+                                                ),
+                                                trailing: userRating == stars ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                                                onTap: () => Navigator.pop(context, (rating: stars)),
+                                              ),
+                                            if (userRating != null)
+                                              ListTile(
+                                                title: const Text('Clear rating', style: TextStyle(color: PrairieColors.ink)),
+                                                onTap: () => Navigator.pop(context, (rating: null)),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                    if (choice != null && choice.rating != userRating) onRate(choice.rating);
+                                  },
                                 ),
                               ],
                             ),

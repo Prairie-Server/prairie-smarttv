@@ -29,6 +29,21 @@ Future<void> setWatchlist(ApiClient client, PrairieSession session, String conte
       method: inWatchlist ? 'PUT' : 'DELETE',
     );
 
+/// The acting profile's 1–5 star rating of an item (`setRating` /
+/// `deleteRating` in /api/v2); `null` clears it. The server has no aggregate
+/// ratings or reviews, so this is the whole ratings surface.
+Future<void> setUserRating(ApiClient client, PrairieSession session, String contentId, int? rating) {
+  if (rating != null && (rating < 1 || rating > 5)) {
+    throw ArgumentError.value(rating, 'rating', 'must be 1 to 5');
+  }
+  return client.request<dynamic>(
+    _sessionOptions(session),
+    '/api/v2/ratings/${Uri.encodeComponent(contentId)}',
+    method: rating == null ? 'DELETE' : 'PUT',
+    body: rating == null ? null : {'rating': rating},
+  );
+}
+
 /// Mirrors `setWatched` from src/api/userState.ts.
 Future<void> setWatched(ApiClient client, PrairieSession session, String contentId, bool played) => client
     .request<dynamic>(
