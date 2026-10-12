@@ -1,9 +1,8 @@
 /// The last few player diagnostic events, kept on-device for the stats
 /// overlay.
 ///
-/// The server strips query strings from its request log, so the `dbg=` beacon
-/// payload is never visible there. Keeping the events locally lets "stats for
-/// nerds" show the native player's own story (init, errors, track selection,
+/// The opt-in beacon (`POST /api/v2/diagnostics/client-events`) only reaches
+/// the server log. Keeping the events locally lets "stats for nerds" show the native player's own story (init, errors, track selection,
 /// seek failures) on the TV itself.
 class DiagnosticsLog {
   DiagnosticsLog({this.capacity = 10, DateTime Function()? clock}) : _clock = clock ?? DateTime.now;

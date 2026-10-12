@@ -26,6 +26,7 @@ export 'src/api/calendar_api.dart';
 export 'src/api/catalog_api.dart';
 export 'src/api/check_server.dart';
 export 'src/api/collections_api.dart';
+export 'src/api/diagnostics_api.dart';
 export 'src/api/health_api.dart';
 export 'src/api/home_api.dart';
 export 'src/api/libraries_api.dart';

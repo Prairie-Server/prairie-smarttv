@@ -820,10 +820,11 @@ class _RecordingsList extends StatelessWidget {
                     style: const TextStyle(fontFamily: 'Fraunces', fontSize: 17, color: PrairieColors.ink),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '${_formatGuideClock(recording.start)} – ${_formatGuideClock(recording.stop)}',
-                    style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
-                  ),
+                  if (recording.start != null && recording.stop != null)
+                    Text(
+                      '${_formatGuideClock(recording.start!)} – ${_formatGuideClock(recording.stop!)}',
+                      style: const TextStyle(color: PrairieColors.muted, fontSize: 13),
+                    ),
                   Text(_recordingStatusLabel(recording.status), style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
                 ],
               ),

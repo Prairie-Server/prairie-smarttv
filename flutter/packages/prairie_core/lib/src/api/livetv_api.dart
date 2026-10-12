@@ -21,7 +21,6 @@ LiveTvChannel _channelFromJson(Map<String, dynamic> json) => LiveTvChannel(
   logoUrl: json['logo_url'] as String?,
   hd: json['hd'] as bool? ?? false,
   enabled: json['enabled'] as bool? ?? true,
-  streamUrl: json['stream_url'] as String?,
   guideStationId: json['guide_station_id'] as String?,
 );
 
@@ -75,11 +74,14 @@ enum LiveTvTransport { mpegts, hls }
 
 /// Mirrors `LiveTvSessionStart` from src/api/livetv.ts.
 class LiveTvSessionStart {
-  const LiveTvSessionStart({required this.sessionId, this.playbackTicket, this.hlsUrl, this.streamUrl, this.transport, this.note});
+  const LiveTvSessionStart({required this.sessionId, this.playbackTicket, this.streamUrl, this.transport, this.note});
 
   final String sessionId;
   final String? playbackTicket;
-  final String? hlsUrl;
+
+  /// Opaque server-relative URL, played exactly as returned. It stays on the
+  /// v1 media routes (`live-hls/...` or `sessions/{id}/stream`) because native
+  /// players can't send v2 account auth.
   final String? streamUrl;
   final LiveTvTransport? transport;
   final String? note;
@@ -87,7 +89,6 @@ class LiveTvSessionStart {
   factory LiveTvSessionStart.fromJson(Map<String, dynamic> json) => LiveTvSessionStart(
     sessionId: json['session_id'] as String,
     playbackTicket: json['playback_ticket'] as String?,
-    hlsUrl: json['hls_url'] as String?,
     streamUrl: json['stream_url'] as String?,
     transport: switch (json['transport'] as String?) {
       'mpegts' => LiveTvTransport.mpegts,
@@ -105,8 +106,8 @@ class LiveTvRecording {
     this.programId,
     required this.channelId,
     required this.status,
-    required this.start,
-    required this.stop,
+    this.start,
+    this.stop,
     required this.title,
     this.libraryItemId,
   });
@@ -115,8 +116,8 @@ class LiveTvRecording {
   final String? programId;
   final String channelId;
   final String status;
-  final DateTime start;
-  final DateTime stop;
+  final DateTime? start;
+  final DateTime? stop;
   final String title;
   final String? libraryItemId;
 
@@ -125,12 +126,22 @@ class LiveTvRecording {
     programId: json['program_id'] as String?,
     channelId: json['channel_id'] as String,
     status: json['status'] as String,
-    start: DateTime.parse(json['start'] as String),
-    stop: DateTime.parse(json['stop'] as String),
-    title: json['title'] as String,
+    start: _parseOptionalTime(json['start']),
+    stop: _parseOptionalTime(json['stop']),
+    title: json['title'] as String? ?? '',
     libraryItemId: json['library_item_id'] as String?,
   );
 }
+
+DateTime? _parseOptionalTime(Object? value) => value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
+
+/// v2 lists use an `{items}` envelope.
+List<Map<String, dynamic>> _items(Map<String, dynamic> json) =>
+    (json['items'] as List<dynamic>? ?? const []).cast<Map<String, dynamic>>();
+
+/// Live TV switched off (409 `capability_not_configured`) or absent on an
+/// older server (404) reads as "Live TV unavailable", not a hard failure.
+bool _isLiveTvUnavailable(ApiError e) => e.status == 404 || (e.status == 409 && e.code == 'capability_not_configured');
 
 bool _looksLikeHlsUrl(String url) {
   final lower = url.toLowerCase();
@@ -145,22 +156,10 @@ bool isWatchableHls(LiveTvSessionStart start) {
   return start.transport == LiveTvTransport.hls || _looksLikeHlsUrl(url);
 }
 
-/// Prefers HLS URLs; MPEG-TS proxy paths are returned only when no HLS is
-/// available. Mirrors `playableLiveUrl`.
+/// The session's `stream_url`, played exactly as returned (v2 dropped
+/// `hls_url`). Mirrors `playableLiveUrl`.
 String? playableLiveUrl(LiveTvSessionStart start) {
-  final hls = (start.hlsUrl ?? '').trim();
   final stream = (start.streamUrl ?? '').trim();
-
-  if (start.transport == LiveTvTransport.hls) {
-    return hls.isNotEmpty ? hls : (stream.isNotEmpty ? stream : null);
-  }
-
-  if (hls.isNotEmpty && _looksLikeHlsUrl(hls)) return hls;
-  if (stream.isNotEmpty && _looksLikeHlsUrl(stream)) return stream;
-  if (hls.isNotEmpty) return hls;
-  if (start.transport == LiveTvTransport.mpegts) {
-    return stream.isNotEmpty ? stream : null;
-  }
   return stream.isNotEmpty ? stream : null;
 }
 
@@ -180,15 +179,14 @@ String resolveLivePlaybackUrl(String serverUrl, String streamPath, String? token
   return buildStreamUrl(serverUrl, trimmed, token, profileId);
 }
 
-/// Mirrors `fetchLiveTvChannels`. Treats a 404 (feature absent on older
-/// servers) as an empty list rather than a hard failure.
+/// Mirrors `fetchLiveTvChannels`. Treats Live TV being off (409
+/// `capability_not_configured`) or absent (404) as an empty list.
 Future<List<LiveTvChannel>> fetchLiveTvChannels(ApiClient client, PrairieSession session) async {
   try {
-    final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v1/livetv/channels');
-    final channels = (json['channels'] as List<dynamic>? ?? []).map((j) => _channelFromJson(j as Map<String, dynamic>));
-    return channels.where((ch) => ch.enabled).toList();
+    final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v2/livetv/channels');
+    return parseLiveTvChannels(json);
   } on ApiError catch (e) {
-    if (e.status == 404) return [];
+    if (_isLiveTvUnavailable(e)) return [];
     rethrow;
   }
 }
@@ -203,33 +201,39 @@ Future<List<LiveTvProgram>> fetchLiveTvGuide(ApiClient client, PrairieSession se
   final nowMs = (DateTime.now().millisecondsSinceEpoch ~/ _guideWindowGridMs) * _guideWindowGridMs;
   final start = DateTime.fromMillisecondsSinceEpoch(nowMs, isUtc: true);
   final end = DateTime.fromMillisecondsSinceEpoch(nowMs + 6 * 60 * 60 * 1000, isUtc: true);
-  final params = {
-    'channels': channelIds.join(','),
+  // v2 repeats `channel_id` once per channel (max 500), not a comma list.
+  final params = <String, dynamic>{
+    'channel_id': channelIds.take(500).toList(),
     'start': start.toIso8601String(),
     'end': end.toIso8601String(),
   };
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
-    '/api/v1/livetv/guide?${Uri(queryParameters: params).query}',
+    '/api/v2/livetv/guide?${Uri(queryParameters: params).query}',
   );
-  return (json['programs'] as List<dynamic>? ?? []).map((j) => LiveTvProgram.fromJson(j as Map<String, dynamic>)).toList();
+  return _items(json).map(LiveTvProgram.fromJson).toList();
 }
 
-/// Mirrors `startLiveTvSession`.
+/// Enabled channels from a v2 `{items}` channel list.
+List<LiveTvChannel> parseLiveTvChannels(Map<String, dynamic> json) =>
+    _items(json).map(_channelFromJson).where((ch) => ch.enabled).toList();
+
+/// Mirrors `startLiveTvSession` (201; 409 when no tuner is free). The
+/// optional `client_capabilities` body isn't sent.
 Future<LiveTvSessionStart> startLiveTvSession(ApiClient client, PrairieSession session, String channelId) async {
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
-    '/api/v1/livetv/channels/${Uri.encodeComponent(channelId)}/session',
+    '/api/v2/livetv/channels/${Uri.encodeComponent(channelId)}/sessions',
     method: 'POST',
     body: '{}',
   );
   return LiveTvSessionStart.fromJson(json);
 }
 
-/// Mirrors `releaseLiveTvSession`.
+/// Mirrors `releaseLiveTvSession` (204, no body).
 Future<void> releaseLiveTvSession(ApiClient client, PrairieSession session, String liveSessionId) => client.request<dynamic>(
   _sessionOptions(session),
-  '/api/v1/livetv/sessions/${Uri.encodeComponent(liveSessionId)}',
+  '/api/v2/livetv/sessions/${Uri.encodeComponent(liveSessionId)}',
   method: 'DELETE',
 );
 
@@ -242,17 +246,17 @@ const liveTvHeartbeatInterval = Duration(seconds: 30);
 /// (no body, 204) keeps the live session's tuner claimed.
 Future<void> heartbeatLiveTvSession(ApiClient client, PrairieSession session, String liveSessionId) => client.request<dynamic>(
   _sessionOptions(session),
-  '/api/v1/livetv/sessions/${Uri.encodeComponent(liveSessionId)}/heartbeat',
+  '/api/v2/livetv/sessions/${Uri.encodeComponent(liveSessionId)}/heartbeat',
   method: 'POST',
 );
 
-/// Mirrors `fetchLiveTvRecordings`, also treating 404 as empty.
+/// Mirrors `fetchLiveTvRecordings`, also treating Live TV off/absent as empty.
 Future<List<LiveTvRecording>> fetchLiveTvRecordings(ApiClient client, PrairieSession session) async {
   try {
-    final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v1/livetv/recordings');
-    return (json['recordings'] as List<dynamic>? ?? []).map((j) => LiveTvRecording.fromJson(j as Map<String, dynamic>)).toList();
+    final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v2/livetv/recordings');
+    return _items(json).map(LiveTvRecording.fromJson).toList();
   } on ApiError catch (e) {
-    if (e.status == 404) return [];
+    if (_isLiveTvUnavailable(e)) return [];
     rethrow;
   }
 }
@@ -263,7 +267,7 @@ Future<LiveTvRecording> scheduleLiveTvRecording(ApiClient client, PrairieSession
   if (trimmed.isEmpty) throw ArgumentError('Missing program id');
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
-    '/api/v1/livetv/recordings',
+    '/api/v2/livetv/recordings',
     method: 'POST',
     body: {'program_id': trimmed},
   );
@@ -276,7 +280,7 @@ Future<void> cancelLiveTvRecording(ApiClient client, PrairieSession session, Str
   if (trimmed.isEmpty) throw ArgumentError('Missing recording id');
   return client.request<dynamic>(
     _sessionOptions(session),
-    '/api/v1/livetv/recordings/${Uri.encodeComponent(trimmed)}',
+    '/api/v2/livetv/recordings/${Uri.encodeComponent(trimmed)}',
     method: 'DELETE',
   );
 }

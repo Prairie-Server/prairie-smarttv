@@ -494,7 +494,7 @@ void main() {
   test('live TV heartbeat posts to the session heartbeat route', () async {
     final adapter = FakeHttpAdapter((o) {
       expect(o.method, 'POST');
-      expect(o.uri.path, '/api/v1/livetv/sessions/live%201/heartbeat');
+      expect(o.uri.path, '/api/v2/livetv/sessions/live%201/heartbeat');
       return ResponseBody.fromString('', 204);
     });
     final client = ApiClient(dio: Dio()..httpClientAdapter = adapter);

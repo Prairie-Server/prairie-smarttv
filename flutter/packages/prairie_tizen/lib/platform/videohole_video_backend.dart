@@ -20,16 +20,16 @@ import 'package:video_player_videohole/video_player_platform_interface.dart' sho
 class VideoholeVideoBackend implements VideoBackend {
   /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
   /// needs a VM service that a release build doesn't attach, and `debugPrint`
-  /// needs an `sdb dlog` session at the TV). The server already logs full
-  /// request query strings, so state changes ride a `dbg=` param on a request
-  /// it already receives — read back from the server's own request log,
-  /// timestamped and correlated with the playback session. Never let a
-  /// beacon failure affect playback: every call is fire-and-forget. Both are
-  /// null unless the user opted into `PlaybackSettings.enableDiagnosticsBeacon`.
-  VideoholeVideoBackend({this.beaconClient, this.beaconServerUrl});
+  /// needs an `sdb dlog` session at the TV). State changes go to
+  /// `POST /api/v2/diagnostics/client-events`, which the server logs —
+  /// read back from the server's log, timestamped and tied to the device and
+  /// account. Never let a beacon failure affect playback: every call is
+  /// fire-and-forget. Both are null unless the user opted into
+  /// `PlaybackSettings.enableDiagnosticsBeacon`.
+  VideoholeVideoBackend({this.beaconClient, this.beaconSession});
 
   final ApiClient? beaconClient;
-  final String? Function()? beaconServerUrl;
+  final PrairieSession? Function()? beaconSession;
 
   final _diagnostics = DiagnosticsLog();
 
@@ -40,20 +40,9 @@ class VideoholeVideoBackend implements VideoBackend {
   void reportDiagnostic(String event) {
     _diagnostics.add(event);
     final client = beaconClient;
-    final serverUrl = beaconServerUrl?.call();
-    if (client == null || serverUrl == null || serverUrl.isEmpty) return;
-    unawaited(_sendBeacon(client, serverUrl, event));
-  }
-
-  static Future<void> _sendBeacon(ApiClient client, String serverUrl, String event) async {
-    try {
-      await client.dio.get<void>(
-        '$serverUrl/api/v1/settings/effective',
-        queryParameters: {'keys': 'playback.auto_skip_intro', 'dbg': event},
-      );
-    } catch (_) {
-      // Diagnostics must never affect playback.
-    }
+    final session = beaconSession?.call();
+    if (client == null || session == null || session.serverUrl.isEmpty) return;
+    unawaited(sendClientDiagnosticEvent(client, session, event));
   }
 
   VideoPlayerController? _controller;
