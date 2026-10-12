@@ -195,7 +195,7 @@ class PlaybackSessionResponse {
   final String qualityPreference;
 
   /// One-line description of the server's protocol-v3 plan (route, reason,
-  /// container, codecs) for the stats overlay; null for legacy sessions.
+  /// container, codecs) for the stats overlay.
   final String? planSummary;
 
   /// The plan's `timeline`; null for legacy sessions.
@@ -474,8 +474,8 @@ typedef _ProgressSample = ({double position, bool isPaused});
 /// web/src/player/session-mutations.ts). The server orders progress with a
 /// compare-and-set on `sequence`, so samples go out one at a time in
 /// sequence order, and a stop keeps one exact body (one `stop_id`) across
-/// retries. Sessions absent from this map were started on the v1 bridge and
-/// keep the v1 lifecycle routes.
+/// retries. Start and replan register every session here; progress or a stop
+/// for an id that is not registered is dropped.
 class _V2Mutations {
   _V2Mutations(this.installationId);
   final String installationId;
@@ -485,8 +485,7 @@ class _V2Mutations {
   Map<String, dynamic>? stopBody;
 
   /// Terminal: the server answered the stop (or the session is gone). The
-  /// entry is kept so late progress is dropped instead of falling through to
-  /// the v1 routes, and a second stop is a no-op.
+  /// entry is kept so late progress is dropped and a second stop is a no-op.
   bool stopped = false;
 }
 
@@ -498,7 +497,8 @@ void resetPlaybackV2StateForTest() {
   _v2Sessions.clear();
 }
 
-/// The installation to start on /api/v2 with, or null to use the v1 bridge.
+/// The installation to start on /api/v2 with, or null when this server or
+/// account cannot start playback (e.g. no playback service configured).
 Future<String?> _playbackInstallationV2(ApiClient client, PrairieSession session, {bool force = false}) async {
   final key = session.serverUrl;
   final cached = _capabilitiesCache[key];
@@ -506,30 +506,24 @@ Future<String?> _playbackInstallationV2(ApiClient client, PrairieSession session
     return cached.installationId;
   }
   String? installationId;
-  try {
-    final cap = await client.request<Map<String, dynamic>>(
-      _sessionOptions(session), '/api/v2/playback/capabilities',
-    );
-    final versions = cap['protocol_versions'];
-    final id = cap['installation_id'];
-    if (cap['state'] == 'available' &&
-        cap['allowed'] == true &&
-        versions is List &&
-        versions.contains(3) &&
-        id is String &&
-        id.isNotEmpty) {
-      installationId = id;
-    }
-  } on ApiError catch (err) {
-    // A server without /api/v2 playback keeps the v1 bridge. Anything else
-    // (auth, 5xx) is a real failure and must not silently change protocol.
-    if (err.status != 404 && err.status != 405) rethrow;
+  final cap = await client.request<Map<String, dynamic>>(
+    _sessionOptions(session), '/api/v2/playback/capabilities',
+  );
+  final versions = cap['protocol_versions'];
+  final id = cap['installation_id'];
+  if (cap['state'] == 'available' &&
+      cap['allowed'] == true &&
+      versions is List &&
+      versions.contains(3) &&
+      id is String &&
+      id.isNotEmpty) {
+    installationId = id;
   }
   _capabilitiesCache[key] = _PlaybackCapabilitiesV2(DateTime.now(), installationId);
   return installationId;
 }
 
-/// Converts the v1-bridge start body to `PlaybackStartBody`: string ids, the
+/// Converts the built start body to `PlaybackStartBody`: string ids, the
 /// capabilities' installation, and no Prairie v1 extras (v2 rejects unknown
 /// fields; the channel ceiling already rides on each delivery's
 /// `max_channels`).
@@ -543,9 +537,10 @@ Map<String, dynamic> _startBodyV2(Map<String, dynamic> body, String installation
 
 /// Mirrors `startPlayback` from src/api/startPlayback.ts / `startPlaybackV2`.
 ///
-/// Starts on /api/v2 when the server offers protocol v3 there, else on the
-/// frozen /api/v1 bridge. A transient failure (5xx, network) retries the
-/// identical body with backoff for up to a minute, like web.
+/// Starts on /api/v2 (protocol v3). Capabilities with no installation mean
+/// the server cannot play, which throws a [PlaybackTerminalError]. A
+/// transient failure (5xx, network) retries the identical body with backoff
+/// for up to a minute, like web.
 Future<PlaybackSessionResponse> startPlayback(
   ApiClient client,
   PrairieSession session,
@@ -563,24 +558,23 @@ Future<PlaybackSessionResponse> startPlayback(
     budget: _startRetryBudget,
     cancelToken: cancelToken,
   );
+  if (installationId == null) {
+    throw PlaybackTerminalError('unavailable', message: "This server can't start playback.");
+  }
   Map<String, dynamic> json;
-  if (installationId != null) {
-    try {
-      json = await post('/api/v2/playback/start', _startBodyV2(body, installationId));
-    } on ApiError catch (err) {
-      if (err.code != 'installation_changed') rethrow;
-      // The server was reinstalled since capabilities were read; retry once
-      // with the new installation.
-      installationId = await _playbackInstallationV2(client, session, force: true);
-      if (installationId == null) rethrow;
-      json = await post('/api/v2/playback/start', _startBodyV2(body, installationId));
-    }
-  } else {
-    json = await post('/api/v1/playback/start', body);
+  try {
+    json = await post('/api/v2/playback/start', _startBodyV2(body, installationId));
+  } on ApiError catch (err) {
+    if (err.code != 'installation_changed') rethrow;
+    // The server was reinstalled since capabilities were read; retry once
+    // with the new installation.
+    installationId = await _playbackInstallationV2(client, session, force: true);
+    if (installationId == null) rethrow;
+    json = await post('/api/v2/playback/start', _startBodyV2(body, installationId));
   }
   final parsed = PlaybackSessionResponse.fromJson(json);
   final registeredInstallation = installationId;
-  if (registeredInstallation != null && parsed.sessionId.isNotEmpty) {
+  if (parsed.sessionId.isNotEmpty) {
     _v2Sessions.putIfAbsent(parsed.sessionId, () => _V2Mutations(registeredInstallation));
   }
   return parsed.copyWith(
@@ -675,9 +669,8 @@ Future<PlaybackSessionResponse> _replanPlayback(ApiClient client, PrairieSession
     selectedTracks: selectedTracks,
     failure: failure,
   );
-  final api = v2 != null ? 'v2' : 'v1';
   final json = await client.request<Map<String, dynamic>>(
-    _sessionOptions(session), '/api/$api/playback/${Uri.encodeComponent(current.sessionId)}/replan',
+    _sessionOptions(session), '/api/v2/playback/${Uri.encodeComponent(current.sessionId)}/replan',
     method: 'POST', body: body,
   );
   final parsed = PlaybackSessionResponse.fromJson(json);
@@ -796,107 +789,46 @@ String resolvePlaybackStreamUrl(String serverUrl, PlaybackSessionResponse sessio
   return buildStreamUrl(serverUrl, session.streamUrl, accessToken);
 }
 
-/// Optional recommendation from `POST .../progress?advice=1`.
-///
-/// Absent in the steady state by design — acting on one costs a rebuffer.
-class PlaybackQualityAdvice {
-  const PlaybackQualityAdvice({
-    required this.rungId,
-    required this.resolution,
-    required this.bitrateKbps,
-    required this.direction,
-    this.reason = '',
-    this.observedKbps = 0,
-  });
-
-  final String rungId;
-  final String resolution;
-  final int bitrateKbps;
-  final String direction;
-  final String reason;
-  final int observedKbps;
-
-  factory PlaybackQualityAdvice.fromJson(Map<String, dynamic> json) => PlaybackQualityAdvice(
-    rungId: json['rung_id'] as String? ?? '',
-    resolution: json['resolution'] as String? ?? '',
-    bitrateKbps: (json['bitrate_kbps'] as num?)?.toInt() ?? 0,
-    direction: json['direction'] as String? ?? '',
-    reason: json['reason'] as String? ?? '',
-    observedKbps: (json['observed_kbps'] as num?)?.toInt() ?? 0,
-  );
-}
-
 double _clampPosition(double position) => position.isFinite && position > 0 ? position : 0.0;
 
-/// Mirrors `reportPlaybackProgress` from src/api/playbackSession.ts and, for
-/// v2 sessions, `sendSessionProgress` from session-mutations.ts: samples are
+/// Mirrors `sendSessionProgress` from web session-mutations.ts: samples are
 /// serialized (one request in flight), each takes the next `sequence` when it
 /// is queued, and a transient failure retries the identical body (up to 3
-/// sends, 250 ms apart).
-///
-/// [throughputKbps] and [isBuffering] are optional client-only signals for the
-/// quality advice engine. Pass [requestAdvice] to opt into `?advice=1`; without
-/// it the server keeps answering 204 with no body.
-Future<PlaybackQualityAdvice?> reportPlaybackProgress(
+/// sends, 250 ms apart). Dropped once the session is stopping, or when it was
+/// never registered.
+Future<void> reportPlaybackProgress(
   ApiClient client,
   PrairieSession session,
   String playbackSessionId,
   double position,
-  bool isPaused, {
-  int? throughputKbps,
-  bool? isBuffering,
-  bool requestAdvice = false,
-}) async {
+  bool isPaused,
+) async {
   final v2 = _v2Sessions[playbackSessionId];
-  if (v2 != null) {
-    // v2 carries no throughput/buffering signal and gives no quality advice.
-    if (v2.stopBody != null) return null;
-    final _ProgressSample sample = (position: _clampPosition(position), isPaused: isPaused);
-    v2.latestSample = sample;
-    final body = <String, dynamic>{
-      'installation_id': v2.installationId,
-      'sequence': ++v2.sequence,
-      'position': sample.position,
-      'is_paused': sample.isPaused,
-    };
-    final pending = v2.tail.catchError((Object _) {}).then(
-      (_) => _retryTransient(
-        () => client.request<dynamic>(
-          _sessionOptions(session),
-          '/api/v2/playback/${Uri.encodeComponent(playbackSessionId)}/progress',
-          method: 'POST',
-          body: body,
-        ),
-        budget: const Duration(seconds: 15),
-        basePause: const Duration(milliseconds: 250),
-        maxPause: const Duration(milliseconds: 250),
-        maxAttempts: 3,
-      ),
-    );
-    v2.tail = pending.then((_) {});
-    await pending;
-    return null;
-  }
+  if (v2 == null || v2.stopBody != null) return;
+  final _ProgressSample sample = (position: _clampPosition(position), isPaused: isPaused);
+  v2.latestSample = sample;
   final body = <String, dynamic>{
-    'position': position,
-    'is_paused': isPaused,
-    if (throughputKbps != null && throughputKbps > 0) 'throughput_kbps': throughputKbps,
-    'is_buffering': ?isBuffering,
+    'installation_id': v2.installationId,
+    'sequence': ++v2.sequence,
+    'position': sample.position,
+    'is_paused': sample.isPaused,
   };
-  final path = requestAdvice
-      ? '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}/progress?advice=1'
-      : '/api/v1/playback/${Uri.encodeComponent(playbackSessionId)}/progress';
-  final json = await client.request<dynamic>(
-    _sessionOptions(session),
-    path,
-    method: 'POST',
-    body: body,
+  final pending = v2.tail.catchError((Object _) {}).then(
+    (_) => _retryTransient(
+      () => client.request<dynamic>(
+        _sessionOptions(session),
+        '/api/v2/playback/${Uri.encodeComponent(playbackSessionId)}/progress',
+        method: 'POST',
+        body: body,
+      ),
+      budget: const Duration(seconds: 15),
+      basePause: const Duration(milliseconds: 250),
+      maxPause: const Duration(milliseconds: 250),
+      maxAttempts: 3,
+    ),
   );
-  if (!requestAdvice || json is! Map) return null;
-  final advice = json['advice'];
-  if (advice is! Map) return null;
-  final parsed = PlaybackQualityAdvice.fromJson(Map<String, dynamic>.from(advice));
-  return parsed.rungId.isEmpty ? null : parsed;
+  v2.tail = pending.then((_) {});
+  await pending;
 }
 
 /// True when DELETE/progress hit a session the server already reaped
@@ -911,16 +843,15 @@ bool isPlaybackSessionGone(Object error) {
       code == 'session_not_found';
 }
 
-/// Mirrors `stopPlaybackSession` / web's `stopSequencedSession`.
+/// Mirrors web's `stopSequencedSession`.
 ///
 /// Idempotent: a 404 `playback_session_not_found` is treated as success — the
 /// encode job / session is already gone (common after ffmpeg errors).
 ///
-/// A v2 stop carries the final position sample — [position] when given, else
+/// The stop carries the final position sample — [position] when given, else
 /// the latest progress sample — with its own `sequence`, waits (bounded) for
 /// queued progress, then retries its one exact body on transient failures.
-/// For a v1 session a given [position] goes out as a last progress report
-/// first, since the v1 stop takes no body.
+/// An unregistered session id has nothing to stop and is ignored.
 Future<void> stopPlaybackSession(
   ApiClient client,
   PrairieSession session,
@@ -931,52 +862,41 @@ Future<void> stopPlaybackSession(
   final trimmed = playbackSessionId.trim();
   if (trimmed.isEmpty) return;
   final v2 = _v2Sessions[trimmed];
+  if (v2 == null || v2.stopped) return;
   try {
-    if (v2 != null) {
-      if (v2.stopped) return;
-      var stopBody = v2.stopBody;
-      if (stopBody == null) {
-        final _ProgressSample? sample =
-            position != null ? (position: _clampPosition(position), isPaused: isPaused) : v2.latestSample;
-        stopBody = <String, dynamic>{
-          'installation_id': v2.installationId,
-          // One stop_id per session, kept across retries: the server answers
-          // `stopped` the first time and `replayed` after, both terminal.
-          'stop_id': _newUuidV4(),
-          if (sample != null) ...{
-            'position': sample.position,
-            'is_paused': sample.isPaused,
-            'sequence': ++v2.sequence,
-          },
-        };
-        v2.stopBody = stopBody;
-      }
-      final body = stopBody;
-      await v2.tail.catchError((Object _) {}).timeout(const Duration(seconds: 5), onTimeout: () {});
-      await _retryTransient(
-        () => client.request<dynamic>(
-          _sessionOptions(session),
-          '/api/v2/playback/${Uri.encodeComponent(trimmed)}',
-          method: 'DELETE',
-          body: body,
-        ),
-        budget: _stopRetryBudget,
-        maxPause: const Duration(seconds: 1),
-      );
-      v2.stopped = true;
-      return;
+    var stopBody = v2.stopBody;
+    if (stopBody == null) {
+      final _ProgressSample? sample =
+          position != null ? (position: _clampPosition(position), isPaused: isPaused) : v2.latestSample;
+      stopBody = <String, dynamic>{
+        'installation_id': v2.installationId,
+        // One stop_id per session, kept across retries: the server answers
+        // `stopped` the first time and `replayed` after, both terminal.
+        'stop_id': _newUuidV4(),
+        if (sample != null) ...{
+          'position': sample.position,
+          'is_paused': sample.isPaused,
+          'sequence': ++v2.sequence,
+        },
+      };
+      v2.stopBody = stopBody;
     }
-    if (position != null) {
-      await reportPlaybackProgress(client, session, trimmed, position, isPaused).then((_) {}, onError: (Object _) {});
-    }
-    await client.request<dynamic>(
-      _sessionOptions(session),
-      '/api/v1/playback/${Uri.encodeComponent(trimmed)}',
-      method: 'DELETE',
+    final body = stopBody;
+    await v2.tail.catchError((Object _) {}).timeout(const Duration(seconds: 5), onTimeout: () {});
+    await _retryTransient(
+      () => client.request<dynamic>(
+        _sessionOptions(session),
+        '/api/v2/playback/${Uri.encodeComponent(trimmed)}',
+        method: 'DELETE',
+        body: body,
+      ),
+      budget: _stopRetryBudget,
+      maxPause: const Duration(seconds: 1),
     );
+    v2.stopped = true;
   } on ApiError catch (err) {
     if (isPlaybackSessionGone(err)) {
-      v2?.stopped = true;
+      v2.stopped = true;
       return;
     }
     rethrow;
@@ -1036,7 +956,7 @@ Map<String, dynamic>? buildRouteEventBody(
 
 /// Reports a route event for a v2 session (`POST /api/v2/playback/route-events`).
 /// Diagnostics never control playback: sent once, never retried, and every
-/// failure is swallowed (mirrors web route-events-v2.ts). v1 sessions skip.
+/// failure is swallowed (mirrors web route-events-v2.ts). Unregistered sessions skip.
 Future<void> reportPlaybackRouteEvent(
   ApiClient client,
   PrairieSession session,

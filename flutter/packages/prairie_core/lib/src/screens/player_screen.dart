@@ -141,14 +141,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// A `failure_recovery` replan is in flight; see [_onPlaybackFailure].
   bool _recovering = false;
 
-  /// Session returned by `/playback/start` — kept so "Original" on a direct
-  /// base can drop HLS and reattach the progressive stream_url.
+  /// Session returned by `/playback/start`; its play method labels the
+  /// quality menu's Original entry.
   PlaybackSessionResponse? _basePlaybackSession;
 
   /// Active quality menu selection, keyed by id (`auto` / `original` / rung id).
   String _activeQualityId = 'original';
-  /// Rung id of the encode currently playing under Auto (for advice dedupe).
-  String? _autoPlayingRungId;
   List<QualityLadderRung> _qualityLadder = fallbackQualityLadder;
   String? _qualityError;
 
@@ -488,11 +486,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
   }
 
-  int _deviceMaxHeight() {
-    final maxRes = ref.read(tvCapabilitiesProvider).maxResolution;
-    return resolveNativeHeight(maxRes, _qualityLadder);
-  }
-
   List<QualityOption> get _qualityOptions {
     // Every option but `original` requires an actual re-encode, which goes
     // out over HLS — unsupported on this backend (see
@@ -572,87 +565,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _switchQuality(choice);
   }
 
-  Future<void> _applyAdvice(PlaybackQualityAdvice advice) async {
-    if (_activeQualityId != 'auto' || _busyQuality || _exiting) return;
-    if (advice.rungId.isEmpty || advice.rungId == _autoPlayingRungId) return;
-    // Prefer the server-provided targets so we don't need a local ladder copy
-    // to act — Advice carries resolution + bitrate for exactly this reason.
-    if (advice.resolution.isNotEmpty && advice.bitrateKbps > 0) {
-      await _switchQualityToTargets(
-        menuId: 'auto',
-        playingRungId: advice.rungId,
-        resolution: advice.resolution,
-        bitrateKbps: advice.bitrateKbps,
-        copyVideo: false,
-        fromAdvice: true,
-      );
-      return;
-    }
-    await _switchQuality(advice.rungId, fromAdvice: true);
-  }
-
-  Future<void> _switchQuality(String qualityId, {bool fromAdvice = false}) async {
+  /// Switches quality with a protocol-v3 `quality_change` replan; the menu id
+  /// (`auto` / `original` / rung id) is the `quality_preference`.
+  Future<void> _switchQuality(String qualityId) async {
     final current = _playbackSession;
-    final base = _basePlaybackSession;
-    if (current == null || base == null || _busyQuality || _busyAudio || _exiting || _recovering) return;
-    if (!fromAdvice && qualityId == _activeQualityId) return;
-
-    final fileId = current.mediaFileId;
-    final nativeHeight = _sourceHeightForFile(widget.launch.watch, fileId);
-    final ladder = qualityLadderForSourceHeight(_qualityLadder, nativeHeight);
-    final options = _qualityOptions;
-    final deviceMax = _deviceMaxHeight();
-    // Auto is capped by both source and device so we don't start a 4K encode
-    // on a 1080p panel.
-    final autoCap = nativeHeight > 0 && deviceMax > 0
-        ? (nativeHeight < deviceMax ? nativeHeight : deviceMax)
-        : (nativeHeight > 0 ? nativeHeight : deviceMax);
-    final autoLadder = [
-      for (final r in ladder)
-        if (nativeHeight <= 0 || r.height < nativeHeight) r,
-    ];
-    final targets = resolveQualityTargets(
-      qualityId: qualityId,
-      options: options,
-      playMethod: base.playMethod,
-      ladder: qualityId == 'auto' ? (autoLadder.isEmpty ? ladder : autoLadder) : ladder,
-      deviceMaxHeight: qualityId == 'auto' ? autoCap : deviceMax,
-    );
-
-    final playingRungId = qualityId == 'auto'
-        ? bestAutoRung(autoLadder.isEmpty ? ladder : autoLadder, autoCap)?.id
-        : (qualityId == 'original' ? null : qualityId);
-
-    await _switchQualityToTargets(
-      menuId: fromAdvice ? 'auto' : qualityId,
-      playingRungId: playingRungId,
-      resolution: targets?.resolution,
-      bitrateKbps: targets?.bitrateKbps,
-      copyVideo: targets?.copyVideo ?? false,
-      dropToOriginalDirect: targets == null,
-      fromAdvice: fromAdvice,
-    );
-  }
-
-  Future<void> _switchQualityToTargets({
-    required String menuId,
-    String? playingRungId,
-    String? resolution,
-    int? bitrateKbps,
-    bool copyVideo = false,
-    bool dropToOriginalDirect = false,
-    bool fromAdvice = false,
-  }) async {
-    final current = _playbackSession;
-    final base = _basePlaybackSession;
-    if (current == null || base == null || _busyQuality || _busyAudio || _exiting || _recovering) return;
+    if (current == null || _busyQuality || _busyAudio || _exiting || _recovering) return;
+    if (qualityId == _activeQualityId) return;
 
     setState(() {
       _busyQuality = true;
       _qualityError = null;
-      // Advice steps the encode under Auto — the menu selection stays Auto so
-      // further advice keeps applying. Manual picks commit the chosen id.
-      if (!fromAdvice) _activeQualityId = menuId;
+      _activeQualityId = qualityId;
       _loading = true;
     });
 
@@ -660,7 +583,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _prepareCancel?.cancel();
     _prepareCancel = cancel;
     final position = _position.inMilliseconds / 1000.0;
-    final fileId = current.mediaFileId;
     final backendBefore = _backend;
 
     try {
@@ -669,104 +591,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final settings = await loadPlaybackSettings(SharedPreferencesAsync());
       final deviceCaps = _deviceCaps(settings);
 
-      if (current.isProtocolV3) {
-        final qualityPreference = fromAdvice && playingRungId != null ? playingRungId : menuId;
-        final replanned = await replanPlaybackQuality(
-          client,
-          session,
-          current,
-          qualityPreference: qualityPreference,
-          positionSeconds: position,
-        );
-        final prepared = await preparePlayableSession(
-          client,
-          // Fresh: a preceding call may have refreshed the access token.
-          ref.read(sessionProvider) ?? session,
-          replanned,
-          position,
-          sourceResolution: _sourceResolutionForFile(widget.launch.watch, replanned.mediaFileId),
-          maxResolution: deviceCaps.maxResolution,
-          cancelToken: cancel,
-        );
-        if (!mounted || _exiting || cancel.isCancelled) {
-          await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
-          _clearQualityBusyIfCurrent(cancel);
-          return;
-        }
-        _autoPlayingRungId = playingRungId;
-        await _attachPrepared(
-          prepared: prepared,
-          client: client,
-          session: session,
-          cancel: cancel,
-          settings: settings,
-          deviceCaps: deviceCaps,
-          clearBusy: _clearQualityBusyIfCurrent,
-        );
-        return;
-      }
-
-      // Direct-play Original: drop HLS and reattach the progressive stream.
-      if (dropToOriginalDirect) {
-        final prepared = await preparePlayableSession(
-          client,
-          // Fresh: a preceding call may have refreshed the access token.
-          ref.read(sessionProvider) ?? session,
-          base,
-          position,
-          sourceResolution: _sourceResolutionForFile(widget.launch.watch, fileId),
-          maxResolution: deviceCaps.maxResolution,
-          cancelToken: cancel,
-        );
-        if (!mounted || _exiting || cancel.isCancelled) {
-          await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
-          _clearQualityBusyIfCurrent(cancel);
-          return;
-        }
-        final previousId = _activeSessionId;
-        if (previousId != null && previousId != prepared.session.sessionId && previousId != base.sessionId) {
-          unawaited(stopPlaybackSession(client, session, previousId).catchError((_) {}));
-        }
-        _autoPlayingRungId = null;
-        await _attachPrepared(
-          prepared: prepared,
-          client: client,
-          session: session,
-          cancel: cancel,
-          settings: settings,
-          deviceCaps: deviceCaps,
-          clearBusy: _clearQualityBusyIfCurrent,
-        );
-        return;
-      }
-
-      // Flutter sessions are legacy start/transcode — quality changes restart
-      // the encode with the rung's resolution + bitrate (same as web). Protocol
-      // v3 replan is the long-term path once this client adopts attempt IDs.
-      final startFrom = PlaybackSessionResponse(
-        sessionId: base.sessionId,
-        mediaFileId: base.mediaFileId,
-        playMethod: base.playMethod,
-        position: position,
-        isPaused: current.isPaused,
-        streamUrl: base.streamUrl,
-        audioTrackIndex: current.audioTrackIndex,
-        durationSeconds: current.durationSeconds ?? base.durationSeconds,
-        playbackInfo: current.playbackInfo ?? base.playbackInfo,
+      final replanned = await replanPlaybackQuality(
+        client,
+        session,
+        current,
+        qualityPreference: qualityId,
+        positionSeconds: position,
       );
-
-      final prepared = await preparePlayableSession(
+      final prepared = await prepareProtocolV3Decision(
         client,
         // Fresh: a preceding call may have refreshed the access token.
         ref.read(sessionProvider) ?? session,
-        startFrom,
+        replanned,
         position,
-        sourceResolution: _sourceResolutionForFile(widget.launch.watch, fileId),
-        maxResolution: deviceCaps.maxResolution,
-        targetResolution: resolution,
-        targetBitrateKbps: bitrateKbps,
-        copyVideo: copyVideo,
-        forceTranscode: !copyVideo,
         cancelToken: cancel,
       );
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -774,13 +611,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _clearQualityBusyIfCurrent(cancel);
         return;
       }
-
-      final previousId = _activeSessionId;
-      if (previousId != null && previousId != prepared.session.sessionId && previousId != base.sessionId) {
-        unawaited(stopPlaybackSession(client, session, previousId).catchError((_) {}));
-      }
-
-      _autoPlayingRungId = playingRungId;
       await _attachPrepared(
         prepared: prepared,
         client: client,
@@ -988,7 +818,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     var failureClass = classification ?? classifyPlaybackFailure(cause);
     var failureMessage = _describeFailure(cause);
     final initial = _playbackSession;
-    if (initial == null || !initial.isProtocolV3 || initial.planId == null) {
+    if (initial == null || initial.planId == null) {
       _showFatal(failureMessage);
       return;
     }
@@ -1046,13 +876,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _activeSessionId = replanned.sessionId;
           final settings = await loadPlaybackSettings(SharedPreferencesAsync());
           final deviceCaps = _deviceCaps(settings);
-          final prepared = await preparePlayableSession(
+          final prepared = await prepareProtocolV3Decision(
             client,
             ref.read(sessionProvider) ?? session,
             replanned,
             position,
-            sourceResolution: _sourceResolutionForFile(widget.launch.watch, replanned.mediaFileId),
-            maxResolution: deviceCaps.maxResolution,
             cancelToken: cancel,
           );
           if (!mounted || _exiting || cancel.isCancelled) {
@@ -1099,19 +927,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// Restarts the active playback session at [audioTrackIndex] /
   /// [positionSeconds] via a protocol-v3 replan (`track_change`, or
   /// `seek_reanchor` when the track is unchanged) + a fresh
-  /// [preparePlayableSession]. Used both for explicit audio-track switches
+  /// [prepareProtocolV3Decision]. Used both for explicit audio-track switches
   /// and, in [_seekToPosition], for seeks the current transport cannot
   /// serve (outside the plan's seek window, or any progressive-remux seek).
   Future<void> _restartSessionAt({required int audioTrackIndex, required double positionSeconds}) async {
     final current = _playbackSession;
     final sessionId = _activeSessionId ?? current?.sessionId;
     if (current == null || sessionId == null || _busyAudio || _busyQuality || _exiting || _recovering) return;
-    if (!current.isProtocolV3) {
-      // Legacy (non-v3) sessions had PATCH /playback/{id}/audio, which the
-      // server no longer serves; there is nothing to restart with.
-      _notify('This server does not support switching tracks mid-playback.');
-      return;
-    }
 
     setState(() {
       _busyAudio = true;
@@ -1147,14 +969,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      final prepared = await preparePlayableSession(
+      final prepared = await prepareProtocolV3Decision(
         client,
         // Fresh: a preceding call may have refreshed the access token.
         ref.read(sessionProvider) ?? session,
         nextSession,
         position,
-        sourceResolution: _sourceResolutionForFile(widget.launch.watch, nextSession.mediaFileId),
-        maxResolution: deviceCaps.maxResolution,
         cancelToken: cancel,
       );
       if (!mounted || _exiting || cancel.isCancelled) {
@@ -1292,30 +1112,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
 
-      // Protocol v3 positions come from the plan timeline; the requested
-      // position is only the legacy fallback.
+      // Positions come from the plan timeline; the requested position is only
+      // the fallback for a plan without one. A plan that cannot be prepared
+      // (HLS never ready, auth) is a plan failure: the session is kept so
+      // failure recovery can replan it.
       final seekAt = widget.launch.startPositionSeconds ?? startedSession.position;
-      final PreparedPlayback prepared;
-      try {
-        prepared = await preparePlayableSession(
-          client,
-          // Fresh: a preceding call may have refreshed the access token.
-          ref.read(sessionProvider) ?? session,
-          startedSession,
-          seekAt,
-          sourceResolution: _sourceResolutionForFile(widget.launch.watch, startedSession.mediaFileId),
-          maxResolution: deviceCaps.maxResolution,
-          cancelToken: cancel,
-        );
-      } catch (prepErr) {
-        // A v3 plan that cannot be prepared (HLS never ready, auth) is a
-        // plan failure: keep the session so failure recovery can replan it.
-        if (!startedSession.isProtocolV3) {
-          await stopPlaybackSession(client, session, startedSession.sessionId).catchError((_) {});
-          _activeSessionId = null;
-        }
-        rethrow;
-      }
+      final prepared = await prepareProtocolV3Decision(
+        client,
+        // Fresh: a preceding call may have refreshed the access token.
+        ref.read(sessionProvider) ?? session,
+        startedSession,
+        seekAt,
+        cancelToken: cancel,
+      );
 
       if (!mounted || _exiting || cancel.isCancelled) {
         await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
@@ -1343,7 +1152,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       debugPrint('prairie.player_screen: _start failed: $e\n$stack');
       if (!mounted || _exiting || cancel.isCancelled) return;
       final plan = _playbackSession ?? started;
-      if (plan != null && plan.isProtocolV3) {
+      if (plan != null) {
         // The start produced a plan the device could not play: recover
         // through the server before showing an error.
         _playbackSession ??= plan;
@@ -1477,24 +1286,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _reportProgress({bool paused = false}) async {
     final sessionId = _activeSessionId ?? _playbackSession?.sessionId;
     if (sessionId == null) return;
-    final backend = _backend;
-    final wantAdvice = _activeQualityId == 'auto' && !paused && !_busyQuality;
     try {
-      final advice = await reportPlaybackProgress(
+      await reportPlaybackProgress(
         ref.read(apiClientProvider),
         ref.read(sessionProvider)!,
         sessionId,
         _position.inSeconds.toDouble(),
         paused,
-        isBuffering: backend?.isBuffering,
-        requestAdvice: wantAdvice,
       );
-      if (advice == null || !mounted || _exiting || _busyQuality) return;
-      if (_activeQualityId != 'auto') return;
-      // Honor automatic stepping while Auto is selected. Key on rung id so
-      // High variants stay distinct from their same-height siblings.
-      if (advice.rungId.isEmpty) return;
-      unawaited(_applyAdvice(advice));
     } catch (_) {
       // Best-effort — a missed heartbeat isn't worth surfacing to the viewer.
     }
