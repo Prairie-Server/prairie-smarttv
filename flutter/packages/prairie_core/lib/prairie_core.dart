@@ -68,6 +68,7 @@ export 'src/screens/calendar_screen.dart';
 export 'src/screens/collection_browse_screen.dart';
 export 'src/screens/collections_screen.dart';
 export 'src/screens/connect_screen.dart';
+export 'src/screens/for_you_screen.dart';
 export 'src/screens/home_screen.dart';
 export 'src/screens/item_detail_screen.dart';
 export 'src/screens/libraries_screen.dart';

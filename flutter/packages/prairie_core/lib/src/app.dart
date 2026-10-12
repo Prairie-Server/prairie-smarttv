@@ -7,6 +7,7 @@ import 'screens/calendar_screen.dart';
 import 'screens/collection_browse_screen.dart';
 import 'screens/collections_screen.dart';
 import 'screens/connect_screen.dart';
+import 'screens/for_you_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/item_detail_screen.dart';
 import 'screens/libraries_screen.dart';
@@ -110,6 +111,7 @@ class AppRoot extends ConsumerWidget {
       ),
       SearchRoute(:final restoreContentId) => SearchScreen(restoreContentId: restoreContentId),
       CalendarRoute(:final restoreContentId) => CalendarScreen(restoreContentId: restoreContentId),
+      ForYouRoute(:final restoreContentId) => ForYouScreen(restoreContentId: restoreContentId),
       LiveTvRoute(:final tab, :final restoreChannelId) => LiveTvScreen(initialTab: tab, restoreChannelId: restoreChannelId),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
