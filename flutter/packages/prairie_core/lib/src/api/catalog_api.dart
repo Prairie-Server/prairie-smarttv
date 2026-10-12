@@ -189,6 +189,19 @@ class ItemExtra {
   );
 }
 
+/// Every profile's star ratings of an item, averaged. The server omits it
+/// below its minimum rating count.
+class CommunityRating {
+  const CommunityRating({required this.average, required this.count});
+  final double average;
+  final int count;
+
+  factory CommunityRating.fromJson(Map<String, dynamic> json) => CommunityRating(
+    average: (json['average'] as num).toDouble(),
+    count: (json['count'] as num).toInt(),
+  );
+}
+
 /// Mirrors `ItemDetail` (extends `CatalogItem`) from src/api/catalog.ts.
 class ItemDetail {
   const ItemDetail({
@@ -196,6 +209,8 @@ class ItemDetail {
     this.tagline,
     this.ratingRtCritic,
     this.ratingRtAudience,
+    this.userRating,
+    this.communityRating,
     this.cast = const [],
     this.crew = const [],
     this.studios = const [],
@@ -218,6 +233,9 @@ class ItemDetail {
   final String? tagline;
   final int? ratingRtCritic;
   final int? ratingRtAudience;
+  /// The acting profile's 1–5 star rating; absent when unrated.
+  final int? userRating;
+  final CommunityRating? communityRating;
   final List<CastMember> cast;
   final List<CrewMember> crew;
   final List<String> studios;
@@ -240,6 +258,10 @@ class ItemDetail {
     tagline: json['tagline'] as String?,
     ratingRtCritic: (json['rating_rt_critic'] as num?)?.toInt(),
     ratingRtAudience: (json['rating_rt_audience'] as num?)?.toInt(),
+    userRating: (json['user_rating'] as num?)?.toInt(),
+    communityRating: json['community_rating'] != null
+        ? CommunityRating.fromJson(json['community_rating'] as Map<String, dynamic>)
+        : null,
     cast: (json['cast'] as List<dynamic>? ?? []).map((j) => CastMember.fromJson(j as Map<String, dynamic>)).toList(),
     crew: (json['crew'] as List<dynamic>? ?? []).map((j) => CrewMember.fromJson(j as Map<String, dynamic>)).toList(),
     studios: (json['studios'] as List<dynamic>?)?.cast<String>() ?? const [],
