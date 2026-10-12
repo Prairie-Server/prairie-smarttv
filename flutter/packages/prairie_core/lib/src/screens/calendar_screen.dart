@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
@@ -19,11 +20,33 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   List<CalendarDay> _days = [];
   bool _loading = true;
   String? _error;
+  /// The card for [CalendarScreen.restoreContentId]. Rails build lazily, so
+  /// `autofocus` can't reach a card that starts off-screen; it is focused
+  /// and scrolled into view explicitly once, after the first frame.
+  final _restoreFocus = FocusNode(debugLabel: 'calendar-restore-item');
+  bool _restoreApplied = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _restoreFocus.dispose();
+    super.dispose();
+  }
+
+  void _applyRestoreFocus() {
+    if (_restoreApplied) return;
+    _restoreApplied = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _restoreFocus.context;
+      if (!mounted || ctx == null) return;
+      _restoreFocus.requestFocus();
+      Scrollable.ensureVisible(ctx, alignment: 0.35, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+    });
   }
 
   Future<void> _load() async {
@@ -54,6 +77,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final serverUrl = ref.watch(sessionProvider)!.serverUrl;
     final restoreId = widget.restoreContentId;
     final restorable = restoreId != null && _days.any((d) => d.events.any((e) => e.contentId == restoreId));
+    if (restorable) _applyRestoreFocus();
     return ShellScaffold(
       active: ShellTab.calendar,
       body: _loading
@@ -81,26 +105,33 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         style: TextStyle(color: PrairieColors.muted),
                       ),
                     )
-                  : ListView(
+                  // Not a ListView: at most 14 rails, and every rail must be
+                  // built for the restored card to exist wherever it is.
+                  : SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(vertical: 24),
-                      children: [
-                        for (final (dayIndex, day) in _days.indexed)
-                          MediaRow<CalendarEvent>(
-                            title: day.label,
-                            items: day.events,
-                            itemBuilder: (context, event, index) => PosterCard(
-                              title: event.title,
-                              subtitle: event.episodeLabel,
-                              posterUrl: event.posterUrl,
-                              serverUrl: serverUrl,
-                              watched: event.watched,
-                              autofocus: restorable
-                                  ? event.contentId == restoreId
-                                  : dayIndex == 0 && index == 0,
-                              onTap: () => _open(event),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final (dayIndex, day) in _days.indexed)
+                            MediaRow<CalendarEvent>(
+                              title: day.label,
+                              items: day.events,
+                              // ponytail: builds the whole rail — fine for a day's
+                              // releases; a restore index on MediaRow if one gets huge.
+                              scrollCacheExtent: restorable ? const ScrollCacheExtent.pixels(100000) : null,
+                              itemBuilder: (context, event, index) => PosterCard(
+                                title: event.title,
+                                subtitle: event.episodeLabel,
+                                posterUrl: event.posterUrl,
+                                serverUrl: serverUrl,
+                                watched: event.watched,
+                                focusNode: restorable && event.contentId == restoreId ? _restoreFocus : null,
+                                autofocus: !restorable && dayIndex == 0 && index == 0,
+                                onTap: () => _open(event),
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:prairie_core/prairie_core.dart';
 
@@ -11,6 +12,7 @@ class MediaRow<T> extends StatelessWidget {
     required this.itemBuilder,
     this.variant = MediaRowVariant.poster,
     this.escapeUpFocusNode,
+    this.scrollCacheExtent,
   });
 
   final String title;
@@ -22,6 +24,9 @@ class MediaRow<T> extends StatelessWidget {
   /// sitting directly under a page hero) — the search is unreliable enough
   /// on real hardware that it can't be trusted as the only path back up.
   final FocusNode? escapeUpFocusNode;
+  /// Off-screen extent to keep built; raise it so a card past the visible
+  /// ones exists (and can take focus) before the rail is scrolled to it.
+  final ScrollCacheExtent? scrollCacheExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +74,7 @@ class MediaRow<T> extends StatelessWidget {
               },
               child: ListView.separated(
                 clipBehavior: Clip.none,
+                scrollCacheExtent: scrollCacheExtent,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 scrollDirection: Axis.horizontal,
                 itemCount: items.length,

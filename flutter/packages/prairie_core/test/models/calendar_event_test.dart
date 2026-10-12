@@ -36,4 +36,12 @@ void main() {
     expect(days.map((d) => d.label), ['Today', 'Tomorrow', 'Friday, Oct 16']);
     expect(days[1].events.single.contentId, 'episode:tomorrow');
   });
+
+  test('drops days past the requested window', () {
+    final days = groupCalendarEvents([
+      episode('episode:last', '2026-10-25'),
+      episode('episode:spill', '2026-10-26'),
+    ], DateTime(2026, 10, 12, 20));
+    expect(days.single.events.single.contentId, 'episode:last');
+  });
 }

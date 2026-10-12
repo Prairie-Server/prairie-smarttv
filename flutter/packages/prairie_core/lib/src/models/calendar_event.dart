@@ -100,18 +100,20 @@ String calendarDayLabel(DateTime day, DateTime today) {
   return '${_weekdays[day.weekday - 1]}, ${_months[day.month - 1]} ${day.day}';
 }
 
-/// Groups [events] by local day, oldest first, dropping days before [now].
+/// Groups [events] by local day, oldest first, keeping only the [days] local
+/// days from [now] — the UTC fetch window spills a day either side.
 /// Within a day, events keep the server's order.
-List<CalendarDay> groupCalendarEvents(List<CalendarEvent> events, DateTime now) {
+List<CalendarDay> groupCalendarEvents(List<CalendarEvent> events, DateTime now, {int days = 14}) {
   final today = DateTime(now.year, now.month, now.day);
+  final end = DateTime(today.year, today.month, today.day + days);
   final byDay = <DateTime, List<CalendarEvent>>{};
   for (final event in events) {
     final day = event.localDay;
-    if (day.isBefore(today)) continue;
+    if (day.isBefore(today) || !day.isBefore(end)) continue;
     byDay.putIfAbsent(day, () => []).add(event);
   }
-  final days = byDay.keys.toList()..sort();
+  final keys = byDay.keys.toList()..sort();
   return [
-    for (final day in days) CalendarDay(day: day, label: calendarDayLabel(day, today), events: byDay[day]!),
+    for (final day in keys) CalendarDay(day: day, label: calendarDayLabel(day, today), events: byDay[day]!),
   ];
 }
