@@ -11,6 +11,7 @@ class MediaRow<T> extends StatelessWidget {
     required this.itemBuilder,
     this.variant = MediaRowVariant.poster,
     this.escapeUpFocusNode,
+    this.cacheExtent,
   });
 
   final String title;
@@ -22,6 +23,9 @@ class MediaRow<T> extends StatelessWidget {
   /// sitting directly under a page hero) — the search is unreliable enough
   /// on real hardware that it can't be trusted as the only path back up.
   final FocusNode? escapeUpFocusNode;
+  /// Off-screen extent to keep built; raise it so a card past the visible
+  /// ones exists (and can take focus) before the rail is scrolled to it.
+  final double? cacheExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +73,10 @@ class MediaRow<T> extends StatelessWidget {
               },
               child: ListView.separated(
                 clipBehavior: Clip.none,
+                // ponytail: webOS builds on Flutter 3.38, which lacks scrollCacheExtent;
+                // switch once that SDK moves past 3.41.
+                // ignore: deprecated_member_use
+                cacheExtent: cacheExtent,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 scrollDirection: Axis.horizontal,
                 itemCount: items.length,

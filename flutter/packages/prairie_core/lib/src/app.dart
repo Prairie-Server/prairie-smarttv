@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
+import 'screens/calendar_screen.dart';
 import 'screens/collection_browse_screen.dart';
 import 'screens/collections_screen.dart';
 import 'screens/connect_screen.dart';
@@ -108,6 +109,7 @@ class AppRoot extends ConsumerWidget {
         restoreContentId: restoreContentId,
       ),
       SearchRoute(:final restoreContentId) => SearchScreen(restoreContentId: restoreContentId),
+      CalendarRoute(:final restoreContentId) => CalendarScreen(restoreContentId: restoreContentId),
       LiveTvRoute(:final tab, :final restoreChannelId) => LiveTvScreen(initialTab: tab, restoreChannelId: restoreChannelId),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
