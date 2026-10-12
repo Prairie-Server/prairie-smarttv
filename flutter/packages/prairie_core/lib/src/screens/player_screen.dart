@@ -184,6 +184,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// to it); the player is now leaving or counting down to the next episode.
   bool _ended = false;
   bool _switchingEpisode = false;
+  /// Wall-clock time the sleep timer pauses playback; null when off.
+  DateTime? _sleepDeadline;
+  Timer? _sleepTicker;
 
   String? get _contentId => widget.launch.contentId ?? widget.launch.watch?.contentId;
   EpisodeRef? get _previousEpisode => _contentId == null ? null : _series?.previousOf(_contentId!);
@@ -203,6 +206,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _seekFocus.addListener(_onControlFocusChanged);
     _playFocus.addListener(_onControlFocusChanged);
     _backFocus.addListener(_onControlFocusChanged);
+    final sleepDeadline = widget.launch.sleepDeadline;
+    if (sleepDeadline != null && sleepTimerRemaining(sleepDeadline, DateTime.now()) != null) {
+      _startSleepTicker(sleepDeadline);
+    }
     _start();
     unawaited(_loadPlaybackExtras());
     _scheduleHideControls();
@@ -270,6 +277,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _scrubCommitTimer?.cancel();
     _introPromptTimer?.cancel();
     _upNextTimer?.cancel();
+    _sleepTicker?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -1315,6 +1323,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _seekDebounce?.cancel();
     _introPromptTimer?.cancel();
     _upNextTimer?.cancel();
+    _sleepTicker?.cancel();
     await _errorSub?.cancel();
     _errorSub = null;
     await _completedSub?.cancel();
@@ -1503,6 +1512,77 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_ended) unawaited(_exit());
   }
 
+  Future<void> _pickSleepTimer() async {
+    final deadline = _sleepDeadline;
+    final remaining = deadline == null ? null : sleepTimerRemaining(deadline, DateTime.now());
+    // 0 = off; null = sheet dismissed.
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: PrairieColors.bgElevated,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Off', style: TextStyle(color: PrairieColors.ink)),
+              subtitle: remaining == null
+                  ? null
+                  : Text('${formatSleepCountdown(remaining)} left', style: const TextStyle(color: PrairieColors.muted)),
+              trailing: remaining == null ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+              onTap: () => Navigator.of(context).pop<int>(0),
+            ),
+            for (final minutes in sleepTimerPresets)
+              ListTile(
+                title: Text(sleepTimerLabel(minutes), style: const TextStyle(color: PrairieColors.ink)),
+                onTap: () => Navigator.of(context).pop<int>(minutes),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 0) {
+      _sleepTicker?.cancel();
+      setState(() => _sleepDeadline = null);
+      return;
+    }
+    _startSleepTicker(DateTime.now().add(Duration(minutes: choice)));
+    _notify('Sleep timer set for ${sleepTimerLabel(choice)}');
+  }
+
+  /// Wall-clock countdown: keeps running while paused and across auto-played
+  /// episodes (the deadline rides along in [PlayerLaunch.sleepDeadline]).
+  void _startSleepTicker(DateTime deadline) {
+    _sleepTicker?.cancel();
+    _sleepDeadline = deadline;
+    _sleepTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final current = _sleepDeadline;
+      if (current != null && sleepTimerRemaining(current, DateTime.now()) == null) {
+        _onSleepTimerFired();
+      } else if (_controlsVisible) {
+        // The countdown chip only shows with the chrome.
+        setState(() {});
+      }
+    });
+    if (mounted) setState(() {});
+  }
+
+  /// Pauses (and stops any up next countdown); if the episode already ended
+  /// and was counting down to the next one, leaves the player instead.
+  void _onSleepTimerFired() {
+    _sleepTicker?.cancel();
+    setState(() => _sleepDeadline = null);
+    if (_ended) {
+      unawaited(_exit());
+      return;
+    }
+    unawaited(_backend?.pause());
+    if (_upNextVisible) _hideUpNext();
+    _showControls(focusPlay: true);
+    _notify('Sleep timer ended — paused');
+  }
+
   /// End of the episode: count down to the next one when autoplay is on
   /// (unless the viewer already cancelled it), otherwise leave the player —
   /// never sit on the last frame.
@@ -1542,6 +1622,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             watch: watch,
             // Keep the viewer's subtitle choice; audio is per file.
             initialSubtitleLanguage: widget.launch.initialSubtitleLanguage,
+            sleepDeadline: _sleepDeadline,
           ),
           back: widget.back,
         ),
@@ -1920,6 +2001,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                         ],
                                       ),
                                     ),
+                                    if (_sleepDeadline case final deadline?)
+                                      if (sleepTimerRemaining(deadline, DateTime.now()) case final left?)
+                                        Chip(
+                                          avatar: const Icon(Icons.bedtime, size: 18, color: PrairieColors.amber),
+                                          label: Text(formatSleepCountdown(left)),
+                                          labelStyle: const TextStyle(color: PrairieColors.ink, fontFeatures: [FontFeature.tabularFigures()]),
+                                          backgroundColor: const Color(0x590A0C10),
+                                          side: BorderSide.none,
+                                          shape: const StadiumBorder(),
+                                        ),
                                   ],
                                 ),
                                 const Spacer(),
@@ -1973,6 +2064,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                                         icon: const Icon(Icons.high_quality),
                                         tooltip: 'Quality',
                                       ),
+                                    IconButton(
+                                      iconSize: 28,
+                                      style: playerTransportStyle(_sleepDeadline != null ? PrairieColors.amber : PrairieColors.ink),
+                                      onPressed: _pickSleepTimer,
+                                      icon: const Icon(Icons.bedtime),
+                                      tooltip: 'Sleep timer',
+                                    ),
                                     IconButton(
                                       iconSize: 28,
                                       style: playerTransportStyle(_showStats ? PrairieColors.amber : PrairieColors.ink),

@@ -14,6 +14,7 @@ export 'src/models/server_entry.dart';
 export 'src/models/watch_detail.dart';
 export 'src/player/playback_markers.dart';
 export 'src/player/remote_media_keys.dart';
+export 'src/player/sleep_timer.dart';
 export 'src/player/trickplay.dart';
 export 'src/lib/artwork_url.dart';
 export 'src/api/api_client.dart';
