@@ -248,6 +248,7 @@ class PlayerLaunch {
     this.watch,
     this.initialAudioTrackIndex,
     this.initialSubtitleLanguage,
+    this.sleepDeadline,
   });
 
   final int fileId;
@@ -260,4 +261,7 @@ class PlayerLaunch {
   /// Subtitle language to auto-select on start — `''` means explicitly off,
   /// `null` means fall back to the saved preferred-subtitle-language setting.
   final String? initialSubtitleLanguage;
+  /// Running sleep timer handed over when the player moves to the next
+  /// episode, so the countdown keeps going instead of resetting.
+  final DateTime? sleepDeadline;
 }
