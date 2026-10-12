@@ -16,7 +16,15 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
     required this.onSettings,
     required this.onDisconnect,
     this.escapeDownFocus,
+    this.unreadCount = 0,
+    this.onNotifications,
   });
+
+  /// Unread notifications (plus a pending app update) shown on the bell.
+  final int unreadCount;
+
+  /// Opens the notification inbox; null hides the bell.
+  final VoidCallback? onNotifications;
 
   final ShellTab active;
   final String? profileName;
@@ -98,6 +106,21 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                     ],
                   ),
                 ),
+                if (onNotifications != null) ...[
+                  IconButton(
+                    tooltip: unreadCount > 0 ? 'Notifications ($unreadCount unread)' : 'Notifications',
+                    onPressed: onNotifications,
+                    focusColor: PrairieColors.focusFill,
+                    icon: Badge(
+                      isLabelVisible: unreadCount > 0,
+                      label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                      backgroundColor: PrairieColors.amber,
+                      textColor: PrairieColors.bg,
+                      child: const Icon(Icons.notifications_outlined, color: PrairieColors.ink),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 // Themed locally so the captured ambient Theme (PopupMenuButton
                 // reapplies it around the overlay route) gives each item's
                 // InkWell the same solid dark-orange TV focus fill as

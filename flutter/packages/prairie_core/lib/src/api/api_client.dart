@@ -201,8 +201,9 @@ class ApiClient {
     required String method,
     Object? body,
     String? accessToken,
+    Map<String, String>? extraHeaders,
   }) {
-    final headers = _buildHeaders(options, accessToken: accessToken, hasBody: body != null);
+    final headers = {..._buildHeaders(options, accessToken: accessToken, hasBody: body != null), ...?extraHeaders};
     return _dio.request<dynamic>(
       _joinUrl(options.serverUrl, path),
       data: body,
@@ -313,8 +314,15 @@ class ApiClient {
   /// Mirrors `apiRequest<T>`. [T] should be `Map<String, dynamic>`,
   /// `List<dynamic>`, or another JSON-decodable shape — callers are
   /// responsible for the same unchecked cast the TS generic performs.
-  Future<T> request<T>(ApiClientOptions options, String path, {String method = 'GET', Object? body}) async {
-    var response = await _performFetch(options, path, method: method, body: body);
+  /// [headers] are sent on top of the standard ones (e.g. `If-Match`).
+  Future<T> request<T>(
+    ApiClientOptions options,
+    String path, {
+    String method = 'GET',
+    Object? body,
+    Map<String, String>? headers,
+  }) async {
+    var response = await _performFetch(options, path, method: method, body: body, extraHeaders: headers);
 
     if (response.statusCode == null || response.statusCode! >= 400) {
       final peek = _parseError(response);
@@ -330,6 +338,7 @@ class ApiClient {
             method: method,
             body: body,
             accessToken: refreshed.accessToken,
+            extraHeaders: headers,
           );
           if (response.statusCode != null && response.statusCode! < 400) {
             if (response.statusCode == 204) return null as T;

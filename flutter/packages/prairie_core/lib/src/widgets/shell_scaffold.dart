@@ -19,6 +19,8 @@ class ShellScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider)!;
     final liveTvAvailable = ref.watch(liveTvAvailableProvider).valueOrNull ?? (active == ShellTab.livetv);
+    final unreadCount = (ref.watch(notificationUnreadCountProvider).valueOrNull ?? 0) +
+        (ref.watch(appUpdateProvider).valueOrNull != null ? 1 : 0);
     // Back on any tab other than Home returns to Home instead of exiting the
     // app — only Home's own back falls through to the platform default.
     return PopScope(
@@ -55,6 +57,8 @@ class ShellScaffold extends ConsumerWidget {
           ref.read(routeProvider.notifier).goServers();
         },
         escapeDownFocus: escapeDownFocus,
+        unreadCount: unreadCount,
+        onNotifications: () => ref.read(routeProvider.notifier).go(NotificationsRoute(back: ref.read(routeProvider))),
       ),
       body: body,
       ),

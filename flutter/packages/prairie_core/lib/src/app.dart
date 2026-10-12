@@ -14,6 +14,7 @@ import 'screens/library_browse_screen.dart';
 import 'screens/live_tv_player_screen.dart';
 import 'screens/live_tv_screen.dart';
 import 'screens/manual_server_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/profiles_screen.dart';
 import 'screens/search_screen.dart';
@@ -113,6 +114,7 @@ class AppRoot extends ConsumerWidget {
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
       SettingsRoute(:final back) => SettingsScreen(back: back),
+      NotificationsRoute(:final back) => NotificationsScreen(back: back),
       // Keyed by launch: next/previous episode swaps in a fresh player.
       PlayerRoute(:final launch, :final back) => PlayerScreen(key: ObjectKey(launch), launch: launch, back: back),
     };

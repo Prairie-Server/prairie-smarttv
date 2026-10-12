@@ -61,6 +61,10 @@ fi
 if [[ -n "$SECURITY_PROFILE" ]]; then
   BUILD_ARGS+=(--security-profile "$SECURITY_PROFILE")
 fi
+# The app reads this as `stampedAppVersion` (User-Agent + update check).
+if [[ -n "$PACKAGE_VERSION" ]]; then
+  BUILD_ARGS+=(--dart-define=PRAIRIE_APP_VERSION="$PACKAGE_VERSION")
+fi
 # Dart obfuscation shrinks AOT size; keep --split-debug-info for crash symbolication.
 if [[ "$OBFUSCATE" -eq 1 ]]; then
   BUILD_ARGS+=(--obfuscate --split-debug-info="${OUT_DIR}/symbols-tizen")

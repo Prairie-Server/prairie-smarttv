@@ -2,7 +2,9 @@ import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
-/// Mirrors CollectionBrowseScreen.tsx.
+/// Mirrors CollectionBrowseScreen.tsx. A personal collection the acting
+/// profile created also gets Rename / Delete, and (manual collections only)
+/// a "Remove titles" mode in which selecting a poster removes it.
 class CollectionBrowseScreen extends ConsumerStatefulWidget {
   const CollectionBrowseScreen({
     super.key,
@@ -29,10 +31,30 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
   bool _loadingMore = false;
   String? _error;
 
+  late String _title = widget.title;
+  /// Set once the collection is known to be the acting profile's own and
+  /// capabilities allow editing; null hides every editing action.
+  CollectionCard? _editable;
+  bool _removing = false;
+  bool _busy = false;
+  /// Card to focus when the grid mounts (returning from details, or the
+  /// neighbour of a removed title). Bumping [_gridGeneration] remounts the
+  /// grid so it applies this again.
+  late String? _focusContentId = widget.restoreContentId;
+  int _gridGeneration = 0;
+  final _renameFocus = FocusNode(debugLabel: 'collection-rename');
+
   @override
   void initState() {
     super.initState();
     _load();
+    if (widget.libraryId == null) _loadEditing();
+  }
+
+  @override
+  void dispose() {
+    _renameFocus.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -66,6 +88,20 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
     }
   }
 
+  /// Best effort: any failure just leaves the collection read-only.
+  Future<void> _loadEditing() async {
+    try {
+      final client = ref.read(apiClientProvider);
+      final session = ref.read(sessionProvider)!;
+      final (capabilities, card) = await (
+        fetchCollectionCapabilities(client, session),
+        fetchPersonalCollection(client, session, widget.collectionId),
+      ).wait;
+      if (!mounted || !canEditCollection(capabilities, card, session.profileId)) return;
+      setState(() => _editable = card);
+    } catch (_) {}
+  }
+
   Future<void> _loadMore() async {
     setState(() => _loadingMore = true);
     try {
@@ -95,25 +131,139 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
     }
   }
 
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _rename() async {
+    final name = await showCollectionNameDialog(context, title: 'Rename collection', confirmLabel: 'Rename', initialName: _title);
+    if (name == null || name == _title || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await renameCollection(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.collectionId, name);
+      if (mounted) setState(() => _title = name);
+      _notify('Renamed to “$name”');
+    } catch (e) {
+      _notify(e is ApiError ? e.message : 'Could not rename the collection');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete collection?',
+      message: '“$_title” will be deleted. Its titles stay in your library.',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await deleteCollection(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.collectionId);
+      _notify('Deleted “$_title”');
+      if (mounted) ref.read(routeProvider.notifier).go(const CollectionsRoute());
+    } catch (e) {
+      _notify(e is ApiError ? e.message : 'Could not delete the collection');
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removeItem(CatalogItem item) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove from collection?',
+      message: 'Remove “${item.title}” from “$_title”?',
+      confirmLabel: 'Remove',
+    );
+    if (!confirmed || !mounted) return;
+    try {
+      await removeCollectionItem(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.collectionId, item.contentId);
+      if (!mounted) return;
+      final index = _items.indexOf(item);
+      final remaining = [..._items]..removeAt(index);
+      setState(() {
+        _items = remaining;
+        // Focus the title that slid into its place, else the one before it.
+        _focusContentId = remaining.isEmpty ? null : remaining[index.clamp(0, remaining.length - 1)].contentId;
+        _gridGeneration++;
+        if (remaining.isEmpty) _removing = false;
+      });
+      // Rename is disabled until this frame leaves "Remove titles".
+      if (remaining.isEmpty) WidgetsBinding.instance.addPostFrameCallback((_) => _renameFocus.requestFocus());
+      _notify('Removed “${item.title}”');
+    } catch (e) {
+      _notify(e is ApiError ? e.message : 'Could not remove the title');
+    }
+  }
+
+  void _openItem(CatalogItem item) {
+    ref.read(routeProvider.notifier).go(
+      DetailRoute(
+        contentId: item.contentId,
+        seed: item,
+        back: CollectionRoute(
+          collection: CollectionCard(id: widget.collectionId, title: _title, libraryId: widget.libraryId),
+          restoreContentId: item.contentId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider)!;
+    final editable = _editable;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) ref.read(routeProvider.notifier).go(const CollectionsRoute());
+        if (didPop) return;
+        // Back leaves "Remove titles" first, then the screen.
+        if (_removing) {
+          setState(() => _removing = false);
+        } else {
+          ref.read(routeProvider.notifier).go(const CollectionsRoute());
+        }
       },
       child: Scaffold(
       appBar: AppBar(
-        title: Text(widget.title, style: const TextStyle(fontFamily: 'Fraunces')),
+        title: Text(_title, style: const TextStyle(fontFamily: 'Fraunces')),
         leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(const CollectionsRoute())),
+        actions: [
+          if (editable != null) ...[
+            if (editable.isManual && _items.isNotEmpty)
+              TextButton.icon(
+                onPressed: _busy ? null : () => setState(() => _removing = !_removing),
+                icon: Icon(_removing ? Icons.check : Icons.playlist_remove),
+                label: Text(_removing ? 'Done' : 'Remove titles'),
+              ),
+            TextButton.icon(
+              focusNode: _renameFocus,
+              onPressed: _busy || _removing ? null : _rename,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Rename'),
+            ),
+            TextButton.icon(
+              onPressed: _busy || _removing ? null : _delete,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete'),
+            ),
+            const SizedBox(width: 16),
+          ],
+        ],
       ),
       body: Column(
         children: [
           if (!_loading)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text('${_items.length}${_hasMore ? '+' : ''} title${_items.length == 1 ? '' : 's'}', style: const TextStyle(color: PrairieColors.muted)),
+              child: Text(
+                _removing
+                    ? 'Select a title to remove it from this collection.'
+                    : '${_items.length}${_hasMore ? '+' : ''} title${_items.length == 1 ? '' : 's'}',
+                style: TextStyle(color: _removing ? PrairieColors.amber : PrairieColors.muted),
+              ),
             ),
           if (_error != null) Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
           Expanded(
@@ -122,19 +272,11 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
                 : _items.isEmpty
                 ? const Center(child: Text('This collection is empty.', style: TextStyle(color: PrairieColors.muted)))
                 : PosterGrid(
+                    key: ValueKey(_gridGeneration),
                     items: _items,
                     serverUrl: session.serverUrl,
-                    restoreContentId: widget.restoreContentId,
-                    onOpen: (item) => ref.read(routeProvider.notifier).go(
-                      DetailRoute(
-                        contentId: item.contentId,
-                        seed: item,
-                        back: CollectionRoute(
-                          collection: CollectionCard(id: widget.collectionId, title: widget.title, libraryId: widget.libraryId),
-                          restoreContentId: item.contentId,
-                        ),
-                      ),
-                    ),
+                    restoreContentId: _focusContentId,
+                    onOpen: _removing ? _removeItem : _openItem,
                   ),
           ),
           if (_hasMore && !_loading)

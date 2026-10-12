@@ -124,6 +124,12 @@ class SettingsRoute extends Route {
   final Route back;
 }
 
+class NotificationsRoute extends Route {
+  const NotificationsRoute({required this.back});
+
+  final Route back;
+}
+
 class PlayerRoute extends Route {
   const PlayerRoute({required this.launch, required this.back});
 
