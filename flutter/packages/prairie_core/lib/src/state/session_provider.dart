@@ -52,6 +52,7 @@ class SessionNotifier extends Notifier<PrairieSession?> {
   Future<void> restore() async {
     final durable = ref.read(durableStoreProvider);
     await durable.ensureStorageSchema();
+    ref.read(apiClientProvider).deviceId = await durable.loadOrCreateDeviceId();
     final registryStore = ref.read(serverRegistryStoreProvider);
     await registryStore.migrateFromLegacy();
 

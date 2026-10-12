@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Cross-upgrade persistence helpers.
@@ -27,6 +29,7 @@ class DurableStore {
   static const legacyPlaybackSettingsKey = 'prairie.settings.playback';
   static const serverRegistryKey = 'prairie.serverRegistry';
   static const performanceModeKey = 'prairie.performanceMode';
+  static const deviceIdKey = 'prairie.deviceId';
 
   /// Keys that must survive app updates. Cleared only by explicit user logout
   /// of *session* material — registry / last URL / settings stay.
@@ -36,6 +39,7 @@ class DurableStore {
     playbackSettingsKey,
     storageSchemaKey,
     performanceModeKey,
+    deviceIdKey,
   ];
 
   SharedPreferencesAsync get prefs => _prefs;
@@ -61,6 +65,26 @@ class DurableStore {
     if (normalized.isNotEmpty) {
       await _prefs.setString(lastServerUrlKey, normalized);
     }
+  }
+
+  /// This install's `X-Prairie-Device-Id`, minted on first use. Device-scoped
+  /// server settings are stored against it, so it must survive updates.
+  Future<String> loadOrCreateDeviceId() async {
+    try {
+      final existing = await _prefs.getString(deviceIdKey);
+      if (existing != null && existing.isNotEmpty) return existing;
+    } catch (_) {
+      // fall through and mint one
+    }
+    final random = Random.secure();
+    final hex = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    final id = 'smarttv-$hex';
+    try {
+      await _prefs.setString(deviceIdKey, id);
+    } catch (_) {
+      // Unsaved: this boot still gets a well-formed id.
+    }
+    return id;
   }
 
   /// Ensure schema version is recorded. Migrations may copy/rename keys but

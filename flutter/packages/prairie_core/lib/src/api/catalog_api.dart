@@ -1,5 +1,6 @@
 import '../models/auth.dart';
 import '../models/catalog_item.dart';
+import '../models/episode.dart';
 import '../models/watch_detail.dart';
 import '../player/trickplay.dart';
 import 'api_client.dart';
@@ -269,12 +270,20 @@ Future<ItemDetail> fetchItemDetail(ApiClient client, PrairieSession session, Str
 
 /// Mirrors `SeasonSummary` from src/api/catalog.ts.
 class SeasonSummary {
-  const SeasonSummary({this.contentId, required this.seasonNumber, this.episodeCount, this.title, this.posterUrl});
+  const SeasonSummary({
+    this.contentId,
+    required this.seasonNumber,
+    this.episodeCount,
+    this.title,
+    this.posterUrl,
+    this.isSpecials = false,
+  });
   final String? contentId;
   final int seasonNumber;
   final int? episodeCount;
   final String? title;
   final String? posterUrl;
+  final bool isSpecials;
 
   factory SeasonSummary.fromJson(Map<String, dynamic> json) => SeasonSummary(
     contentId: json['content_id'] as String?,
@@ -282,6 +291,7 @@ class SeasonSummary {
     episodeCount: json['episode_count'] as int?,
     title: json['title'] as String?,
     posterUrl: json['poster_url'] as String?,
+    isSpecials: json['is_specials'] == true || json['season_number'] == 0,
   );
 }
 
@@ -297,6 +307,7 @@ class EpisodeSummary {
     this.stillUrl,
     this.runtime,
     this.userData,
+    this.playable = true,
   });
 
   final String contentId;
@@ -309,6 +320,10 @@ class EpisodeSummary {
   final int? runtime;
   final WatchUserData? userData;
 
+  /// Has at least one file the server could read. Episode navigation and
+  /// autoplay skip the rest, like web/Android.
+  final bool playable;
+
   factory EpisodeSummary.fromJson(Map<String, dynamic> json) => EpisodeSummary(
     contentId: json['content_id'] as String,
     title: json['title'] as String,
@@ -319,20 +334,21 @@ class EpisodeSummary {
     stillUrl: json['still_url'] as String?,
     runtime: json['runtime'] as int?,
     userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
+    playable: (json['files'] as List<dynamic>? ?? const []).any((f) => f is Map && f['unreadable'] != true),
   );
 }
 
-/// Mirrors `fetchSeasons`.
+/// v2 `listSeriesSeasons`.
 Future<List<SeasonSummary>> fetchSeasons(ApiClient client, PrairieSession session, String seriesId) async {
   final data = await client.request<dynamic>(
     _sessionOptions(session),
-    '/api/v1/catalog/series/${Uri.encodeComponent(seriesId)}/seasons',
+    '/api/v2/catalog/series/${Uri.encodeComponent(seriesId)}/seasons',
   );
-  final list = data is List ? data : (data as Map<String, dynamic>)['seasons'] as List<dynamic>? ?? [];
+  final list = data is List ? data : (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
   return list.map((j) => SeasonSummary.fromJson(j as Map<String, dynamic>)).toList();
 }
 
-/// Mirrors `fetchEpisodes`.
+/// v2 `listSeasonEpisodes`.
 Future<List<EpisodeSummary>> fetchEpisodes(
   ApiClient client,
   PrairieSession session,
@@ -341,8 +357,41 @@ Future<List<EpisodeSummary>> fetchEpisodes(
 ) async {
   final data = await client.request<dynamic>(
     _sessionOptions(session),
-    '/api/v1/catalog/series/${Uri.encodeComponent(seriesId)}/seasons/$seasonNumber/episodes',
+    '/api/v2/catalog/series/${Uri.encodeComponent(seriesId)}/seasons/$seasonNumber/episodes',
   );
-  final list = data is List ? data : (data as Map<String, dynamic>)['episodes'] as List<dynamic>? ?? [];
+  final list = data is List ? data : (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
   return list.map((j) => EpisodeSummary.fromJson(j as Map<String, dynamic>)).toList();
+}
+
+/// The playable episodes around [currentSeason] — the previous and next
+/// regular seasons plus the current one — for the player's prev/next and
+/// autoplay. Bounded to three season reads rather than the whole series;
+/// a specials season only navigates within itself.
+Future<SeriesContext> loadSeriesContext(
+  ApiClient client,
+  PrairieSession session, {
+  required String seriesId,
+  String? seriesTitle,
+  required int currentSeason,
+}) async {
+  final seasons = await fetchSeasons(client, session, seriesId);
+  final current = seasons.where((s) => s.seasonNumber == currentSeason).firstOrNull;
+  final numbers = <int>{currentSeason};
+  if (current == null || !current.isSpecials) {
+    final regular = seasons.where((s) => !s.isSpecials).map((s) => s.seasonNumber).toList()..sort();
+    final before = regular.where((n) => n < currentSeason);
+    final after = regular.where((n) => n > currentSeason);
+    if (before.isNotEmpty) numbers.add(before.last);
+    if (after.isNotEmpty) numbers.add(after.first);
+  }
+  final lists = await Future.wait(
+    numbers.map((n) => fetchEpisodes(client, session, seriesId, n).catchError((Object _) => <EpisodeSummary>[])),
+  );
+  final episodes = [
+    for (final list in lists)
+      for (final e in list)
+        if (e.playable && e.seasonNumber != null && e.episodeNumber != null)
+          EpisodeRef(contentId: e.contentId, title: e.title, seasonNumber: e.seasonNumber!, episodeNumber: e.episodeNumber!),
+  ]..sort((a, b) => a.seasonNumber != b.seasonNumber ? a.seasonNumber - b.seasonNumber : a.episodeNumber - b.episodeNumber);
+  return SeriesContext(seriesId: seriesId, seriesTitle: seriesTitle, episodes: episodes);
 }

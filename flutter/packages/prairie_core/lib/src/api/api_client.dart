@@ -186,6 +186,11 @@ class ApiClient {
 
   /// Device / UA identity used on every request.
   final ClientIdentity identity;
+
+  /// Stable per-install id sent as `X-Prairie-Device-Id`, which v2 needs to
+  /// resolve device-scoped settings. Set once at boot from
+  /// [DurableStore.loadOrCreateDeviceId]; omitted until then.
+  String? deviceId;
   final Dio _dio;
   static Completer<_RefreshResult?>? _refreshInFlight;
 
@@ -203,6 +208,8 @@ class ApiClient {
     if (options.profileToken != null) headers['X-Profile-Token'] = options.profileToken!;
     headers['X-Prairie-Device-Platform'] = identity.devicePlatform;
     headers['X-Prairie-Device-Name'] = identity.deviceName;
+    final device = deviceId;
+    if (device != null && device.isNotEmpty) headers['X-Prairie-Device-Id'] = device;
     // TODO: port getImageFormats()'s capability-detected preference list
     // (src/lib/imageFormats.ts) once image loading is ported; avif/webp
     // covers what Flutter's built-in codecs decode today.

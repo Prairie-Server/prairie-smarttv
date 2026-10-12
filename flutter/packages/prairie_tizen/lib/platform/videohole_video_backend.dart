@@ -60,6 +60,8 @@ class VideoholeVideoBackend implements VideoBackend {
   final _positionController = StreamController<Duration>.broadcast();
   final _captionController = StreamController<String?>.broadcast();
   final _errorController = StreamController<String>.broadcast();
+  final _completedController = StreamController<void>.broadcast();
+  bool _lastCompleted = false;
   Timer? _positionTimer;
   List<SubtitleTrackChoice> _subtitleTracks = [];
   String? _lastCaptionText;
@@ -165,6 +167,16 @@ class VideoholeVideoBackend implements VideoBackend {
       reportDiagnostic('init=${value.isInitialized}:dur=${value.duration.end.inMilliseconds}');
     }
 
+    // Rising edge only, once initialized: the plugin also derives isCompleted
+    // from position == duration, which holds for a zero duration pre-prepare.
+    final completed = value.isCompleted && _initialized;
+    if (completed && !_lastCompleted) {
+      debugPrint('prairie.videohole: completed position=${value.position}');
+      reportDiagnostic('completed:pos=${value.position.inMilliseconds}');
+      if (!_completedController.isClosed) _completedController.add(null);
+    }
+    _lastCompleted = completed;
+
     if (value.hasError) {
       final message = (value.errorDescription ?? 'Playback failed').trim();
       if (message.isNotEmpty && message != _lastError) {
@@ -260,6 +272,9 @@ class VideoholeVideoBackend implements VideoBackend {
   Stream<String> get errorStream => _errorController.stream;
 
   @override
+  Stream<void> get completedStream => _completedController.stream;
+
+  @override
   Duration? get duration {
     final range = _controller?.value.duration;
     if (range == null) return null;
@@ -336,5 +351,6 @@ class VideoholeVideoBackend implements VideoBackend {
     if (!_positionController.isClosed) await _positionController.close();
     if (!_captionController.isClosed) await _captionController.close();
     if (!_errorController.isClosed) await _errorController.close();
+    if (!_completedController.isClosed) await _completedController.close();
   }
 }

@@ -111,7 +111,8 @@ class AppRoot extends ConsumerWidget {
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
       SettingsRoute(:final back) => SettingsScreen(back: back),
-      PlayerRoute(:final launch, :final back) => PlayerScreen(launch: launch, back: back),
+      // Keyed by launch: next/previous episode swaps in a fresh player.
+      PlayerRoute(:final launch, :final back) => PlayerScreen(key: ObjectKey(launch), launch: launch, back: back),
     };
   }
 }
