@@ -1,5 +1,6 @@
 import '../models/auth.dart';
 import '../models/library.dart';
+import '../models/watch_detail.dart' show idFromJson;
 import 'api_client.dart';
 
 /// Mirrors `fetchLibraries` from src/api/libraries.ts. Response caching
@@ -14,22 +15,23 @@ Future<List<Library>> fetchLibraries(ApiClient client, PrairieSession session) a
       profileId: session.profileId,
       profileToken: session.profileToken,
     ),
-    '/api/v1/user/libraries',
+    '/api/v2/user/libraries',
   );
 
   List<dynamic> raw;
   if (data is List) {
     raw = data;
-  } else if (data is Map && data['libraries'] is List) {
-    raw = data['libraries'] as List<dynamic>;
+  } else if (data is Map && (data['items'] ?? data['libraries']) is List) {
+    raw = (data['items'] ?? data['libraries']) as List<dynamic>;
   } else {
     raw = const [];
   }
 
-  return raw.map((j) {
-    final m = j as Map<String, dynamic>;
+  // v2 library ids are opaque strings; Prairie's are integers, and a library
+  // without one can't be browsed, so it is dropped.
+  return raw.cast<Map<String, dynamic>>().where((m) => idFromJson(m['id']) != null).map((m) {
     return Library(
-      id: m['id'] as int,
+      id: idFromJson(m['id'])!,
       name: m['name'] as String,
       type: m['type'] as String,
       sortOrder: m['sort_order'] as int?,

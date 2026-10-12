@@ -161,7 +161,7 @@ class ItemVersion {
   final TrickplayInfo? trickplay;
 
   factory ItemVersion.fromJson(Map<String, dynamic> json) => ItemVersion(
-    fileId: json['file_id'] as int,
+    fileId: idFromJson(json['file_id']) ?? 0,
     resolution: json['resolution'] as String?,
     codecVideo: json['codec_video'] as String?,
     codecAudio: json['codec_audio'] as String?,
@@ -185,7 +185,7 @@ class ItemExtra {
     kind: json['kind'] as String,
     title: json['title'] as String?,
     durationSeconds: json['duration_seconds'] as int?,
-    fileId: json['file_id'] as int?,
+    fileId: idFromJson(json['file_id']),
   );
 }
 
@@ -263,7 +263,7 @@ class ItemDetail {
 Future<ItemDetail> fetchItemDetail(ApiClient client, PrairieSession session, String contentId) async {
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
-    '/api/v1/catalog/items/${Uri.encodeComponent(contentId)}',
+    '/api/v2/catalog/items/${Uri.encodeComponent(contentId)}',
   );
   return ItemDetail.fromJson(json);
 }

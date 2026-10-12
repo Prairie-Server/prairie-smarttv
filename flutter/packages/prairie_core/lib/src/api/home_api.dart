@@ -47,7 +47,7 @@ Future<List<HomeSection>> fetchHomeSections(ApiClient client, PrairieSession ses
       profileId: session.profileId,
       profileToken: session.profileToken,
     ),
-    '/api/v1/home/sections',
+    '/api/v2/home/sections',
   );
   final sections = json['sections'] as List<dynamic>?;
   return sections?.map((s) => HomeSection.fromJson(s as Map<String, dynamic>)).toList() ?? [];

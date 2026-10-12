@@ -17,7 +17,7 @@ ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
 Future<void> setFavorite(ApiClient client, PrairieSession session, String contentId, bool favorite) => client
     .request<dynamic>(
       _sessionOptions(session),
-      '/api/v1/favorites/${Uri.encodeComponent(contentId)}',
+      '/api/v2/favorites/${Uri.encodeComponent(contentId)}',
       method: favorite ? 'PUT' : 'DELETE',
     );
 
@@ -25,7 +25,7 @@ Future<void> setFavorite(ApiClient client, PrairieSession session, String conten
 Future<void> setWatchlist(ApiClient client, PrairieSession session, String contentId, bool inWatchlist) => client
     .request<dynamic>(
       _sessionOptions(session),
-      '/api/v1/watchlist/${Uri.encodeComponent(contentId)}',
+      '/api/v2/watchlist/${Uri.encodeComponent(contentId)}',
       method: inWatchlist ? 'PUT' : 'DELETE',
     );
 
@@ -33,6 +33,6 @@ Future<void> setWatchlist(ApiClient client, PrairieSession session, String conte
 Future<void> setWatched(ApiClient client, PrairieSession session, String contentId, bool played) => client
     .request<dynamic>(
       _sessionOptions(session),
-      '/api/v1/watched/${Uri.encodeComponent(contentId)}',
+      '/api/v2/watched/${Uri.encodeComponent(contentId)}',
       method: played ? 'POST' : 'DELETE',
     );

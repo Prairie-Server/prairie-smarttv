@@ -7,7 +7,7 @@ import 'fake_http_adapter.dart';
 void main() {
   test('a refresh fires the client-wide hook so the session can persist it', () async {
     final adapter = FakeHttpAdapter((o) {
-      if (o.uri.path == '/api/v1/auth/refresh') {
+      if (o.uri.path == '/api/v2/auth/refresh') {
         return jsonResponse('{"access_token":"fresh","refresh_token":"r2"}', 200);
       }
       final auth = o.headers['Authorization'] as String?;

@@ -32,7 +32,7 @@ class ApiClientOptions {
   final String? accessToken;
   final String? refreshToken;
 
-  /// Active household profile — required by most /api/v1 browse routes.
+  /// Active household profile — required by most browse routes.
   final String? profileId;
 
   /// PIN-verified profile token when the profile has a PIN.
@@ -73,10 +73,7 @@ const Set<String> _authForbiddenCodes = {
 /// login attempt must not clear the session/loop). Mirrors `isAuthLoginPath`.
 bool isAuthLoginPath(String path) {
   final bare = path.split('?').first.replaceFirst(RegExp(r'/+$'), '');
-  return bare == '/api/v1/auth/login' ||
-      bare.endsWith('/auth/login') ||
-      bare == '/api/v1/auth/refresh' ||
-      bare.endsWith('/auth/refresh');
+  return bare.endsWith('/auth/login') || bare.endsWith('/auth/refresh');
 }
 
 bool _shouldNotifyUnauthorized(int status, String? code) {
@@ -307,7 +304,7 @@ class ApiClient {
   Future<_RefreshResult?> _rawRefresh(String serverUrl, String refreshToken) async {
     try {
       final response = await _dio.post<dynamic>(
-        _joinUrl(serverUrl, '/api/v1/auth/refresh'),
+        _joinUrl(serverUrl, '/api/v2/auth/refresh'),
         data: jsonEncode({'refresh_token': refreshToken}),
         options: Options(
           headers: {
@@ -315,6 +312,7 @@ class ApiClient {
             'Content-Type': 'application/json',
             'X-Prairie-Device-Platform': identity.devicePlatform,
             'X-Prairie-Device-Name': identity.deviceName,
+            if (deviceId != null && deviceId!.isNotEmpty) 'X-Prairie-Device-Id': deviceId!,
           },
           validateStatus: (_) => true,
         ),

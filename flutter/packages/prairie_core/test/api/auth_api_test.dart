@@ -32,7 +32,7 @@ void main() {
       expect(result.valid, isTrue);
       expect(result.profileToken, 'ptok');
       expect(seen.method, 'POST');
-      expect(seen.path, contains('/api/v1/profiles/'));
+      expect(seen.path, contains('/api/v2/profiles/'));
       expect(seen.path, contains(Uri.encodeComponent('profile/with spaces')));
       expect(seen.path, endsWith('/verify-pin'));
       expect(seen.data, {'pin': '1234'});
