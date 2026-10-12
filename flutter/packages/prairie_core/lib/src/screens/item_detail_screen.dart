@@ -48,6 +48,10 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   bool? _playedOverride;
   /// 0 = cleared locally, so `null` can still mean "no override".
   int? _ratingOverride;
+  /// Community rating re-read after rating; a record so "now hidden" differs
+  /// from "not refreshed".
+  ({CommunityRating? value})? _communityOverride;
+  int _communityGeneration = 0;
 
   /// Null (unknown) hides "Add to collection".
   CollectionCapabilities? _collectionCapabilities;
@@ -142,6 +146,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _watchlistOverride = null;
       _playedOverride = null;
       _ratingOverride = null;
+      _communityOverride = null;
+      _communityGeneration++;
       _watchCache.clear();
       _userMovedFocus = false;
       _heroPinned = false;
@@ -378,8 +384,25 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       await setUserRating(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId, rating);
     } catch (e) {
       if (mounted) setState(() => _ratingOverride = previous);
+      return;
     } finally {
       if (mounted) setState(() => _busyAction = false);
+    }
+    _refreshCommunityRating();
+  }
+
+  /// Re-reads only the community rating after the viewer's own rating
+  /// changed: the server hides it below its minimum count, so it can't be
+  /// derived locally. A newer write supersedes an older refresh in flight.
+  Future<void> _refreshCommunityRating() async {
+    final generation = ++_communityGeneration;
+    try {
+      final fresh = await fetchItemDetail(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
+      if (mounted && generation == _communityGeneration) {
+        setState(() => _communityOverride = (value: fresh.communityRating));
+      }
+    } catch (_) {
+      // Best effort: the next page load shows the current figure.
     }
   }
 
@@ -553,6 +576,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   inWatchlist: _inWatchlist,
                   played: _played,
                   userRating: _userRating,
+                  communityRating: _communityOverride != null ? _communityOverride!.value : detail.communityRating,
                   playLabel: playLabel,
                   showStartOver: showStartOver,
                   playEnabled: !isSeries || nextUp != null,
@@ -799,6 +823,7 @@ class _Hero extends StatelessWidget {
     required this.inWatchlist,
     required this.played,
     required this.userRating,
+    required this.communityRating,
     required this.playLabel,
     required this.showStartOver,
     required this.playEnabled,
@@ -829,6 +854,7 @@ class _Hero extends StatelessWidget {
   final bool inWatchlist;
   final bool played;
   final int? userRating;
+  final CommunityRating? communityRating;
   final String playLabel;
   final bool showStartOver;
   final bool playEnabled;
@@ -997,12 +1023,11 @@ class _Hero extends StatelessWidget {
                                 Text(facts.join(' · '), style: const TextStyle(color: PrairieColors.muted)),
                               ],
                             ),
-                            // ponytail: community rating is as of page load; rating here doesn't refetch it.
-                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null || detail.communityRating != null) ...[
+                            if (detail.ratingRtCritic != null || detail.ratingRtAudience != null || communityRating != null) ...[
                               const SizedBox(height: 6),
                               Text(
                                 [
-                                  if (detail.communityRating case final c?)
+                                  if (communityRating case final c?)
                                     'Community ${c.average.toStringAsFixed(1)}/5 (${c.count})',
                                   if (detail.ratingRtCritic != null) 'Critics ${detail.ratingRtCritic}%',
                                   if (detail.ratingRtAudience != null) 'Audience ${detail.ratingRtAudience}%',
