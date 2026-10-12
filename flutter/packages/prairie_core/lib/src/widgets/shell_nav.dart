@@ -48,6 +48,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
 
   static const _tabs = <(ShellTab, String, IconData)>[
     (ShellTab.home, 'Home', Icons.home_outlined),
+    (ShellTab.forYou, 'For You', Icons.auto_awesome_outlined),
     (ShellTab.libraries, 'Libraries', Icons.video_library_outlined),
     (ShellTab.collections, 'Collections', Icons.folder_open_outlined),
     (ShellTab.search, 'Search', Icons.search),
@@ -60,7 +61,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final tabs = showLiveTv
-        ? [..._tabs.sublist(0, 3), (ShellTab.livetv, 'Live TV', Icons.live_tv_outlined), ..._tabs.sublist(3)]
+        ? [..._tabs.sublist(0, 4), (ShellTab.livetv, 'Live TV', Icons.live_tv_outlined), ..._tabs.sublist(3)]
         : _tabs;
 
     return Material(

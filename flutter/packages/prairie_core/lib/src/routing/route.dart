@@ -90,6 +90,13 @@ class CalendarRoute extends Route {
   final String? restoreContentId;
 }
 
+class ForYouRoute extends Route {
+  const ForYouRoute({this.restoreContentId});
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
+}
+
 enum LiveTvTab { channels, guide, recordings }
 
 class LiveTvRoute extends Route {
@@ -141,7 +148,7 @@ class PlayerRoute extends Route {
 /// renders full-screen outside the shell (e.g. player, detail, settings).
 ///
 /// Mirrors `shellTabFor` in src/App.tsx.
-enum ShellTab { home, libraries, collections, search, livetv, calendar }
+enum ShellTab { home, forYou, libraries, collections, search, livetv, calendar }
 
 ShellTab? shellTabFor(Route route) => switch (route) {
   HomeRoute() => ShellTab.home,
@@ -150,5 +157,6 @@ ShellTab? shellTabFor(Route route) => switch (route) {
   SearchRoute() => ShellTab.search,
   LiveTvRoute() => ShellTab.livetv,
   CalendarRoute() => ShellTab.calendar,
+  ForYouRoute() => ShellTab.forYou,
   _ => null,
 };
