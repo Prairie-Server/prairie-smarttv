@@ -8,6 +8,7 @@
 # Usage:
 #   ./build-webos.sh
 #   ./build-webos.sh --obfuscate
+#   ./build-webos.sh --package-version 1.0.1
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,15 +16,17 @@ ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APP_DIR="${ROOT}/packages/prairie_webos"
 OUT_DIR="${ROOT}/artifacts"
 OBFUSCATE=0
+PACKAGE_VERSION=""
 RELEASE=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --package-version) PACKAGE_VERSION="${2:?}"; shift 2 ;;
     --debug) RELEASE=0; shift ;;
     --release) RELEASE=1; shift ;;
     --obfuscate) OBFUSCATE=1; shift ;;
     --out) OUT_DIR="${2:?}"; shift 2 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "Unexpected argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -63,6 +66,10 @@ if [[ "$RELEASE" -eq 1 ]]; then
 fi
 if [[ "$OBFUSCATE" -eq 1 ]]; then
   BUILD_ARGS+=(--obfuscate --split-debug-info="${OUT_DIR}/symbols-webos")
+fi
+# The app reads this as `stampedAppVersion` (User-Agent + update check).
+if [[ -n "$PACKAGE_VERSION" ]]; then
+  BUILD_ARGS+=(--dart-define=PRAIRIE_APP_VERSION="$PACKAGE_VERSION")
 fi
 
 echo "+ flutter-webos build ${BUILD_ARGS[*]}"

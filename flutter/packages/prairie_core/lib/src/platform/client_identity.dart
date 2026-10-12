@@ -1,3 +1,8 @@
+/// Release version stamped into the build by flutter/scripts/build-tizen.sh /
+/// build-webos.sh (`--dart-define=PRAIRIE_APP_VERSION=…`, from the release
+/// tag); empty in local/dev builds and tests.
+const stampedAppVersion = String.fromEnvironment('PRAIRIE_APP_VERSION');
+
 /// Identifies this TV client to Prairie (HTTP User-Agent + device headers).
 ///
 /// Platform apps override [clientIdentityProvider] so admin/session UIs and
@@ -35,7 +40,7 @@ class ClientIdentity {
   factory ClientIdentity.smartTv({
     required String platformLabel,
     required String devicePlatform,
-    String version = '1.0.0',
+    String version = stampedAppVersion == '' ? '1.0.0' : stampedAppVersion,
     String build = '',
     String channel = 'release',
   }) {
