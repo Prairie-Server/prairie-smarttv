@@ -317,18 +317,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         },
       ),
       const SizedBox(height: 10),
-      _SettingsToggleRow(
+      // ponytail: the server stores recap/credits as booleans (false = the
+      // Skip button, i.e. Ask), so there's no Never until it gains enum keys.
+      _SettingsRow(
         label: 'Skip recaps',
-        hint: 'Jump past "previously on" segments automatically.',
-        value: skip.autoSkipRecap,
-        onChanged: (v) => _updateSkip(skip.copyWith(autoSkipRecap: v), PlaybackSkipSettings.autoSkipRecapKey, v),
+        hint: 'Ask shows a Skip Recap button; Always jumps past "previously on" segments.',
+        value: skip.autoSkipRecap ? 'Always' : 'Ask',
+        onTap: () => _updateSkip(
+            skip.copyWith(autoSkipRecap: !skip.autoSkipRecap), PlaybackSkipSettings.autoSkipRecapKey, !skip.autoSkipRecap),
       ),
       const SizedBox(height: 10),
-      _SettingsToggleRow(
+      _SettingsRow(
         label: 'Skip credits',
-        hint: 'Jump past end credits automatically.',
-        value: skip.autoSkipCredits,
-        onChanged: (v) => _updateSkip(skip.copyWith(autoSkipCredits: v), PlaybackSkipSettings.autoSkipCreditsKey, v),
+        hint: 'Ask shows a Skip Credits button; Always jumps past end credits.',
+        value: skip.autoSkipCredits ? 'Always' : 'Ask',
+        onTap: () => _updateSkip(
+            skip.copyWith(autoSkipCredits: !skip.autoSkipCredits), PlaybackSkipSettings.autoSkipCreditsKey, !skip.autoSkipCredits),
       ),
       const SizedBox(height: 10),
       _SettingsToggleRow(
