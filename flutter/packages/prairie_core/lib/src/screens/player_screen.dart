@@ -65,6 +65,10 @@ const _upNextCountdownSeconds = 10;
 /// A skip landing this close to the end is the end — finish the episode
 /// instead of seeking to a frame the stream may never produce.
 const _endSlackSeconds = 2.0;
+/// Position frozen this long within [_endStallWindowSeconds] of the end
+/// counts as the end — see [_PlayerScreenState._checkEndStall].
+const _endStallTimeout = Duration(seconds: 3);
+const _endStallWindowSeconds = 15.0;
 
 /// Mirrors web's usePlaybackSession/VideoPlayer lifecycle on protocol v3:
 /// start (with transient retry), sequenced progress, stop with the final
@@ -113,6 +117,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// player, for the stats overlay.
   String? _attachedStreamPath;
   Timer? _progressTimer;
+  Timer? _endStallTimer;
   Timer? _hideControlsTimer;
   Timer? _stallTimer;
   /// Debounce for re-anchoring seeks — see [_seekToPosition].
@@ -183,6 +188,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// Playback reached the end of the stream (or the credits were skipped
   /// to it); the player is now leaving or counting down to the next episode.
   bool _ended = false;
+  /// The viewer (or the sleep timer) paused; a frozen position is not the end.
+  bool _viewerPaused = false;
   bool _switchingEpisode = false;
   /// Wall-clock time the sleep timer pauses playback; null when off.
   DateTime? _sleepDeadline;
@@ -270,6 +277,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _errorSub?.cancel();
     _completedSub?.cancel();
     _progressTimer?.cancel();
+    _endStallTimer?.cancel();
     _hideControlsTimer?.cancel();
     _stallTimer?.cancel();
     _seekDebounce?.cancel();
@@ -392,6 +400,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         event.logicalKey == LogicalKeyboardKey.browserBack) {
       return KeyEventResult.ignored;
     }
+    // The skip pill / up-next card sit inside this Focus, so their keys
+    // bubble here before the app's activate shortcut: OK and Left/Right must
+    // reach the focused button, only Up/Down bring the chrome back.
+    final onOverlay = FocusManager.instance.primaryFocus != _idleFocus;
+    if (onOverlay &&
+        event.logicalKey != LogicalKeyboardKey.arrowUp &&
+        event.logicalKey != LogicalKeyboardKey.arrowDown) {
+      return KeyEventResult.ignored;
+    }
     _showControls(focusPlay: true);
     return KeyEventResult.handled;
   }
@@ -447,7 +464,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp) {
-      _backFocus.requestFocus();
+      // The skip pill / up-next card floats just above the seek bar.
+      (_overlayVisible && _overlayFocus.context != null ? _overlayFocus : _backFocus).requestFocus();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -720,6 +738,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       playbackSession: prepared.session,
     );
     await backend.play();
+    _viewerPaused = false;
     if (!mounted || _exiting || cancel.isCancelled) {
       await backend.dispose();
       await stopPlaybackSession(client, session, prepared.session.sessionId).catchError((_) {});
@@ -756,6 +775,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       unawaited(_onPlaybackFailure(message));
     });
     _progressTimer ??= Timer.periodic(const Duration(milliseconds: _progressIntervalMs), (_) => _reportProgress());
+    _endStallTimer ??= Timer.periodic(const Duration(seconds: 1), (_) => _checkEndStall());
     unawaited(reportPlaybackRouteEvent(client, session, prepared.session, 'first_frame'));
     if (startAt != null) unawaited(_verifyStartPosition(backend, prepared.session, startAt));
     unawaited(_autoSelectSubtitleTrack(backend, subtitleLanguage ?? settings.preferredSubtitleLanguage));
@@ -1319,6 +1339,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _activeSessionId = null;
     _playbackSession = null;
     _progressTimer?.cancel();
+    _endStallTimer?.cancel();
     _stallTimer?.cancel();
     _seekDebounce?.cancel();
     _introPromptTimer?.cancel();
@@ -1456,14 +1477,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   /// Shows up next on entering the trailing credits/preview run, when the
-  /// series has a next episode. Leaving the run (seek back) hides it again.
+  /// series has a next episode — or, with no credits marked, one countdown
+  /// before the end so it runs out as the episode does. Leaving the run (seek
+  /// back) hides it again.
   void _updateUpNext(double t) {
     final next = _nextEpisode;
     final skip = _skip;
     final total = _sourceDurationSeconds;
     final start = next == null || skip == null || total == null
         ? null
-        : autoplayRegionStart(_markers, total, allowPreview: skip.autoPlayNextPreview);
+        : autoplayRegionStart(_markers, total, allowPreview: skip.autoPlayNextPreview) ??
+            total - _upNextCountdownSeconds;
     if (start == null || t < start) {
       if (_upNextVisible) _hideUpNext();
       return;
@@ -1577,15 +1601,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       unawaited(_exit());
       return;
     }
+    _viewerPaused = true;
     unawaited(_backend?.pause());
     if (_upNextVisible) _hideUpNext();
     _showControls(focusPlay: true);
     _notify('Sleep timer ended — paused');
   }
 
-  /// End of the episode: count down to the next one when autoplay is on
-  /// (unless the viewer already cancelled it), otherwise leave the player —
-  /// never sit on the last frame.
+  /// End of the episode: start the next one right away when autoplay is on
+  /// (unless the viewer already cancelled it) — the up-next countdown ran
+  /// during the credits — otherwise leave the player. Never sit on the last
+  /// frame.
   void _onPlaybackEnded() {
     if (_ended || _exiting || _switchingEpisode) return;
     _ended = true;
@@ -1594,10 +1620,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final next = _nextEpisode;
     if (next != null && (_skip?.autoPlayNext ?? true) && !_upNextDismissed) {
       unawaited(_backend?.pause());
-      if (!(_upNextVisible && _upNextSecondsLeft != null)) _showUpNext(countdown: true);
+      unawaited(_playEpisode(next));
       return;
     }
     unawaited(_exit());
+  }
+
+  /// Some streams neither raise completion nor tick up to the source runtime
+  /// (the plan's duration runs a few seconds past the last frame), so the
+  /// position just freezes near the end. Treat that as the end, unless the
+  /// viewer paused.
+  void _checkEndStall() {
+    if (_loading || _exiting || _ended || _switchingEpisode || _recovering || _error != null) return;
+    if (_viewerPaused || _scrubTarget != null || _pendingReanchorSeek != null) return;
+    final total = _sourceDurationSeconds;
+    final lastAt = _lastProgressAt;
+    if (total == null || lastAt == null) return;
+    if (_position.inMilliseconds / 1000.0 < total - _endStallWindowSeconds) return;
+    if (DateTime.now().difference(lastAt) < _endStallTimeout) return;
+    _onPlaybackEnded();
   }
 
   /// Replaces this player with one for [episode], stopping the current
@@ -1644,8 +1685,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final backend = _backend;
     if (backend == null) return;
     if (backend.isPlaying) {
+      _viewerPaused = true;
       await backend.pause();
     } else {
+      _viewerPaused = false;
       await backend.play();
       // Resuming after a pause: `_lastProgressAt` was frozen at pause time
       // (no position-stream tick fires while paused), so without this the
