@@ -158,22 +158,26 @@ Color _colorFromHex(String hex) => Color(int.parse('FF${hex.substring(1)}', radi
 double subtitleAppearanceBottomFraction(SubtitleAppearance appearance) => _positionBottomFraction[appearance.position]!;
 
 /// Text style for the caption. Mirrors the text half of
-/// `subtitleAppearanceCssVars` (outline via multi-directional shadows).
+/// `subtitleAppearanceCssVars` (outline via multi-directional shadows, plus a
+/// soft drop shadow for the Shadow style).
 TextStyle subtitleAppearanceTextStyle(SubtitleAppearance appearance) {
   final outline = _colorFromHex(appearance.textOutlineColor);
   final wantsOutline = appearance.backgroundStyle == SubtitleBackgroundStyle.outline || appearance.textOutline;
+  final shadows = [
+    if (wantsOutline) ...[
+      Shadow(color: outline, offset: const Offset(1, 0)),
+      Shadow(color: outline, offset: const Offset(-1, 0)),
+      Shadow(color: outline, offset: const Offset(0, 1)),
+      Shadow(color: outline, offset: const Offset(0, -1)),
+    ],
+    if (appearance.backgroundStyle == SubtitleBackgroundStyle.shadow)
+      const Shadow(color: Color(0xCC000000), offset: Offset(2, 2), blurRadius: 6),
+  ];
   return TextStyle(
     color: _colorFromHex(appearance.fontColor),
     fontSize: _fontSizePx[appearance.fontSize],
     fontWeight: FontWeight.w600,
-    shadows: wantsOutline
-        ? [
-            Shadow(color: outline, offset: const Offset(1, 0)),
-            Shadow(color: outline, offset: const Offset(-1, 0)),
-            Shadow(color: outline, offset: const Offset(0, 1)),
-            Shadow(color: outline, offset: const Offset(0, -1)),
-          ]
-        : null,
+    shadows: shadows.isEmpty ? null : shadows,
   );
 }
 
