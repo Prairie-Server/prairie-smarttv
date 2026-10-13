@@ -112,21 +112,40 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           for (final (dayIndex, day) in _days.indexed)
-                            MediaRow<CalendarEvent>(
-                              title: day.label,
-                              items: day.events,
-                              // ponytail: builds the whole rail — fine for a day's
-                              // releases; a restore index on MediaRow if one gets huge.
-                              cacheExtent: restorable ? 100000 : null,
-                              itemBuilder: (context, event, index) => PosterCard(
-                                title: event.title,
-                                subtitle: event.episodeLabel,
-                                posterUrl: event.posterUrl,
-                                serverUrl: serverUrl,
-                                watched: event.watched,
-                                focusNode: restorable && event.contentId == restoreId ? _restoreFocus : null,
-                                autofocus: !restorable && dayIndex == 0 && index == 0,
-                                onTap: () => _open(event),
+                            // Focus-follows-scroll only brings the focused card
+                            // into view, so moving up leaves the rail's date
+                            // header above the viewport, under the nav bar.
+                            // Scroll the whole rail in whenever focus enters it.
+                            Builder(
+                              builder: (rowContext) => Focus(
+                                canRequestFocus: false,
+                                skipTraversal: true,
+                                onFocusChange: (hasFocus) {
+                                  if (!hasFocus) return;
+                                  Scrollable.ensureVisible(
+                                    rowContext,
+                                    alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+                                    duration: const Duration(milliseconds: 180),
+                                    curve: Curves.easeOut,
+                                  );
+                                },
+                                child: MediaRow<CalendarEvent>(
+                                  title: day.label,
+                                  items: day.events,
+                                  // ponytail: builds the whole rail — fine for a day's
+                                  // releases; a restore index on MediaRow if one gets huge.
+                                  cacheExtent: restorable ? 100000 : null,
+                                  itemBuilder: (context, event, index) => PosterCard(
+                                    title: event.title,
+                                    subtitle: event.episodeLabel,
+                                    posterUrl: event.posterUrl,
+                                    serverUrl: serverUrl,
+                                    watched: event.watched,
+                                    focusNode: restorable && event.contentId == restoreId ? _restoreFocus : null,
+                                    autofocus: !restorable && dayIndex == 0 && index == 0,
+                                    onTap: () => _open(event),
+                                  ),
+                                ),
                               ),
                             ),
                         ],
