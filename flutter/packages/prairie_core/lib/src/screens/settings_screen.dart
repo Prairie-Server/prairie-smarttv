@@ -445,6 +445,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (choice != null) updateAppearance((a) => a.copyWith(backgroundStyle: choice));
         },
       ),
+      // Color and opacity only paint the Box style (see
+      // subtitleAppearanceBackgroundColor), so only offer them there.
+      if (appearance.backgroundStyle == SubtitleBackgroundStyle.box) ...[
+        const SizedBox(height: 10),
+        _SettingsRow(
+          label: 'Background color',
+          value: _colorLabel(subtitleBgColorChoices, appearance.backgroundColor),
+          onTap: () async {
+            final choice = await _pickColor(subtitleBgColorChoices, appearance.backgroundColor);
+            if (choice != null) updateAppearance((a) => a.copyWith(backgroundColor: choice));
+          },
+        ),
+        const SizedBox(height: 10),
+        _OpacitySettingsRow(
+          label: 'Background opacity',
+          hint: 'Left / Right to adjust (Up / Down keeps scrolling)',
+          value: appearance.backgroundOpacity,
+          onChanged: (v) => updateAppearance((a) => a.copyWith(backgroundOpacity: v)),
+        ),
+      ],
       const SizedBox(height: 10),
       _SettingsRow(
         label: 'Position',
@@ -455,50 +475,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         },
       ),
       const SizedBox(height: 10),
-      Builder(
-        builder: (context) {
-          var colorLabel = appearance.fontColor;
-          for (final (hex, label) in subtitleColorChoices) {
-            if (hex == appearance.fontColor) {
-              colorLabel = label;
-              break;
-            }
-          }
-          return _SettingsRow(
-            label: 'Text color',
-            value: colorLabel,
-            onTap: () async {
-              final choice = await showModalBottomSheet<String>(
-                context: context,
-                backgroundColor: PrairieColors.bgElevated,
-                builder: (context) => SafeArea(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final (hex, label) in subtitleColorChoices)
-                        ListTile(
-                          leading: CircleAvatar(backgroundColor: Color(int.parse('FF${hex.substring(1)}', radix: 16))),
-                          title: Text(label, style: const TextStyle(color: PrairieColors.ink)),
-                          trailing: appearance.fontColor == hex ? const Icon(Icons.check, color: PrairieColors.amber) : null,
-                          onTap: () => Navigator.pop(context, hex),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-              if (choice != null) updateAppearance((a) => a.copyWith(fontColor: choice));
-            },
-          );
+      _SettingsRow(
+        label: 'Text color',
+        value: _colorLabel(subtitleColorChoices, appearance.fontColor),
+        onTap: () async {
+          final choice = await _pickColor(subtitleColorChoices, appearance.fontColor);
+          if (choice != null) updateAppearance((a) => a.copyWith(fontColor: choice));
         },
       ),
-      const SizedBox(height: 10),
-      _OpacitySettingsRow(
-        label: 'Background opacity',
-        hint: 'Left / Right to adjust (Up / Down keeps scrolling)',
-        value: appearance.backgroundOpacity,
-        onChanged: (v) => updateAppearance((a) => a.copyWith(backgroundOpacity: v)),
-      ),
     ];
+  }
+
+  static String _colorLabel(List<(String, String)> choices, String hex) {
+    for (final (h, label) in choices) {
+      if (h == hex) return label;
+    }
+    return hex;
+  }
+
+  Future<String?> _pickColor(List<(String, String)> choices, String current) {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: PrairieColors.bgElevated,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final (hex, label) in choices)
+              ListTile(
+                leading: CircleAvatar(backgroundColor: Color(int.parse('FF${hex.substring(1)}', radix: 16))),
+                title: Text(label, style: const TextStyle(color: PrairieColors.ink)),
+                trailing: current == hex ? const Icon(Icons.check, color: PrairieColors.amber) : null,
+                onTap: () => Navigator.pop(context, hex),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<T?> _pickEnum<T>(List<T> values, T current, String Function(T) label) {
