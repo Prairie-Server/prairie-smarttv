@@ -61,7 +61,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final tabs = showLiveTv
-        ? [..._tabs.sublist(0, 4), (ShellTab.livetv, 'Live TV', Icons.live_tv_outlined), ..._tabs.sublist(3)]
+        ? [..._tabs.sublist(0, 4), (ShellTab.livetv, 'Live TV', Icons.live_tv_outlined), ..._tabs.sublist(4)]
         : _tabs;
 
     return Material(
