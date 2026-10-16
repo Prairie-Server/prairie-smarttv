@@ -135,7 +135,7 @@ abstract class VideoBackend {
   /// Emits the subtitle text that should be on screen right now (`null`
   /// when nothing should be showing), driven by the native player's own
   /// subtitle decoding/timing.
-  Stream<String?> get captionStream;
+  Stream<SubtitleCaption?> get captionStream;
 
   /// The platform's native video-rendering widget (e.g. `video_player_videohole`'s
   /// `VideoPlayer`), so the shared `PlayerScreen` never needs to know which
