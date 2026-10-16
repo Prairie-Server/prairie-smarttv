@@ -20,7 +20,10 @@ enum SubtitleVerticalPosition { top, middle, bottom }
 /// text. The overlay cannot render ASS styling, but it can preserve the cue's
 /// vertical alignment instead of displaying tags or forcing every cue to bottom.
 class SubtitleCaption {
-  const SubtitleCaption({required this.text, this.verticalPosition = SubtitleVerticalPosition.bottom});
+  const SubtitleCaption({
+    required this.text,
+    this.verticalPosition = SubtitleVerticalPosition.bottom,
+  });
 
   final String text;
   final SubtitleVerticalPosition verticalPosition;
@@ -29,18 +32,23 @@ class SubtitleCaption {
   /// Non-ASS brace text is left intact.
   static SubtitleCaption? parse(String rawText) {
     var position = SubtitleVerticalPosition.bottom;
-    final text = rawText.replaceAllMapped(RegExp(r'\{\\([^}]*)\}'), (match) {
+    final text = rawText.replaceAllMapped(
+      RegExp(r'\{\\([^}]*)\}'),
+      (match) {
       final block = match.group(1)!;
       for (final alignment in RegExp(r'an([1-9])').allMatches(block)) {
         final value = int.parse(alignment.group(1)!);
-        position = switch (value) {
-          7 || 8 || 9 => SubtitleVerticalPosition.top,
-          4 || 5 || 6 => SubtitleVerticalPosition.middle,
-          _ => SubtitleVerticalPosition.bottom,
-        };
+        if (value >= 7) {
+          position = SubtitleVerticalPosition.top;
+        } else if (value >= 4) {
+          position = SubtitleVerticalPosition.middle;
+        } else {
+          position = SubtitleVerticalPosition.bottom;
+        }
       }
-      return '';
-    }).trim();
+        return '';
+      },
+    ).trim();
     if (text.isEmpty) return null;
     return SubtitleCaption(text: text, verticalPosition: position);
   }
