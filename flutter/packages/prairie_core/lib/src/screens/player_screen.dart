@@ -95,7 +95,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// Dart finishes initialize).
   String? _activeSessionId;
   StreamSubscription<Duration>? _positionSub;
-  StreamSubscription<String?>? _captionSub;
+  StreamSubscription<SubtitleCaption?>? _captionSub;
   StreamSubscription<String>? _errorSub;
   StreamSubscription<void>? _completedSub;
   Duration _position = Duration.zero;
