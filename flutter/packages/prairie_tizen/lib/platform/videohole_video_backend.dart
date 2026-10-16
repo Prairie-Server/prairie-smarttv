@@ -6,14 +6,6 @@ import 'package:prairie_core/prairie_core.dart';
 import 'package:video_player_videohole/video_player.dart';
 import 'package:video_player_videohole/video_player_platform_interface.dart' show VideoFormat;
 
-/// Removes ASS/SSA override blocks that native TV caption APIs sometimes
-/// expose as literal text (for example, `{\\an8}`). The TV caption overlay
-/// cannot apply these styling directives, so keep the readable cue text.
-String? normalizeSubtitleCaption(String text) {
-  final normalized = text.replaceAll(RegExp(r'\{\\[^}]*\}'), '').trim();
-  return normalized.isEmpty ? null : normalized;
-}
-
 /// [VideoBackend] implementation over `video_player_videohole`, wrapping
 /// Tizen's system Media Player (`player.h` capi / MMPlayer).
 ///
@@ -61,7 +53,7 @@ class VideoholeVideoBackend implements VideoBackend {
   bool _lastCompleted = false;
   Timer? _positionTimer;
   List<SubtitleTrackChoice> _subtitleTracks = [];
-  String? _lastCaptionText;
+  SubtitleCaption? _lastCaptionText;
   String? _lastError;
   bool _initialized = false;
   bool? _lastBuffering;
@@ -185,10 +177,11 @@ class VideoholeVideoBackend implements VideoBackend {
       }
     }
 
-    final text = normalizeSubtitleCaption(value.caption.text);
-    if (text != _lastCaptionText) {
-      _lastCaptionText = text;
-      _captionController.add(text);
+    final caption = SubtitleCaption.parse(value.caption.text);
+    if (caption?.text != _lastCaptionText?.text ||
+        caption?.verticalPosition != _lastCaptionText?.verticalPosition) {
+      _lastCaptionText = caption;
+      _captionController.add(caption);
     }
   }
 
