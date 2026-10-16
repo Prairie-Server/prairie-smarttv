@@ -29,9 +29,9 @@ class SubtitleCaption {
   /// Non-ASS brace text is left intact.
   static SubtitleCaption? parse(String rawText) {
     var position = SubtitleVerticalPosition.bottom;
-    final text = rawText.replaceAllMapped(RegExp(r'\\{\\\\([^}]*)\\}'), (match) {
+    final text = rawText.replaceAllMapped(RegExp(r'\{\\([^}]*)\}'), (match) {
       final block = match.group(1)!;
-      for (final alignment in RegExp(r'\\\\an([1-9])').allMatches(block)) {
+      for (final alignment in RegExp(r'an([1-9])').allMatches(block)) {
         final value = int.parse(alignment.group(1)!);
         position = switch (value) {
           7 || 8 || 9 => SubtitleVerticalPosition.top,
