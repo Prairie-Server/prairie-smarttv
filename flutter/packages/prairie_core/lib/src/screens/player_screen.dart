@@ -138,7 +138,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _exiting = false;
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
-  String? _caption;
+  SubtitleCaption? _caption;
   CancelToken? _prepareCancel;
   bool _busyAudio = false;
   bool _busyQuality = false;
@@ -767,8 +767,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!mounted || !identical(_backend, backend)) return;
       _onPlaybackEnded();
     });
-    _captionSub = backend.captionStream.listen((text) {
-      if (mounted) setState(() => _caption = text);
+    _captionSub = backend.captionStream.listen((caption) {
+      if (mounted) setState(() => _caption = caption);
     });
     _errorSub = backend.errorStream.listen((message) {
       if (!mounted || _exiting || _error != null || !identical(_backend, backend)) return;
@@ -1946,11 +1946,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   if (backend != null) backend.buildSurface(),
                   PlayerScrim(loading: _loading && _error == null, chromeVisible: _controlsVisible),
                   if (_showStats && backend != null) _buildStatsOverlay(backend),
-                  if (_caption != null && _caption!.isNotEmpty)
+                  if (_caption != null && _caption!.text.isNotEmpty)
                     Align(
-                      alignment: Alignment(0, 1 - 2 * subtitleAppearanceBottomFraction(_subtitleAppearance)),
+                      alignment: switch (_caption!.verticalPosition) {
+                        SubtitleVerticalPosition.top => Alignment.topCenter,
+                        SubtitleVerticalPosition.middle => Alignment.center,
+                        SubtitleVerticalPosition.bottom =>
+                          Alignment(0, 1 - 2 * subtitleAppearanceBottomFraction(_subtitleAppearance)),
+                      },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        padding: EdgeInsets.fromLTRB(
+                          32,
+                          _caption!.verticalPosition == SubtitleVerticalPosition.top ? 32 : 0,
+                          32,
+                          0,
+                        ),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: subtitleAppearanceBackgroundColor(_subtitleAppearance),
@@ -1958,7 +1968,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            child: Text(_caption!, textAlign: TextAlign.center, style: subtitleAppearanceTextStyle(_subtitleAppearance)),
+                            child: Text(_caption!.text, textAlign: TextAlign.center, style: subtitleAppearanceTextStyle(_subtitleAppearance)),
                           ),
                         ),
                       ),
