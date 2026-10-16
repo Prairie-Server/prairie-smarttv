@@ -17,6 +17,14 @@ import 'package:video_player_videohole/video_player_platform_interface.dart' sho
 /// Tizen's standard `player_set_uri` directly and never touches that
 /// dependency, so it works on a retail cert. Trade-off: this plugin has no
 /// DRM support at all — fine, since Prairie never serves DRM content.
+/// Removes ASS/SSA override blocks that native TV caption APIs sometimes
+/// expose as literal text (for example, `{\\an8}`). The TV caption overlay
+/// cannot apply these styling directives, so keep the readable cue text.
+String? normalizeSubtitleCaption(String text) {
+  final normalized = text.replaceAll(RegExp(r'\\{\\\\[^}]*\\}'), '').trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
 class VideoholeVideoBackend implements VideoBackend {
   /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
   /// needs a VM service that a release build doesn't attach, and `debugPrint`
