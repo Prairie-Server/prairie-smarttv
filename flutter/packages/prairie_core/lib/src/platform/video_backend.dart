@@ -11,6 +11,41 @@ class SubtitleTrackChoice {
   final String language;
 }
 
+/// Vertical placement for subtitle cues that carry ASS/SSA alignment tags.
+enum SubtitleVerticalPosition { top, middle, bottom }
+
+/// A subtitle cue normalized for the Smart TV overlay.
+///
+/// The native Tizen/webOS caption APIs can expose ASS override tags as literal
+/// text. The overlay cannot render ASS styling, but it can preserve the cue's
+/// vertical alignment instead of displaying tags or forcing every cue to bottom.
+class SubtitleCaption {
+  const SubtitleCaption({required this.text, this.verticalPosition = SubtitleVerticalPosition.bottom});
+
+  final String text;
+  final SubtitleVerticalPosition verticalPosition;
+
+  /// Removes ASS override blocks while retaining their supported alignment.
+  /// Non-ASS brace text is left intact.
+  static SubtitleCaption? parse(String rawText) {
+    var position = SubtitleVerticalPosition.bottom;
+    final text = rawText.replaceAllMapped(RegExp(r'\\{\\\\([^}]*)\\}'), (match) {
+      final block = match.group(1)!;
+      for (final alignment in RegExp(r'\\\\an([1-9])').allMatches(block)) {
+        final value = int.parse(alignment.group(1)!);
+        position = switch (value) {
+          7 || 8 || 9 => SubtitleVerticalPosition.top,
+          4 || 5 || 6 => SubtitleVerticalPosition.middle,
+          _ => SubtitleVerticalPosition.bottom,
+        };
+      }
+      return '';
+    }).trim();
+    if (text.isEmpty) return null;
+    return SubtitleCaption(text: text, verticalPosition: position);
+  }
+}
+
 /// Platform-agnostic contract for video playback, implemented per platform
 /// (Tizen via `video_player_videohole`, webOS via its own native path).
 ///
