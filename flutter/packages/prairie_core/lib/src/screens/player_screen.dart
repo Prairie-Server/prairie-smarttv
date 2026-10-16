@@ -1912,6 +1912,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final backend = _backend;
+    // Native buffering events cover normal stalls; a frozen position is a
+    // useful fallback for TV players that fail to emit buffering callbacks
+    // on a dropped connection. Position updates already rebuild this screen.
+    final lastAdvance = _lastProgressAt;
+    final stalled = backend != null &&
+        backend.isPlaying &&
+        !_viewerPaused &&
+        !_ended &&
+        lastAdvance != null &&
+        DateTime.now().difference(lastAdvance) >= const Duration(seconds: 2);
+    final waiting = _loading || (backend?.isBuffering ?? false) || stalled;
     // Directional mode lets arrow keys leave widgets that don't claim them.
     // Material Slider in traditional mode eats Down as "decrease", which is
     // why D-pad Down on the seek bar never reached the transport buttons.
@@ -1944,7 +1955,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (backend != null) backend.buildSurface(),
-                  PlayerScrim(loading: _loading && _error == null, chromeVisible: _controlsVisible),
+                  PlayerScrim(loading: waiting && _error == null, chromeVisible: _controlsVisible),
                   if (_showStats && backend != null) _buildStatsOverlay(backend),
                   if (_caption != null && _caption!.isNotEmpty)
                     Align(
@@ -1963,7 +1974,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                       ),
                     ),
-                  if (_loading) const Center(child: PrairieLoadingIndicator()),
+                  if (waiting && _error == null) const Center(child: PrairieLoadingIndicator()),
                   if (_error != null)
                     Center(
                       child: Column(
@@ -1985,7 +1996,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ),
-                  if (_controlsVisible && backend != null && !_loading && _error == null)
+                  if (_controlsVisible && backend != null && !waiting && _error == null)
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
