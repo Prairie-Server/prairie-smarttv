@@ -35,17 +35,17 @@ class SubtitleCaption {
     final text = rawText.replaceAllMapped(
       RegExp(r'\{\\([^}]*)\}'),
       (match) {
-      final block = match.group(1)!;
-      for (final alignment in RegExp(r'an([1-9])').allMatches(block)) {
-        final value = int.parse(alignment.group(1)!);
-        if (value >= 7) {
-          position = SubtitleVerticalPosition.top;
-        } else if (value >= 4) {
-          position = SubtitleVerticalPosition.middle;
-        } else {
-          position = SubtitleVerticalPosition.bottom;
+        final block = match.group(1)!;
+        for (final alignment in RegExp(r'an([1-9])').allMatches(block)) {
+          final value = int.parse(alignment.group(1)!);
+          if (value >= 7) {
+            position = SubtitleVerticalPosition.top;
+          } else if (value >= 4) {
+            position = SubtitleVerticalPosition.middle;
+          } else {
+            position = SubtitleVerticalPosition.bottom;
+          }
         }
-      }
         return '';
       },
     ).trim();
