@@ -173,8 +173,7 @@ class WebosVideoBackend implements VideoBackend {
       _refreshSubtitleTracks();
     }
 
-    final text = controller.value.caption.text;
-    final normalized = text.isEmpty ? null : text;
+    final normalized = normalizeSubtitleCaption(controller.value.caption.text);
     if (normalized != _lastCaptionText) {
       _lastCaptionText = normalized;
       _captionController.add(normalized);
