@@ -10,6 +10,14 @@ import 'package:video_player_drm/video_player.dart';
 ///
 /// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
 /// underlying plugin but not yet wired up here — same gap as Tizen AVPlay.
+/// Removes ASS/SSA override blocks that native TV caption APIs sometimes
+/// expose as literal text (for example, `{\\an8}`). The TV caption overlay
+/// cannot apply these styling directives, so keep the readable cue text.
+String? normalizeSubtitleCaption(String text) {
+  final normalized = text.replaceAll(RegExp(r'\\{\\\\[^}]*\\}'), '').trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
 class WebosVideoBackend implements VideoBackend {
   /// Diagnostics-only: posts state changes to
   /// `POST /api/v2/diagnostics/client-events`, same as Tizen's
