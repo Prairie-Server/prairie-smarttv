@@ -213,7 +213,7 @@ class WebosVideoBackend implements VideoBackend {
   }
 
   @override
-  Stream<String?> get captionStream => _captionController.stream;
+  Stream<SubtitleCaption?> get captionStream => _captionController.stream;
 
   @override
   Future<void> play() async => _controller?.play();
