@@ -177,7 +177,7 @@ class VideoholeVideoBackend implements VideoBackend {
       }
     }
 
-    final text = value.caption.text.isEmpty ? null : value.caption.text;
+    final text = normalizeSubtitleCaption(value.caption.text);
     if (text != _lastCaptionText) {
       _lastCaptionText = text;
       _captionController.add(text);
