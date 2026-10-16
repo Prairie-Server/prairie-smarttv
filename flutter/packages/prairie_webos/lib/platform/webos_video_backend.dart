@@ -38,7 +38,7 @@ class WebosVideoBackend implements VideoBackend {
 
   VideoPlayerController? _controller;
   final _positionController = StreamController<Duration>.broadcast();
-  final _captionController = StreamController<String?>.broadcast();
+  final _captionController = StreamController<SubtitleCaption?>.broadcast();
   final _errorController = StreamController<String>.broadcast();
   final _completedController = StreamController<void>.broadcast();
   bool _lastCompleted = false;
