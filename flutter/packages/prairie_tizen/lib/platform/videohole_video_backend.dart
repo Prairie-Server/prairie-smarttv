@@ -47,13 +47,13 @@ class VideoholeVideoBackend implements VideoBackend {
 
   VideoPlayerController? _controller;
   final _positionController = StreamController<Duration>.broadcast();
-  final _captionController = StreamController<String?>.broadcast();
+  final _captionController = StreamController<SubtitleCaption?>.broadcast();
   final _errorController = StreamController<String>.broadcast();
   final _completedController = StreamController<void>.broadcast();
   bool _lastCompleted = false;
   Timer? _positionTimer;
   List<SubtitleTrackChoice> _subtitleTracks = [];
-  String? _lastCaptionText;
+  SubtitleCaption? _lastCaptionText;
   String? _lastError;
   bool _initialized = false;
   bool? _lastBuffering;
@@ -177,10 +177,11 @@ class VideoholeVideoBackend implements VideoBackend {
       }
     }
 
-    final text = value.caption.text.isEmpty ? null : value.caption.text;
-    if (text != _lastCaptionText) {
-      _lastCaptionText = text;
-      _captionController.add(text);
+    final caption = SubtitleCaption.parse(value.caption.text);
+    if (caption?.text != _lastCaptionText?.text ||
+        caption?.verticalPosition != _lastCaptionText?.verticalPosition) {
+      _lastCaptionText = caption;
+      _captionController.add(caption);
     }
   }
 
@@ -233,7 +234,7 @@ class VideoholeVideoBackend implements VideoBackend {
   }
 
   @override
-  Stream<String?> get captionStream => _captionController.stream;
+  Stream<SubtitleCaption?> get captionStream => _captionController.stream;
 
   @override
   Future<void> play() async {

@@ -11,6 +11,52 @@ class SubtitleTrackChoice {
   final String language;
 }
 
+/// Vertical placement for subtitle cues that carry ASS/SSA alignment tags.
+enum SubtitleVerticalPosition { top, middle, bottom }
+
+/// A subtitle cue normalized for the Smart TV overlay.
+///
+/// The native Tizen/webOS caption APIs can expose ASS override tags as literal
+/// text. The overlay cannot render ASS styling, but it can preserve the cue's
+/// vertical alignment instead of displaying tags or forcing every cue to bottom.
+class SubtitleCaption {
+  const SubtitleCaption({
+    required this.text,
+    this.verticalPosition = SubtitleVerticalPosition.bottom,
+  });
+
+  final String text;
+  final SubtitleVerticalPosition verticalPosition;
+
+  /// Removes ASS override blocks while retaining their supported alignment.
+  /// Non-ASS brace text is left intact.
+  static SubtitleCaption? parse(String rawText) {
+    var position = SubtitleVerticalPosition.bottom;
+    // ASS/SSA uses \\N and \\n for line breaks; native caption APIs can
+    // expose those escapes literally instead of decoding them.
+    final decodedText = rawText.replaceAll(RegExp(r'\\[Nn]'), '\n');
+    final text = decodedText.replaceAllMapped(
+      RegExp(r'\{\\([^}]*)\}'),
+      (match) {
+        final block = match.group(1)!;
+        for (final alignment in RegExp(r'an([1-9])').allMatches(block)) {
+          final value = int.parse(alignment.group(1)!);
+          if (value >= 7) {
+            position = SubtitleVerticalPosition.top;
+          } else if (value >= 4) {
+            position = SubtitleVerticalPosition.middle;
+          } else {
+            position = SubtitleVerticalPosition.bottom;
+          }
+        }
+        return '';
+      },
+    ).trim();
+    if (text.isEmpty) return null;
+    return SubtitleCaption(text: text, verticalPosition: position);
+  }
+}
+
 /// Platform-agnostic contract for video playback, implemented per platform
 /// (Tizen via `video_player_videohole`, webOS via its own native path).
 ///
@@ -100,7 +146,7 @@ abstract class VideoBackend {
   /// Emits the subtitle text that should be on screen right now (`null`
   /// when nothing should be showing), driven by the native player's own
   /// subtitle decoding/timing.
-  Stream<String?> get captionStream;
+  Stream<SubtitleCaption?> get captionStream;
 
   /// The platform's native video-rendering widget (e.g. `video_player_videohole`'s
   /// `VideoPlayer`), so the shared `PlayerScreen` never needs to know which
