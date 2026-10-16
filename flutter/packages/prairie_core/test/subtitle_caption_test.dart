@@ -34,21 +34,21 @@ void main() {
     });
 
     test('converts ASS uppercase N line-break escapes', () {
-      final caption = SubtitleCaption.parse(r'First\\NSecond');
+      final caption = SubtitleCaption.parse(r'First\NSecond');
 
-      expect(caption?.text, 'First\\nSecond');
+      expect(caption?.text, 'First\nSecond');
     });
 
     test('converts lowercase n line-break escapes', () {
-      final caption = SubtitleCaption.parse(r'First\\nSecond');
+      final caption = SubtitleCaption.parse(r'First\nSecond');
 
-      expect(caption?.text, 'First\\nSecond');
+      expect(caption?.text, 'First\nSecond');
     });
 
     test('converts line breaks while removing ASS alignment tags', () {
-      final caption = SubtitleCaption.parse(r'{\\an8}First\\NSecond');
+      final caption = SubtitleCaption.parse(r'{\an8}First\NSecond');
 
-      expect(caption?.text, 'First\\nSecond');
+      expect(caption?.text, 'First\nSecond');
       expect(caption?.verticalPosition, SubtitleVerticalPosition.top);
     });
 
