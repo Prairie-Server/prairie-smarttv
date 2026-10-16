@@ -32,7 +32,10 @@ class SubtitleCaption {
   /// Non-ASS brace text is left intact.
   static SubtitleCaption? parse(String rawText) {
     var position = SubtitleVerticalPosition.bottom;
-    final text = rawText.replaceAllMapped(
+    // ASS/SSA uses \\N and \\n for line breaks; native caption APIs can
+    // expose those escapes literally instead of decoding them.
+    final decodedText = rawText.replaceAll(RegExp(r'\\\\[Nn]'), '\\n');
+    final text = decodedText.replaceAllMapped(
       RegExp(r'\{\\([^}]*)\}'),
       (match) {
         final block = match.group(1)!;
