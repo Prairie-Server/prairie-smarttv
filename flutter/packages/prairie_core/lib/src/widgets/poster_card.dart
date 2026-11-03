@@ -217,6 +217,7 @@ class PosterGrid extends StatefulWidget {
     required this.serverUrl,
     required this.onOpen,
     this.restoreContentId,
+    this.header,
   });
 
   final List<CatalogItem> items;
@@ -226,6 +227,10 @@ class PosterGrid extends StatefulWidget {
   /// When set, focus the matching card after the first frame (returning from
   /// item details) instead of always autofocusing index 0.
   final String? restoreContentId;
+
+  /// Scrolls above the grid with it, such as Search's Box sets row or a box
+  /// set page's overview.
+  final Widget? header;
 
   @override
   State<PosterGrid> createState() => _PosterGridState();
@@ -265,27 +270,49 @@ class _PosterGridState extends State<PosterGrid> {
     final restoreIndex = restoreId == null ? -1 : widget.items.indexWhere((item) => item.contentId == restoreId);
     if (restoreIndex >= 0) _applyRestoreFocus();
 
-    return GridView.builder(
+    const padding = EdgeInsets.fromLTRB(28, 28, 28, 32);
+    const gridDelegate = SliverGridDelegateWithMaxCrossAxisExtent(
+      maxCrossAxisExtent: 160,
+      mainAxisExtent: 300,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 20,
+    );
+    Widget card(BuildContext context, int index) {
+      final item = widget.items[index];
+      final isRestore = index == restoreIndex;
+      return PosterCard(
+        title: item.title,
+        subtitle: item.subtitle,
+        posterUrl: item.posterUrl,
+        serverUrl: widget.serverUrl,
+        watched: item.userState?.played ?? false,
+        favorite: item.userState?.isFavorite ?? false,
+        progress: item.progress,
+        autofocus: isRestore || (restoreIndex < 0 && index == 0),
+        focusNode: isRestore ? _restoreFocus : null,
+        onTap: () => widget.onOpen(item),
+      );
+    }
+
+    final header = widget.header;
+    if (header == null) {
+      return GridView.builder(
+        clipBehavior: Clip.none,
+        padding: padding,
+        gridDelegate: gridDelegate,
+        itemCount: widget.items.length,
+        itemBuilder: card,
+      );
+    }
+    return CustomScrollView(
       clipBehavior: Clip.none,
-      padding: const EdgeInsets.fromLTRB(28, 28, 28, 32),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, mainAxisExtent: 300, crossAxisSpacing: 16, mainAxisSpacing: 20),
-      itemCount: widget.items.length,
-      itemBuilder: (context, index) {
-        final item = widget.items[index];
-        final isRestore = index == restoreIndex;
-        return PosterCard(
-          title: item.title,
-          subtitle: item.subtitle,
-          posterUrl: item.posterUrl,
-          serverUrl: widget.serverUrl,
-          watched: item.userState?.played ?? false,
-          favorite: item.userState?.isFavorite ?? false,
-          progress: item.progress,
-          autofocus: isRestore || (restoreIndex < 0 && index == 0),
-          focusNode: isRestore ? _restoreFocus : null,
-          onTap: () => widget.onOpen(item),
-        );
-      },
+      slivers: [
+        SliverToBoxAdapter(child: header),
+        SliverPadding(
+          padding: padding,
+          sliver: SliverGrid.builder(gridDelegate: gridDelegate, itemCount: widget.items.length, itemBuilder: card),
+        ),
+      ],
     );
   }
 }

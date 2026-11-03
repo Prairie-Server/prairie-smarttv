@@ -32,6 +32,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   List<EpisodeSummary> _episodes = [];
   bool _episodesLoading = false;
   List<CatalogItem> _similar = [];
+
+  /// The box set this movie belongs to, for the row under the trailers.
+  BoxSetDetail? _boxSet;
   bool _loading = true;
   bool _busyPlay = false;
   bool _busyAction = false;
@@ -146,6 +149,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _episodes = [];
       _seasonNumber = null;
       _similar = [];
+      _boxSet = null;
       _selectedFileId = null;
       _favoriteOverride = null;
       _watchlistOverride = null;
@@ -172,6 +176,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         _loadSeasons();
       } else {
         _loadPlaybackOptionsFor(widget.contentId);
+        if (item.item.type.toLowerCase() == 'movie') _loadBoxSet();
       }
       _loadSimilar();
     } catch (e) {
@@ -252,6 +257,26 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   void _openSimilar(CatalogItem item) {
     final next = moreLikeThisRoute(_selfRoute, item);
     if (next != null) ref.read(routeProvider.notifier).go(next);
+  }
+
+  /// Only asked when some library gathers box sets; the row is optional.
+  Future<void> _loadBoxSet() async {
+    try {
+      final libraries = await ref.read(librariesProvider.future);
+      if (!librariesHaveBoxSets(libraries)) return;
+      final boxSet = await fetchItemBoxSet(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
+      if (!mounted || boxSet == null || boxSet.items.isEmpty) return;
+      setState(() => _boxSet = boxSet);
+    } catch (_) {}
+  }
+
+  void _openBoxSetMovie(CatalogItem item) {
+    final next = moreLikeThisRoute(_selfRoute, item);
+    if (next != null) ref.read(routeProvider.notifier).go(next);
+  }
+
+  void _openBoxSet(BoxSet boxSet) {
+    ref.read(routeProvider.notifier).go(BoxSetRoute(boxSet: boxSet, back: _selfRoute));
   }
 
   Future<void> _loadSimilar() async {
@@ -774,6 +799,25 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                           serverUrl: session.serverUrl,
                           onTap: () => _openTrailer(entry),
                         ),
+                      ),
+                    // The movie's box set, in release order, ending in an
+                    // Explore all card that opens the box set's page.
+                    if (_boxSet case final boxSet?)
+                      MediaRow<CatalogItem>(
+                        title: boxSet.boxSet.title,
+                        items: boxSet.items,
+                        escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
+                        itemBuilder: (context, item, index) => PosterCard(
+                          title: item.title,
+                          subtitle: item.subtitle,
+                          posterUrl: item.posterUrl,
+                          serverUrl: session.serverUrl,
+                          watched: item.userState?.played ?? false,
+                          progress: item.progress,
+                          badges: [if (item.contentId == widget.contentId) 'THIS FILM'],
+                          onTap: () => _openBoxSetMovie(item),
+                        ),
+                        trailing: ExploreAllCard(onTap: () => _openBoxSet(boxSet.boxSet)),
                       ),
                     if (_similar.isNotEmpty)
                       MediaRow<CatalogItem>(

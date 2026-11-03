@@ -77,6 +77,7 @@ export 'src/storage/server_registry_store.dart';
 export 'src/storage/session_store.dart';
 export 'src/theme/prairie_theme.dart';
 export 'src/app.dart';
+export 'src/screens/box_set_screen.dart';
 export 'src/screens/calendar_screen.dart';
 export 'src/screens/catalog_page_screen.dart';
 export 'src/screens/collection_browse_screen.dart';

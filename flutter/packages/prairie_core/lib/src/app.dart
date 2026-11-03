@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
 import 'settings/profile_launch.dart';
+import 'screens/box_set_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/catalog_page_screen.dart';
 import 'screens/collection_browse_screen.dart';
@@ -137,6 +138,7 @@ class AppRoot extends ConsumerWidget {
         fromMoreLikeThis: fromMoreLikeThis,
       ),
       final CatalogPageRoute page => CatalogPageScreen(route: page),
+      final BoxSetRoute page => BoxSetScreen(key: ValueKey('${page.boxSet.libraryId}:${page.boxSet.id}'), route: page),
       SettingsRoute(:final back) => SettingsScreen(back: back),
       NotificationsRoute(:final back) => NotificationsScreen(back: back),
       // Keyed by launch: next/previous episode swaps in a fresh player.

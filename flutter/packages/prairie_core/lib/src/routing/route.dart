@@ -1,3 +1,5 @@
+import 'package:prairie_core/src/api/box_sets_api.dart';
+
 import '../models/auth.dart';
 import '../models/catalog_item.dart';
 import '../models/collection.dart';
@@ -170,6 +172,20 @@ Route? moreLikeThisRoute(DetailRoute current, CatalogItem item) {
   final start = current.back;
   if (start is DetailRoute && start.contentId == item.contentId) return start;
   return DetailRoute(contentId: item.contentId, seed: item, back: start, fromMoreLikeThis: true);
+}
+
+/// A movie box set's page: its films in release order.
+class BoxSetRoute extends Route {
+  const BoxSetRoute({required this.boxSet, required this.back, this.restoreContentId});
+
+  /// The box set as the card that opened it knew it; the page reloads it.
+  final BoxSet boxSet;
+  final Route back;
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
+
+  BoxSetRoute withRestore(String contentId) => BoxSetRoute(boxSet: boxSet, back: back, restoreContentId: contentId);
 }
 
 /// What a [CatalogPageRoute] pages through.
