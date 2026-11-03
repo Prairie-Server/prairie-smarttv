@@ -19,6 +19,7 @@ class PosterCard extends StatefulWidget {
     this.progress,
     this.autofocus = false,
     this.focusNode,
+    this.badges = const [],
   });
 
   final String title;
@@ -31,6 +32,10 @@ class PosterCard extends StatefulWidget {
   final double? progress;
   final bool autofocus;
   final FocusNode? focusNode;
+
+  /// Short labels pinned to the art's top-left corner, such as a calendar
+  /// card's PREMIERE.
+  final List<String> badges;
 
   @override
   State<PosterCard> createState() => _PosterCardState();
@@ -91,6 +96,17 @@ class _PosterCardState extends State<PosterCard> {
                                 },
                               )
                             : const PosterFallback(),
+                        if (widget.badges.isNotEmpty)
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            right: 34,
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: [for (final label in widget.badges) _LabelBadge(label: label)],
+                            ),
+                          ),
                         if (widget.watched)
                           const Positioned(top: 6, right: 6, child: _Badge(icon: Icons.check, tooltip: 'Watched')),
                         if (widget.favorite)
@@ -158,6 +174,26 @@ class _Badge extends StatelessWidget {
       child: DecoratedBox(
         decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
         child: Padding(padding: const EdgeInsets.all(4), child: Icon(icon, size: 14, color: PrairieColors.amber)),
+      ),
+    );
+  }
+}
+
+class _LabelBadge extends StatelessWidget {
+  const _LabelBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(color: PrairieColors.amber, borderRadius: BorderRadius.circular(6)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Text(
+          label,
+          style: const TextStyle(color: PrairieColors.bg, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+        ),
       ),
     );
   }

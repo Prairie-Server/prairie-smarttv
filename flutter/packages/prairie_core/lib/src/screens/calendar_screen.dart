@@ -141,6 +141,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                     posterUrl: event.posterUrl,
                                     serverUrl: serverUrl,
                                     watched: event.watched,
+                                    badges: event.badgeLabels,
                                     focusNode: restorable && event.contentId == restoreId ? _restoreFocus : null,
                                     autofocus: !restorable && dayIndex == 0 && index == 0,
                                     onTap: () => _open(event),

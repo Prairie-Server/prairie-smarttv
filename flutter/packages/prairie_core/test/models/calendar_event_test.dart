@@ -44,4 +44,24 @@ void main() {
     ], DateTime(2026, 10, 12, 20));
     expect(days.single.events.single.contentId, 'episode:last');
   });
+
+  test('labels the premiere badges as web, Android and Apple TV do', () {
+    final event = CalendarEvent.fromJson({
+      'content_id': 'episode:b',
+      'type': 'episode',
+      'title': 'The Show',
+      'air_date': '2026-10-12',
+      'local_air_date': '2026-10-12',
+      'badges': ['series_premiere', 'season_premiere', 'finale', 'digital'],
+    });
+    expect(event.badgeLabels, ['PREMIERE', 'NEW SEASON', 'FINALE']);
+    expect(calendarBadgeLabel('series_premiere'), 'PREMIERE');
+    expect(calendarBadgeLabel('physical'), isNull);
+  });
+
+  test('an event without badges has no labels', () {
+    final event = episode('episode:c', '2026-10-12');
+    expect(event.badges, isEmpty);
+    expect(event.badgeLabels, isEmpty);
+  });
 }
