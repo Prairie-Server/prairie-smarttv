@@ -46,9 +46,13 @@ class ConnectRoute extends Route {
 }
 
 class ProfilesRoute extends Route {
-  const ProfilesRoute({required this.auth});
+  const ProfilesRoute({required this.auth, this.atLaunch = false});
 
   final AuthTokens auth;
+
+  /// Shown at launch because Profile Selection is Every Time: there is no
+  /// profile to cancel back to.
+  final bool atLaunch;
 }
 
 class HomeRoute extends Route {

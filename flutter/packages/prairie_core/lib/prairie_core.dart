@@ -60,6 +60,7 @@ export 'src/routing/route_notifier.dart';
 export 'src/routing/shell_tabs.dart';
 export 'src/settings/playback_settings.dart';
 export 'src/settings/playback_skip_settings.dart';
+export 'src/settings/profile_launch.dart';
 export 'src/settings/subtitle_appearance.dart';
 export 'src/state/home_row_limit_provider.dart';
 export 'src/state/libraries_provider.dart';

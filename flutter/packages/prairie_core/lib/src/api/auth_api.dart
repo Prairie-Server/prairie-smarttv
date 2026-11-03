@@ -79,10 +79,16 @@ class Profile {
   );
 }
 
-/// Mirrors `listProfiles` from src/api/auth.ts.
-Future<List<Profile>> listProfiles(ApiClient client, String serverUrl, String accessToken) async {
+/// Mirrors `listProfiles` from src/api/auth.ts. [refreshToken] lets an
+/// expired access token renew, as Who's Watching at launch may hold one.
+Future<List<Profile>> listProfiles(
+  ApiClient client,
+  String serverUrl,
+  String accessToken, {
+  String? refreshToken,
+}) async {
   final json = await client.request<Map<String, dynamic>>(
-    ApiClientOptions(serverUrl: serverUrl, accessToken: accessToken),
+    ApiClientOptions(serverUrl: serverUrl, accessToken: accessToken, refreshToken: refreshToken),
     '/api/v2/profiles',
   );
   final profiles = (json['items'] ?? json['profiles']) as List<dynamic>?;
