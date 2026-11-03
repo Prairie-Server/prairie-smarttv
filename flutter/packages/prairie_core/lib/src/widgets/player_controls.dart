@@ -116,12 +116,20 @@ class PlayerTransportCluster extends StatelessWidget {
 /// Bottom-right pill over the video: "Skip Intro", "Watch Intro" (undo after
 /// an auto-skip), "Skip Credits", … An optional [caption] sits above it.
 class PlayerSkipButton extends StatelessWidget {
-  const PlayerSkipButton({super.key, required this.label, required this.onPressed, this.focusNode, this.caption});
+  const PlayerSkipButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.focusNode,
+    this.caption,
+    this.icon = Icons.fast_forward,
+  });
 
   final String label;
   final String? caption;
   final VoidCallback onPressed;
   final FocusNode? focusNode;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +142,7 @@ class PlayerSkipButton extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 6, right: 4),
             child: Text(caption!, style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
           ),
-        _PlayerPillButton(label: label, onPressed: onPressed, focusNode: focusNode, icon: Icons.fast_forward),
+        _PlayerPillButton(label: label, onPressed: onPressed, focusNode: focusNode, icon: icon),
       ],
     );
   }

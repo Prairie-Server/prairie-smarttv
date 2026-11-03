@@ -72,6 +72,11 @@ const _endStallWindowSeconds = 15.0;
 /// A position frozen this long while playing counts as a stall, for TV
 /// players that don't raise buffering callbacks on a dropped connection.
 const _frozenStallAfter = Duration(seconds: 2);
+/// Buffering right after a seek is the seek's, not a network stall.
+const _seekWaitGrace = Duration(seconds: 3);
+/// How long "Restore quality" stays up after a buffering step down
+/// (the buffering-quality spec's PROMPT_SECONDS).
+const _bufferingPillDuration = Duration(seconds: 15);
 
 /// Mirrors web's usePlaybackSession/VideoPlayer lifecycle on protocol v3:
 /// start (with transient retry), sequenced progress, stop with the final
@@ -179,6 +184,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _activeQualityId = 'original';
   List<QualityLadderRung> _qualityLadder = fallbackQualityLadder;
   String? _qualityError;
+
+  /// Steps Auto quality down when playback keeps buffering.
+  final BufferingStallTracker _stallTracker = BufferingStallTracker();
+  Timer? _bufferingTimer;
+  DateTime? _lastSeekAt;
+
+  /// Quality preference before a buffering step down (`auto`); null when
+  /// quality was not lowered for buffering. While set, further stalls may
+  /// step down again.
+  String? _qualityBeforeBufferingDrop;
+  bool _bufferingPillVisible = false;
+  Timer? _bufferingPillTimer;
 
   /// Receives D-pad keys while chrome is hidden so nav can bring it back.
   final FocusNode _idleFocus = FocusNode(debugLabel: 'player.idle');
@@ -314,6 +331,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _upNextTimer?.cancel();
     _sleepTicker?.cancel();
     _spinnerTimer?.cancel();
+    _bufferingTimer?.cancel();
+    _bufferingPillTimer?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -369,7 +388,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _focusIdleOrOverlay();
   }
 
-  bool get _overlayVisible => _introPrompt != null || _upNextVisible || _manualSkipRegion != null;
+  bool get _overlayVisible =>
+      _introPrompt != null || _upNextVisible || _bufferingPillVisible || _manualSkipRegion != null;
 
   void _focusIdleOrOverlay() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -635,6 +655,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
     if (choice == null || choice == activeId) return;
+    // The viewer's own pick replaces any buffering step down.
+    _qualityBeforeBufferingDrop = null;
+    _hideBufferingPill();
     await _switchQuality(choice);
   }
 
@@ -796,6 +819,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (!_hasStarted) setState(() => _hasStarted = true);
     _lastProgressPosition = _position;
     _lastProgressAt = DateTime.now();
+    _stallTracker.planStarted(DateTime.now());
+    _bufferingTimer ??= Timer.periodic(const Duration(seconds: 1), (_) => _checkBufferingQuality());
     if (needsHlsBootstrap(prepared.session.playMethod)) {
       _stallTimer?.cancel();
       _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
@@ -1282,6 +1307,85 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     });
   }
 
+  /// Once a second: feeds network stalls (not seeks, pauses or reloads) to
+  /// the buffering-quality tracker and steps Auto quality down when it says.
+  void _checkBufferingQuality() {
+    if (!mounted || _exiting || _error != null || _recovering || _ended) return;
+    final backend = _backend;
+    final now = DateTime.now();
+    final seekedAt = _lastSeekAt;
+    final seeking = _scrubTarget != null ||
+        _pendingReanchorSeek != null ||
+        (seekedAt != null && now.difference(seekedAt) < _seekWaitGrace);
+    final stalled = backend != null &&
+        !_loading &&
+        !seeking &&
+        !_viewerPaused &&
+        (backend.isBuffering || _isFrozen(backend, now));
+    if (_stallTracker.update(stalled: stalled, now: now)) unawaited(_lowerQualityForBuffering());
+  }
+
+  /// Video height playing now: the plan's delivered height, else the picked
+  /// rung's, else the source's.
+  int _currentPlaybackHeight() {
+    final delivered = _playbackSession?.deliveredHeight;
+    if (delivered != null && delivered > 0) return delivered;
+    for (final rung in _qualityLadder) {
+      if (rung.id == _activeQualityId) return rung.height;
+    }
+    return _sourceHeightForFile(widget.launch.watch, _playbackSession?.mediaFileId ?? widget.launch.fileId);
+  }
+
+  /// Auto quality (or quality this tracker already lowered) steps down one
+  /// rung, with "Restore quality" offered over the video. A quality the
+  /// viewer picked is left alone, and a TV without HLS transcode has no
+  /// lower rung to offer.
+  Future<void> _lowerQualityForBuffering() async {
+    final plan = _playbackSession;
+    if (plan == null || _busyQuality || _busyAudio || _exiting) return;
+    final lowered = _qualityBeforeBufferingDrop != null;
+    if (!lowered && plan.qualityPreference != 'auto') return;
+    final rung = bufferingStepDownRung(
+      _qualityLadder,
+      currentHeight: _currentPlaybackHeight(),
+      offeredIds: {for (final option in _qualityOptions) option.id},
+    );
+    if (rung == null) {
+      _backend?.reportDiagnostic('buffering:cannot-lower');
+      return;
+    }
+    _backend?.reportDiagnostic('buffering:lower:${rung.id}');
+    _qualityBeforeBufferingDrop ??= plan.qualityPreference;
+    await _switchQuality(rung.id);
+    if (!mounted || _exiting || _activeQualityId != rung.id || _qualityError != null) return;
+    _showBufferingPill();
+  }
+
+  void _showBufferingPill() {
+    _bufferingPillTimer?.cancel();
+    setState(() => _bufferingPillVisible = true);
+    _bufferingPillTimer = Timer(_bufferingPillDuration, _hideBufferingPill);
+    if (!_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  void _hideBufferingPill() {
+    _bufferingPillTimer?.cancel();
+    if (!mounted || !_bufferingPillVisible) return;
+    final hadFocus = _overlayFocus.hasFocus;
+    setState(() => _bufferingPillVisible = false);
+    if (hadFocus && !_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  /// Undoes a buffering step down; quality isn't lowered again for
+  /// [BufferingStallTracker.noLowerCooldown].
+  void _restoreQualityAfterBuffering() {
+    final restore = _qualityBeforeBufferingDrop ?? 'auto';
+    _qualityBeforeBufferingDrop = null;
+    _stallTracker.suppress(DateTime.now());
+    _hideBufferingPill();
+    unawaited(_switchQuality(restore));
+  }
+
   void _checkHlsStall() {
     if (!mounted || _exiting || _error != null || _recovering) return;
     final backend = _backend;
@@ -1490,6 +1594,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _introPromptTimer?.cancel();
     _upNextTimer?.cancel();
     _sleepTicker?.cancel();
+    _bufferingTimer?.cancel();
+    _bufferingPillTimer?.cancel();
     await _errorSub?.cancel();
     _errorSub = null;
     await _completedSub?.cancel();
@@ -1923,6 +2029,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // stream to seek; the reload already lands where playback was.
     if (backend == null || _recovering || _loading) return;
     final generation = ++_seekGeneration;
+    _lastSeekAt = DateTime.now();
     final duration = _totalDuration ?? Duration.zero;
     var next = target < Duration.zero ? Duration.zero : target;
     if (duration > Duration.zero && next > duration) next = duration;
@@ -2350,6 +2457,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         caption: _introPromptIsUndo ? 'Intro skipped' : null,
         focusNode: _overlayFocus,
         onPressed: _onIntroPromptPressed,
+      );
+    } else if (_bufferingPillVisible) {
+      child = PlayerSkipButton(
+        label: 'Restore quality',
+        caption: 'Quality lowered to stop buffering',
+        icon: Icons.high_quality,
+        focusNode: _overlayFocus,
+        onPressed: _restoreQualityAfterBuffering,
       );
     } else if (manual != null && !_loading) {
       child = PlayerSkipButton(
