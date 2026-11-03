@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
+import 'platform/tv_device_name_tizen.dart';
 import 'platform/videohole_video_backend.dart';
 
 Future<void> main() async {
@@ -30,6 +31,8 @@ Future<void> main() async {
     debugPrint('prairie.tv_capabilities: capability probe failed — falling back to defaults (no AV1): $err\n$stack');
   }
 
+  final deviceName = await readTizenDeviceName();
+
   runApp(
     ProviderScope(
       overrides: [
@@ -41,7 +44,11 @@ Future<void> main() async {
         ),
         tvCapabilitiesProvider.overrideWithValue(caps),
         clientIdentityProvider.overrideWithValue(
-          ClientIdentity.smartTv(platformLabel: 'Tizen', devicePlatform: 'tizen'),
+          ClientIdentity.smartTv(
+            platformLabel: 'Tizen',
+            devicePlatform: 'tizen',
+            deviceName: deviceName,
+          ),
         ),
       ],
       child: const PrairieApp(),

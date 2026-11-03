@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 
+import 'platform/tv_device_name_webos.dart';
 import 'platform/webos_video_backend.dart';
 
 Future<void> main() async {
@@ -33,6 +34,8 @@ Future<void> main() async {
     debugPrint('prairie.tv_capabilities: capability probe failed — falling back to defaults (no AV1): $err\n$stack');
   }
 
+  final deviceName = await readWebosDeviceName();
+
   runApp(
     ProviderScope(
       overrides: [
@@ -44,7 +47,11 @@ Future<void> main() async {
         ),
         tvCapabilitiesProvider.overrideWithValue(caps),
         clientIdentityProvider.overrideWithValue(
-          ClientIdentity.smartTv(platformLabel: 'webOS', devicePlatform: 'webos'),
+          ClientIdentity.smartTv(
+            platformLabel: 'webOS',
+            devicePlatform: 'webos',
+            deviceName: deviceName,
+          ),
         ),
       ],
       child: const PrairieApp(),

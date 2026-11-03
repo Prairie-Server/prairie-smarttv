@@ -639,6 +639,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  webos_service_bridge:
+    dependency: transitive
+    description:
+      path: "packages/webos_service_bridge"
+      ref: main
+      resolved-ref: "43335a819f054e3859a89cb2e0ad2a2ce0857956"
+      url: "https://github.com/lg-flutter-webos/plugins.git"
+    source: git
+    version: "1.0.0"
   win32:
     dependency: transitive
     description:
