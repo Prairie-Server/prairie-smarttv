@@ -87,6 +87,43 @@ void main() {
     });
   });
 
+  group('webosDeviceNameFromSettings', () {
+    test('reads settings.deviceName from a successful reply', () {
+      expect(
+        webosDeviceNameFromSettings({
+          'returnValue': true,
+          'category': 'network',
+          'settings': {'deviceName': 'Living Room TV'},
+        }),
+        'Living Room TV',
+      );
+    });
+
+    test('returns null for failed, empty or malformed replies', () {
+      expect(webosDeviceNameFromSettings(null), isNull);
+      expect(
+        webosDeviceNameFromSettings({
+          'returnValue': false,
+          'errorText': 'Denied',
+          'settings': {'deviceName': 'x'},
+        }),
+        isNull,
+      );
+      expect(webosDeviceNameFromSettings({'returnValue': true}), isNull);
+      expect(webosDeviceNameFromSettings({'returnValue': true, 'settings': 'nope'}), isNull);
+      expect(webosDeviceNameFromSettings({'returnValue': true, 'settings': {'deviceName': 42}}), isNull);
+    });
+
+    test('a blank webOS name still falls back to the generic name', () {
+      final raw = webosDeviceNameFromSettings({
+        'returnValue': true,
+        'settings': {'deviceName': '  '},
+      });
+      final identity = ClientIdentity.smartTv(platformLabel: 'webOS', devicePlatform: 'webos', deviceName: raw);
+      expect(identity.deviceName, 'Prairie Smart TV (webOS)');
+    });
+  });
+
   group('ApiClient User-Agent', () {
     test('sends Prairie User-Agent and device headers on every request', () async {
       String? seenUa;

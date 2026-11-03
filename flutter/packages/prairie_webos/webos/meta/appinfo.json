@@ -19,6 +19,7 @@
     "uiRevision": 2,
     "requiredACG": [
         "systemconfig.query",
-        "securitykey.operation"
+        "securitykey.operation",
+        "settings.query"
     ]
 }

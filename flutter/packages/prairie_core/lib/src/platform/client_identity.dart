@@ -95,3 +95,15 @@ String? fitTvDeviceName(String? raw) {
   final fitted = out.toString().trim();
   return fitted.isEmpty ? null : fitted;
 }
+
+/// Pull the TV name out of a webOS
+/// `luna://com.webos.settingsservice/getSystemSettings` reply for category
+/// `network`, key `deviceName` (`{returnValue: true, settings: {deviceName:
+/// ...}}`). Returns null for a failed call or a missing / non-string value.
+String? webosDeviceNameFromSettings(Map<String, dynamic>? reply) {
+  if (reply == null || reply['returnValue'] == false) return null;
+  final settings = reply['settings'];
+  if (settings is! Map) return null;
+  final name = settings['deviceName'];
+  return name is String ? name : null;
+}
