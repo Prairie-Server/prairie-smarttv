@@ -9,11 +9,14 @@ import 'package:qr_flutter/qr_flutter.dart';
 /// Mirrors ConnectScreen.tsx: username/password sign-in against [serverUrl],
 /// plus a Quick Connect (device-code/QR) panel as an alternative.
 class ConnectScreen extends ConsumerStatefulWidget {
-  const ConnectScreen({super.key, required this.serverUrl, this.serverName, this.initialUsername});
+  const ConnectScreen({super.key, required this.serverUrl, this.serverName, this.initialUsername, this.notice});
 
   final String serverUrl;
   final String? serverName;
   final String? initialUsername;
+
+  /// Shown under the form on arrival (e.g. a server removal that failed).
+  final String? notice;
 
   @override
   ConsumerState<ConnectScreen> createState() => _ConnectScreenState();
@@ -25,10 +28,20 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
   final _usernameFocus = FocusNode();
   final _passwordFocus = FocusNode();
   bool _loading = false;
-  String? _error;
+  late String? _error = widget.notice;
+
+  /// A sign-in is being handed on to Who's Watching: Change server must not
+  /// remove the server under it.
+  bool _completing = false;
+
+  /// Change server is running; repeats are ignored.
+  bool _leaving = false;
 
   _QuickConnectState _quickConnect = const _QuickConnectIdle();
   bool _pollCancelled = false;
+
+  /// Bumped per code: a poll or start for an older code stops quietly.
+  int _codeGeneration = 0;
 
   final _usernameEntryFocus = FocusNode();
   final _passwordEntryFocus = FocusNode();
@@ -132,7 +145,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         ),
       );
     } on ApiError catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = loginErrorMessage(e));
     } catch (e) {
       setState(() => _error = networkFailureMessage(e));
     } finally {
@@ -141,11 +154,41 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
   }
 
   void _completeAuth(AuthTokens auth) {
+    _completing = true;
+    _pollCancelled = true;
     ref.read(routeProvider.notifier).go(ProfilesRoute(auth: auth));
   }
 
-  Future<void> _startQuickConnect() async {
+  /// "Change server" (Android #759): stop the code and leave. A server this
+  /// TV never signed in to is forgotten first, so it doesn't stay listed and
+  /// active; the removal lands before the server list opens. Ignored while a
+  /// sign-in runs or is being handed on.
+  Future<void> _changeServer() async {
+    if (_leaving || _loading || _completing) return;
+    _leaving = true;
+    _pollCancelled = true;
+    try {
+      final store = ref.read(serverRegistryStoreProvider);
+      final next = ServerRegistryStore.forgetIfNeverSignedIn(
+        await store.load(),
+        widget.serverUrl,
+        ref.read(sessionProvider),
+      );
+      if (next != null) await store.save(next);
+    } catch (e) {
+      // A failed write keeps the server, as before; leave anyway.
+      debugPrint('prairie.connect: could not forget ${widget.serverUrl}: $e');
+    }
+    if (!mounted) return;
+    ref.read(routeProvider.notifier).goServers(autoScan: false);
+  }
+
+  /// Starts a sign-in code. [renewed] marks a code that replaced an expired
+  /// one: it says "New code" for as long as it shows, as on Apple TV.
+  Future<void> _startQuickConnect({bool renewed = false}) async {
+    if (_leaving || _completing) return;
     _pollCancelled = false;
+    final generation = ++_codeGeneration;
     setState(() => _quickConnect = const _QuickConnectStarting());
     try {
       final client = ref.read(apiClientProvider);
@@ -163,11 +206,11 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         deviceName: identity.deviceName,
         devicePlatform: identity.devicePlatform,
       );
-      if (!mounted) return;
-      setState(() => _quickConnect = _QuickConnectWaiting(session));
-      _poll(session);
+      if (!mounted || generation != _codeGeneration || _pollCancelled) return;
+      setState(() => _quickConnect = _QuickConnectWaiting(session, renewed: renewed));
+      unawaited(_poll(session, generation));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _codeGeneration || _pollCancelled) return;
       setState(
         () => _quickConnect = _QuickConnectFailed(
           e is ApiError ? e.message : networkFailureMessage(e),
@@ -176,12 +219,13 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     }
   }
 
-  Future<void> _poll(DeviceLoginStartResponse session) async {
+  Future<void> _poll(DeviceLoginStartResponse session, int generation) async {
     final client = ref.read(apiClientProvider);
-    while (!_pollCancelled && mounted) {
+    bool stale() => _pollCancelled || !mounted || generation != _codeGeneration;
+    while (!stale()) {
       try {
         final result = await pollDeviceLogin(client, widget.serverUrl, session.deviceCode);
-        if (_pollCancelled || !mounted) return;
+        if (stale()) return;
         if (result.status == 'approved' && result.accessToken != null) {
           _completeAuth(
             AuthTokens(
@@ -194,19 +238,21 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           return;
         }
         if (result.status == 'denied') {
-          setState(() => _quickConnect = const _QuickConnectFailed('Sign-in was denied on the other device.'));
+          // The decline may have come from a phone or a browser.
+          setState(() => _quickConnect = const _QuickConnectDeclined());
           return;
         }
         if (result.status == 'expired' || result.status == 'consumed') {
-          setState(() => _quickConnect = const _QuickConnectFailed('Quick Connect code expired. Generate a new one.'));
+          // Apple TV replaces an expired code by itself.
+          unawaited(_startQuickConnect(renewed: true));
           return;
         }
         final waitSeconds = [2, result.pollAfter, session.interval].where((s) => s > 0).reduce((a, b) => a > b ? a : b);
         await Future<void>.delayed(Duration(seconds: waitSeconds));
       } catch (e) {
-        if (_pollCancelled || !mounted) return;
+        if (stale()) return;
         if (e is ApiError && e.status == 404) {
-          setState(() => _quickConnect = const _QuickConnectFailed('Quick Connect code expired. Generate a new one.'));
+          unawaited(_startQuickConnect(renewed: true));
           return;
         }
         await Future<void>.delayed(Duration(seconds: session.interval > 0 ? session.interval : 3));
@@ -328,9 +374,9 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
             const SizedBox(width: 12),
             Flexible(
               child: TextButton.icon(
-                onPressed: _loading ? null : () => ref.read(routeProvider.notifier).goServers(autoScan: false),
+                onPressed: _loading ? null : _changeServer,
                 icon: const Icon(Icons.arrow_back, color: PrairieColors.muted),
-                label: const Text('Back to servers', style: TextStyle(color: PrairieColors.muted)),
+                label: const Text('Change server', style: TextStyle(color: PrairieColors.muted)),
               ),
             ),
           ],
@@ -363,7 +409,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           switch (_quickConnect) {
             _QuickConnectIdle() => ElevatedButton(onPressed: _startQuickConnect, child: const Text('Show QR code')),
             _QuickConnectStarting() => const Text('Generating code…', style: TextStyle(color: PrairieColors.muted)),
-            _QuickConnectWaiting(:final session) => Column(
+            _QuickConnectWaiting(:final session, :final renewed) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
@@ -377,12 +423,35 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
                 ),
                 const SizedBox(height: 12),
                 const Text('MATCH', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
-                Text(
-                  session.matchCode,
-                  style: const TextStyle(fontFamily: 'Fraunces', fontSize: 20, color: PrairieColors.ink),
+                SignInCodeText(session.matchCode),
+                const SizedBox(height: 8),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    signInWaitingStatus(renewed: renewed),
+                    style: const TextStyle(color: PrairieColors.muted),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextButton(onPressed: _stopQuickConnect, child: const Text('Cancel')),
+              ],
+            ),
+            _QuickConnectDeclined() => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  liveRegion: true,
+                  child: const Text(signInDeclinedStatus, style: TextStyle(color: PrairieColors.danger)),
+                ),
+                const SizedBox(height: 4),
+                const Text(signInDeclinedLead, style: TextStyle(color: PrairieColors.muted)),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  autofocus: true,
+                  onPressed: _startQuickConnect,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Show a new code'),
+                ),
               ],
             ),
             _QuickConnectFailed(:final message) => Column(
@@ -413,11 +482,78 @@ class _QuickConnectStarting extends _QuickConnectState {
 }
 
 class _QuickConnectWaiting extends _QuickConnectState {
-  const _QuickConnectWaiting(this.session);
+  const _QuickConnectWaiting(this.session, {this.renewed = false});
   final DeviceLoginStartResponse session;
+
+  /// This code replaced an expired one.
+  final bool renewed;
+}
+
+class _QuickConnectDeclined extends _QuickConnectState {
+  const _QuickConnectDeclined();
 }
 
 class _QuickConnectFailed extends _QuickConnectState {
   const _QuickConnectFailed(this.message);
   final String message;
+}
+
+/// Status under a waiting sign-in code, as Apple TV words it
+/// (`TVSignInPresentation.statusLine`; Android #754).
+String signInWaitingStatus({required bool renewed}) =>
+    renewed ? 'New code. Waiting for approval.' : 'Waiting for approval';
+
+/// A declined sign-in (Android #754): the decline may have come from a
+/// phone or a browser, and the code is gone.
+const signInDeclinedStatus = 'Sign-in was declined.';
+const signInDeclinedLead = 'Show a new code to try again.';
+
+/// The password sign-in error: Apple TV's wording for wrong credentials,
+/// the server's message otherwise.
+String loginErrorMessage(ApiError error) {
+  final code = error.code?.toLowerCase();
+  if (error.status == 401 || code == 'invalid_credentials' || code == 'unauthorized') {
+    return 'Incorrect username or password.';
+  }
+  return error.message;
+}
+
+/// The sign-in code as one large monospaced line, no tiles (Android #656):
+/// tabular, slashed-zero digits, an en space between groups, scaled down to
+/// fit when a server sends a longer or wider code.
+class SignInCodeText extends StatelessWidget {
+  const SignInCodeText(this.code, {super.key});
+
+  final String code;
+
+  /// [code] as drawn: trimmed, upper case, spaces widened to en spaces.
+  static String display(String code) => code.trim().toUpperCase().replaceAll(' ', '\u2002');
+
+  @override
+  Widget build(BuildContext context) {
+    final text = code.trim().toUpperCase();
+    return Semantics(
+      label: 'Code: ${text.split('').where((c) => c != ' ').join(', ')}',
+      excludeSemantics: true,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text(
+          display(code),
+          maxLines: 1,
+          softWrap: false,
+          // A code reads left to right in every locale.
+          textDirection: TextDirection.ltr,
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontFamilyFallback: ['DejaVu Sans Mono', 'Courier New', 'Courier'],
+            fontSize: 40,
+            fontWeight: FontWeight.bold,
+            color: PrairieColors.ink,
+            fontFeatures: [FontFeature.tabularFigures(), FontFeature.slashedZero()],
+          ),
+        ),
+      ),
+    );
+  }
 }

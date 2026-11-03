@@ -35,11 +35,14 @@ class ManualServerRoute extends Route {
 }
 
 class ConnectRoute extends Route {
-  const ConnectRoute({required this.serverUrl, this.serverName, this.initialUsername});
+  const ConnectRoute({required this.serverUrl, this.serverName, this.initialUsername, this.notice});
 
   final String serverUrl;
   final String? serverName;
   final String? initialUsername;
+
+  /// Shown on arrival, e.g. a sign-out that couldn't remove the server.
+  final String? notice;
 }
 
 class ProfilesRoute extends Route {

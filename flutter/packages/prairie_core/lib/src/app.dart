@@ -93,10 +93,11 @@ class AppRoot extends ConsumerWidget {
     return switch (route) {
       ServersRoute(:final autoScan, :final back) => ServersScreen(autoScan: autoScan ?? true, canReturnHome: back == 'home'),
       ManualServerRoute(:final initialUrl) => ManualServerScreen(initialUrl: initialUrl),
-      ConnectRoute(:final serverUrl, :final serverName, :final initialUsername) => ConnectScreen(
+      ConnectRoute(:final serverUrl, :final serverName, :final initialUsername, :final notice) => ConnectScreen(
         serverUrl: serverUrl,
         serverName: serverName,
         initialUsername: initialUsername,
+        notice: notice,
       ),
       ProfilesRoute(:final auth) => ProfilesScreen(auth: auth),
       HomeRoute(:final restoreContentId, :final restoreExploreSectionId) =>
