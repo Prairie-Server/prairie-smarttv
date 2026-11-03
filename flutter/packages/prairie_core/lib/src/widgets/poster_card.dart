@@ -4,8 +4,8 @@ import 'package:prairie_core/prairie_core.dart';
 /// Shared poster card used by Home rails, Library/Collection grids, and
 /// Search results. Mirrors `.poster-card` from styles.css: a bordered,
 /// translucent card (not a bare image) with a 2:3 art area, watched
-/// checkmark, favorite heart, in-progress bar, and a focus state that
-/// scales up with an amber glow rather than Material's default ripple.
+/// checkmark, favorite heart, in-progress bar, and the shared card focus
+/// (white outline, lift, drop shadow) rather than Material's default ripple.
 class PosterCard extends StatefulWidget {
   const PosterCard({
     super.key,
@@ -53,22 +53,17 @@ class _PosterCardState extends State<PosterCard> {
         splashFactory: NoSplash.splashFactory,
         highlightColor: Colors.transparent,
         child: AnimatedScale(
-          scale: _focused ? 1.04 : 1.0,
-          duration: const Duration(milliseconds: 160),
+          scale: _focused ? prairieCardFocusScale : 1.0,
+          duration: prairieCardFocusDuration,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: PrairieColors.bgSoft.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: _focused ? PrairieColors.ring : PrairieColors.ink.withValues(alpha: 0.1),
-                width: _focused ? 3 : 1,
+                color: _focused ? prairieCardFocusOutline : PrairieColors.ink.withValues(alpha: 0.1),
+                width: _focused ? prairieCardFocusOutlineWidth : 1,
               ),
-              boxShadow: _focused
-                  ? [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 32, offset: const Offset(0, 14)),
-                      ...prairieFocusRing(width: 3),
-                    ]
-                  : null,
+              boxShadow: _focused ? prairieCardFocusShadow : null,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),

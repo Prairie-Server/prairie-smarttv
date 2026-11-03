@@ -21,9 +21,12 @@ Future<List<R>> _mapWithConcurrency<T, R>(List<T> items, int limit, Future<R> Fu
   return results.cast<R>();
 }
 
-/// Mirrors CollectionsScreen.tsx.
+/// Mirrors CollectionsScreen.tsx. Opened from the Movies or Series tab's
+/// Collections tile; Back returns to that tab.
 class CollectionsScreen extends ConsumerStatefulWidget {
-  const CollectionsScreen({super.key});
+  const CollectionsScreen({super.key, required this.tab});
+
+  final LibraryTabType tab;
 
   @override
   ConsumerState<CollectionsScreen> createState() => _CollectionsScreenState();
@@ -85,7 +88,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   void _open(CollectionCard card) {
-    ref.read(routeProvider.notifier).go(CollectionRoute(collection: card));
+    ref.read(routeProvider.notifier).go(CollectionRoute(collection: card, tab: widget.tab));
   }
 
   void _notify(String message) {
@@ -111,7 +114,8 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   @override
   Widget build(BuildContext context) {
     return ShellScaffold(
-      active: ShellTab.collections,
+      active: widget.tab.shellTab,
+      onBack: () => ref.read(routeProvider.notifier).go(LibrariesRoute(type: widget.tab)),
       body: _loading
           ? const Center(child: PrairieLoadingIndicator())
           : ListView(

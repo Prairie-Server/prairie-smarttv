@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
 import 'screens/calendar_screen.dart';
+import 'screens/catalog_page_screen.dart';
 import 'screens/collection_browse_screen.dart';
 import 'screens/collections_screen.dart';
 import 'screens/connect_screen.dart';
@@ -90,7 +91,7 @@ class AppRoot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final route = ref.watch(routeProvider);
     return switch (route) {
-      ServersRoute(:final autoScan) => ServersScreen(autoScan: autoScan ?? true),
+      ServersRoute(:final autoScan, :final back) => ServersScreen(autoScan: autoScan ?? true, canReturnHome: back == 'home'),
       ManualServerRoute(:final initialUrl) => ManualServerScreen(initialUrl: initialUrl),
       ConnectRoute(:final serverUrl, :final serverName, :final initialUsername) => ConnectScreen(
         serverUrl: serverUrl,
@@ -98,15 +99,18 @@ class AppRoot extends ConsumerWidget {
         initialUsername: initialUsername,
       ),
       ProfilesRoute(:final auth) => ProfilesScreen(auth: auth),
-      HomeRoute(:final restoreContentId) => HomeScreen(restoreContentId: restoreContentId),
-      LibrariesRoute() => const LibrariesScreen(),
-      LibraryRoute(:final library, :final restoreContentId) =>
-          LibraryBrowseScreen(library: library, restoreContentId: restoreContentId),
-      CollectionsRoute() => const CollectionsScreen(),
-      CollectionRoute(:final collection, :final restoreContentId) => CollectionBrowseScreen(
+      HomeRoute(:final restoreContentId, :final restoreExploreSectionId) =>
+          HomeScreen(restoreContentId: restoreContentId, restoreExploreSectionId: restoreExploreSectionId),
+      // Keyed by type: switching library tabs builds a fresh list.
+      LibrariesRoute(:final type) => LibrariesScreen(key: ValueKey(type), type: type),
+      LibraryRoute(:final library, :final tab, :final restoreContentId) =>
+          LibraryBrowseScreen(library: library, tab: tab, restoreContentId: restoreContentId),
+      CollectionsRoute(:final tab) => CollectionsScreen(tab: tab),
+      CollectionRoute(:final collection, :final tab, :final restoreContentId) => CollectionBrowseScreen(
         title: collection.displayTitle,
         collectionId: collection.id,
         libraryId: collection.libraryId,
+        tab: tab,
         restoreContentId: restoreContentId,
       ),
       SearchRoute(:final restoreContentId) => SearchScreen(restoreContentId: restoreContentId),
@@ -114,7 +118,16 @@ class AppRoot extends ConsumerWidget {
       ForYouRoute(:final restoreContentId) => ForYouScreen(restoreContentId: restoreContentId),
       LiveTvRoute(:final tab, :final restoreChannelId) => LiveTvScreen(initialTab: tab, restoreChannelId: restoreChannelId),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
-      DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
+      // Keyed by title: a More like this pick, or Back to the title a chain
+      // started from, loads that title instead of keeping the last one.
+      DetailRoute(:final contentId, :final seed, :final back, :final fromMoreLikeThis) => ItemDetailScreen(
+        key: ValueKey(contentId),
+        contentId: contentId,
+        seed: seed,
+        back: back,
+        fromMoreLikeThis: fromMoreLikeThis,
+      ),
+      final CatalogPageRoute page => CatalogPageScreen(route: page),
       SettingsRoute(:final back) => SettingsScreen(back: back),
       NotificationsRoute(:final back) => NotificationsScreen(back: back),
       // Keyed by launch: next/previous episode swaps in a fresh player.

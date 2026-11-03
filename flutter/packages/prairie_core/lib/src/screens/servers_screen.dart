@@ -5,9 +5,13 @@ import 'package:prairie_core/prairie_core.dart';
 /// Mirrors ServerListScreen.tsx: saved-server registry, LAN discovery, and
 /// manual entry.
 class ServersScreen extends ConsumerStatefulWidget {
-  const ServersScreen({super.key, this.autoScan = true});
+  const ServersScreen({super.key, this.autoScan = true, this.canReturnHome = false});
 
   final bool autoScan;
+
+  /// Opened by Switch Server with the session still signed in: Back returns
+  /// Home instead of leaving the app.
+  final bool canReturnHome;
 
   @override
   ConsumerState<ServersScreen> createState() => _ServersScreenState();
@@ -240,8 +244,14 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     final savedUrls = _saved.map((e) => e.url).toSet();
     final freshHits = _hits.where((h) => !savedUrls.contains(h.url)).toList();
     final controlsLocked = _connecting;
+    final returnsHome = widget.canReturnHome && ref.watch(sessionProvider) != null;
 
-    return Scaffold(
+    return PopScope(
+      canPop: !returnsHome,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !_connecting) ref.read(routeProvider.notifier).go(const HomeRoute());
+      },
+      child: Scaffold(
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -382,6 +392,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

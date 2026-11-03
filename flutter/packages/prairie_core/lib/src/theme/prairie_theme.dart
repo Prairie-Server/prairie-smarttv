@@ -85,6 +85,18 @@ List<BoxShadow> prairieFocusRing({double width = 3}) => [
   BoxShadow(color: PrairieColors.ring, blurRadius: 0, spreadRadius: width),
 ];
 
+/// Focused-card treatment shared by every card (posters, landscape and
+/// episode cards, Explore all, library tiles): a white outline, a 5% lift and
+/// a drop shadow, as on Android TV and tvOS. Captions keep their weight on
+/// focus so text never reflows.
+const prairieCardFocusScale = 1.05;
+const prairieCardFocusDuration = Duration(milliseconds: 150);
+const prairieCardFocusOutline = Color(0xE6FFFFFF);
+const prairieCardFocusOutlineWidth = 3.0;
+const prairieCardFocusShadow = [
+  BoxShadow(color: Color(0x8C000000), blurRadius: 28, offset: Offset(0, 12)),
+];
+
 ButtonStyle _prairiePrimaryButtonStyle() {
   return ButtonStyle(
     backgroundColor: WidgetStateProperty.resolveWith((states) {

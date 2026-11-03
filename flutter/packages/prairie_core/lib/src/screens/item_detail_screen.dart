@@ -10,11 +10,14 @@ import 'package:prairie_core/src/lib/detail_metadata.dart';
 /// cover the same concern natively, so there's no JS-main-thread decode
 /// contention to design around here.
 class ItemDetailScreen extends ConsumerStatefulWidget {
-  const ItemDetailScreen({super.key, required this.contentId, this.seed, required this.back});
+  const ItemDetailScreen({super.key, required this.contentId, this.seed, required this.back, this.fromMoreLikeThis = false});
 
   final String contentId;
   final CatalogItem? seed;
   final Route back;
+
+  /// Opened from another title's More like this rail; see [moreLikeThisRoute].
+  final bool fromMoreLikeThis;
 
   @override
   ConsumerState<ItemDetailScreen> createState() => _ItemDetailScreenState();
@@ -236,6 +239,19 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     }
   }
 
+  /// This page as a route, for pages that come back to it.
+  DetailRoute get _selfRoute => DetailRoute(
+    contentId: widget.contentId,
+    seed: widget.seed,
+    back: widget.back,
+    fromMoreLikeThis: widget.fromMoreLikeThis,
+  );
+
+  void _openSimilar(CatalogItem item) {
+    final next = moreLikeThisRoute(_selfRoute, item);
+    if (next != null) ref.read(routeProvider.notifier).go(next);
+  }
+
   Future<void> _loadSimilar() async {
     try {
       final result = await fetchSimilarItems(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
@@ -315,7 +331,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
             initialAudioTrackIndex: _selectedAudioTrackIndex,
             initialSubtitleLanguage: _selectedSubtitleLanguage,
           ),
-          back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back),
+          back: _selfRoute,
         ),
       );
     } catch (e) {
@@ -767,9 +783,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                           posterUrl: item.posterUrl,
                           serverUrl: session.serverUrl,
                           watched: item.userState?.played ?? false,
-                          onTap: () => ref.read(routeProvider.notifier).go(
-                            DetailRoute(contentId: item.contentId, seed: item, back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back)),
-                          ),
+                          onTap: () => _openSimilar(item),
                         ),
                       ),
                   ],
@@ -1406,41 +1420,50 @@ class _EpisodeCardState extends State<_EpisodeCard> {
   Widget build(BuildContext context) {
     final episode = widget.episode;
     final still = episode.stillUrl ?? episode.posterUrl;
+    final meta = episodeCardMeta(airDate: episode.airDate, runtimeMinutes: episode.runtime);
     return InkWell(
       focusNode: widget.focusNode,
       onTap: widget.onTap,
       borderRadius: BorderRadius.circular(12),
       onFocusChange: (value) => setState(() => _focused = value),
       // The theme's default focusColor (a light amber overlay) would
-      // otherwise paint on top of the border/glow below.
+      // otherwise paint on top of the outline below.
       focusColor: Colors.transparent,
       highlightColor: Colors.transparent,
       splashFactory: NoSplash.splashFactory,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: 3),
-          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: still != null
-                    ? Image.network(resolveAssetUrl(widget.serverUrl, still), fit: BoxFit.cover, errorBuilder: (_, _, _) => const PosterFallback())
-                    : const PosterFallback(),
+      child: AnimatedScale(
+        scale: _focused ? prairieCardFocusScale : 1.0,
+        duration: prairieCardFocusDuration,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _focused ? prairieCardFocusOutline : Colors.transparent, width: prairieCardFocusOutlineWidth),
+            boxShadow: _focused ? prairieCardFocusShadow : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: still != null
+                      ? Image.network(resolveAssetUrl(widget.serverUrl, still), fit: BoxFit.cover, errorBuilder: (_, _, _) => const PosterFallback())
+                      : const PosterFallback(),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(episode.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 13)),
-            Text(
-              'Episode ${episode.episodeNumber ?? ''}',
-              style: const TextStyle(color: PrairieColors.muted, fontSize: 12),
-            ),
-          ],
+              const SizedBox(height: 6),
+              // "S01E02 · Title" over air date and runtime, as on tvOS.
+              Text(
+                episodeCardTitle(seasonNumber: episode.seasonNumber, episodeNumber: episode.episodeNumber, title: episode.title),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: PrairieColors.ink, fontSize: 13),
+              ),
+              if (meta != null)
+                Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
+            ],
+          ),
         ),
       ),
     );

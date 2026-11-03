@@ -49,22 +49,17 @@ class _LandscapeCardState extends State<LandscapeCard> {
         splashFactory: NoSplash.splashFactory,
         highlightColor: Colors.transparent,
         child: AnimatedScale(
-          scale: _focused ? 1.03 : 1.0,
-          duration: const Duration(milliseconds: 140),
+          scale: _focused ? prairieCardFocusScale : 1.0,
+          duration: prairieCardFocusDuration,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: PrairieColors.bgElevated.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _focused ? PrairieColors.ring : PrairieColors.ink.withValues(alpha: 0.1),
-                width: _focused ? 3 : 1,
+                color: _focused ? prairieCardFocusOutline : PrairieColors.ink.withValues(alpha: 0.1),
+                width: _focused ? prairieCardFocusOutlineWidth : 1,
               ),
-              boxShadow: _focused
-                  ? [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 28, offset: const Offset(0, 12)),
-                      ...prairieFocusRing(width: 3),
-                    ]
-                  : null,
+              boxShadow: _focused ? prairieCardFocusShadow : null,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),

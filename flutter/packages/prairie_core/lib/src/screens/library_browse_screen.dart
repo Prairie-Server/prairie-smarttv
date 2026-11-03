@@ -20,9 +20,12 @@ const _sortOptions = [
 
 /// Mirrors LibraryBrowseScreen.tsx.
 class LibraryBrowseScreen extends ConsumerStatefulWidget {
-  const LibraryBrowseScreen({super.key, required this.library, this.restoreContentId});
+  const LibraryBrowseScreen({super.key, required this.library, required this.tab, this.restoreContentId});
 
   final Library library;
+
+  /// The library-type tab this was opened from; Back returns there.
+  final LibraryTabType tab;
   final String? restoreContentId;
 
   @override
@@ -41,7 +44,17 @@ class _LibraryBrowseScreenState extends ConsumerState<LibraryBrowseScreen> {
   String _typeFilter = 'series';
 
   bool get _showTypeFilter => const {'series', 'show', 'tv'}.contains(widget.library.type);
-  String? get _effectiveType => _showTypeFilter ? _typeFilter : null;
+
+  /// A mixed library keeps to the tab it was opened from.
+  String? get _effectiveType => _showTypeFilter
+      ? _typeFilter
+      : widget.library.type == 'mixed'
+      ? switch (widget.tab) {
+          LibraryTabType.movies => 'movie',
+          LibraryTabType.series => 'series',
+          _ => null,
+        }
+      : null;
   _SortOption get _sort => _sortOptions[_sortIndex];
 
   @override
@@ -120,12 +133,12 @@ class _LibraryBrowseScreenState extends ConsumerState<LibraryBrowseScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) ref.read(routeProvider.notifier).go(const LibrariesRoute());
+        if (!didPop) ref.read(routeProvider.notifier).go(LibrariesRoute(type: widget.tab));
       },
       child: Scaffold(
       appBar: AppBar(
         title: Text(widget.library.name, style: const TextStyle(fontFamily: 'Fraunces')),
-        leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(const LibrariesRoute())),
+        leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(LibrariesRoute(type: widget.tab))),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: SizedBox(
@@ -212,7 +225,7 @@ class _LibraryBrowseScreenState extends ConsumerState<LibraryBrowseScreen> {
                       DetailRoute(
                         contentId: item.contentId,
                         seed: item,
-                        back: LibraryRoute(library: widget.library, restoreContentId: item.contentId),
+                        back: LibraryRoute(library: widget.library, tab: widget.tab, restoreContentId: item.contentId),
                       ),
                     ),
                   ),

@@ -108,6 +108,48 @@ Future<CatalogResponse> fetchCatalog(ApiClient client, PrairieSession session, [
   );
 }
 
+/// One page of a catalog source read: its cards and the cursor for the next
+/// page (null on the last).
+class CatalogSourcePage {
+  const CatalogSourcePage({required this.items, this.nextCursor});
+
+  final List<CatalogItem> items;
+  final String? nextCursor;
+}
+
+/// `GET /api/v2/catalog?source=…`: pages a non-query source, such as a Home
+/// row's full list (`source=section&scope=home&section_id=…`) or the
+/// profile's watch history (`source=history`). A row the profile can no
+/// longer see answers 404.
+Future<CatalogSourcePage> fetchCatalogSourcePage(
+  ApiClient client,
+  PrairieSession session, {
+  required String source,
+  String? scope,
+  String? sectionId,
+  String? cursor,
+  int limit = 60,
+}) async {
+  final query = Uri(
+    queryParameters: {
+      'source': source,
+      'scope': ?scope,
+      'section_id': ?sectionId,
+      'limit': '$limit',
+      'cursor': ?cursor,
+    },
+  ).query;
+  final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v2/catalog?$query');
+  final page = json['page'] as Map<String, dynamic>?;
+  final next = page?['has_more'] == true ? page!['next_cursor'] as String? : null;
+  return CatalogSourcePage(
+    items: (json['items'] as List<dynamic>? ?? [])
+        .map((j) => catalogItemFromJson(j as Map<String, dynamic>))
+        .toList(),
+    nextCursor: next == null || next.isEmpty ? null : next,
+  );
+}
+
 /// Mirrors `CastMember`/`CrewMember` from src/api/catalog.ts.
 class CastMember {
   const CastMember({required this.name, this.character, this.order, this.personId, this.photoUrl});
@@ -328,6 +370,7 @@ class EpisodeSummary {
     this.posterUrl,
     this.stillUrl,
     this.runtime,
+    this.airDate,
     this.userData,
     this.playable = true,
   });
@@ -340,6 +383,9 @@ class EpisodeSummary {
   final String? posterUrl;
   final String? stillUrl;
   final int? runtime;
+
+  /// `YYYY-MM-DD`.
+  final String? airDate;
   final WatchUserData? userData;
 
   /// Has at least one file the server could read. Episode navigation and
@@ -355,6 +401,7 @@ class EpisodeSummary {
     posterUrl: json['poster_url'] as String?,
     stillUrl: json['still_url'] as String?,
     runtime: json['runtime'] as int?,
+    airDate: json['air_date'] as String?,
     userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
     playable: (json['files'] as List<dynamic>? ?? const []).any((f) => f is Map && f['unreadable'] != true),
   );
