@@ -69,6 +69,9 @@ const _endSlackSeconds = 2.0;
 /// counts as the end — see [_PlayerScreenState._checkEndStall].
 const _endStallTimeout = Duration(seconds: 3);
 const _endStallWindowSeconds = 15.0;
+/// A position frozen this long while playing counts as a stall, for TV
+/// players that don't raise buffering callbacks on a dropped connection.
+const _frozenStallAfter = Duration(seconds: 2);
 
 /// Mirrors web's usePlaybackSession/VideoPlayer lifecycle on protocol v3:
 /// start (with transient retry), sequenced progress, stop with the final
@@ -111,6 +114,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _loading = true;
   String? _error;
   bool _controlsVisible = true;
+
+  /// This item has played (its first stream attached and started). Until
+  /// then only the spinner shows; afterwards the controls stay up through
+  /// stalls, seeks that reopen the stream, and quality or track reloads.
+  bool _hasStarted = false;
+
+  /// The one centered spinner: after 500 ms of waiting, for at least 500 ms.
+  final LoadingSpinnerGate _spinnerGate = LoadingSpinnerGate();
+  Timer? _spinnerTimer;
   bool _showStats = false;
 
   /// Path (no query, so no credentials) of the stream handed to the native
@@ -286,6 +298,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _introPromptTimer?.cancel();
     _upNextTimer?.cancel();
     _sleepTicker?.cancel();
+    _spinnerTimer?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -747,6 +760,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     clearBusy(cancel);
+    if (!_hasStarted) setState(() => _hasStarted = true);
     _lastProgressPosition = _position;
     _lastProgressAt = DateTime.now();
     if (needsHlsBootstrap(prepared.session.playMethod)) {
@@ -1189,6 +1203,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       _showFatal(_describeFailure(e));
     }
+  }
+
+  /// Playing (not paused, not ended) but the position hasn't moved for
+  /// [_frozenStallAfter].
+  bool _isFrozen(VideoBackend? backend, DateTime now) {
+    final lastAdvance = _lastProgressAt;
+    return backend != null &&
+        backend.isPlaying &&
+        !_viewerPaused &&
+        !_ended &&
+        lastAdvance != null &&
+        now.difference(lastAdvance) >= _frozenStallAfter;
+  }
+
+  /// Rebuilds when the spinner's show delay or minimum time runs out, since
+  /// nothing else may rebuild the screen at that moment.
+  void _scheduleSpinnerRecheck(DateTime now) {
+    final wait = _spinnerGate.nextChangeIn(now);
+    if (wait == null || (_spinnerTimer?.isActive ?? false)) return;
+    _spinnerTimer = Timer(wait + const Duration(milliseconds: 20), () {
+      if (mounted) setState(() {});
+    });
   }
 
   void _checkHlsStall() {
@@ -1693,7 +1729,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _togglePlayPause() async {
     final backend = _backend;
-    if (backend == null) return;
+    // The controls stay up while a reload prepares; the incoming stream has
+    // nothing to command until it is attached and started.
+    if (backend == null || _loading) return;
     if (backend.isPlaying) {
       _viewerPaused = true;
       await backend.pause();
@@ -1761,7 +1799,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// shouldn't pop the whole transport up.
   Future<void> _seekToPosition(Duration target, {bool revealChrome = true}) async {
     final backend = _backend;
-    if (backend == null || _recovering) return;
+    // While a reload prepares (controls stay up through it) there is no
+    // stream to seek; the reload already lands where playback was.
+    if (backend == null || _recovering || _loading) return;
     final generation = ++_seekGeneration;
     final duration = _totalDuration ?? Duration.zero;
     var next = target < Duration.zero ? Duration.zero : target;
@@ -1925,14 +1965,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // Native buffering events cover normal stalls; a frozen position is a
     // useful fallback for TV players that fail to emit buffering callbacks
     // on a dropped connection. Position updates already rebuild this screen.
-    final lastAdvance = _lastProgressAt;
-    final stalled = backend != null &&
-        backend.isPlaying &&
-        !_viewerPaused &&
-        !_ended &&
-        lastAdvance != null &&
-        DateTime.now().difference(lastAdvance) >= const Duration(seconds: 2);
-    final waiting = _loading || (backend?.isBuffering ?? false) || stalled;
+    final now = DateTime.now();
+    final waiting = _error == null && (_loading || (backend?.isBuffering ?? false) || _isFrozen(backend, now));
+    final spinner = _spinnerGate.update(waiting: waiting, now: now);
+    _scheduleSpinnerRecheck(now);
     // Directional mode lets arrow keys leave widgets that don't claim them.
     // Material Slider in traditional mode eats Down as "decrease", which is
     // why D-pad Down on the seek bar never reached the transport buttons.
@@ -1965,7 +2001,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (backend != null) backend.buildSurface(),
-                  PlayerScrim(loading: waiting && _error == null, chromeVisible: _controlsVisible),
+                  PlayerScrim(loading: spinner, chromeVisible: _controlsVisible),
                   if (_showStats && backend != null) _buildStatsOverlay(backend),
                   if (_caption != null && _caption!.text.isNotEmpty)
                     Align(
@@ -1994,7 +2030,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                       ),
                     ),
-                  if (waiting && _error == null) const Center(child: PrairieLoadingIndicator()),
+                  if (spinner) const Center(child: PrairieLoadingIndicator()),
                   if (_error != null)
                     Center(
                       child: Column(
@@ -2016,7 +2052,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ),
-                  if (_controlsVisible && backend != null && !waiting && _error == null)
+                  // Only an item's first load keeps the controls away; a stall
+                  // or reload after it has played leaves them up and usable.
+                  if (_controlsVisible && backend != null && _hasStarted && _error == null)
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
