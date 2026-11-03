@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:prairie_core/src/lib/detail_metadata.dart';
+import 'package:prairie_core/src/lib/trailer_rail.dart';
+import 'package:prairie_core/src/widgets/trailer_card.dart';
 
 /// Mirrors ItemDetailScreen.tsx. Viewport-based lazy-loading/hero-settle
 /// timing (IntersectionObserver, `heroSettled`/`heroBackdropReady` gating)
@@ -341,6 +343,17 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     }
   }
 
+  /// A local extra plays here; a YouTube video opens in the TV's YouTube app.
+  void _openTrailer(TrailerRailEntry entry) {
+    switch (entry) {
+      case LocalTrailerEntry(:final extra):
+        if (_busyPlay) return;
+        _play(extra.contentId, entry.title);
+      case final YouTubeTrailerEntry video:
+        openYouTubeTrailer(context, ref, video);
+    }
+  }
+
   Future<void> _toggleFavorite() async {
     if (_detail == null) return;
     final next = !_isFavorite;
@@ -545,6 +558,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         );
     final showStartOver = movieResume || (isSeries && episodeResume);
     final playLabel = _playLabel(isSeries: isSeries, nextUp: nextUp);
+    final trailers = detail == null ? const <TrailerRailEntry>[] : trailerRailEntries(detail);
 
     return PopScope(
       canPop: false,
@@ -734,33 +748,6 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                       },
                     ),
                 ],
-                if (detail.extras.isNotEmpty) ...[
-                  const SizedBox(height: 32),
-                  const Text('Bonus Content', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
-                  const SizedBox(height: 4),
-                  const Text('Extras', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      for (final extra in detail.extras)
-                        OutlinedButton.icon(
-                          onPressed: _busyPlay ? null : () => _play(extra.contentId, extra.title ?? 'Extra'),
-                          icon: const Icon(Icons.play_arrow),
-                          label: Text(extra.title?.isNotEmpty == true ? extra.title! : extra.kind),
-                        ),
-                    ],
-                  ),
-                ],
-                if (_hasDetailsSection(detail)) ...[
-                  const SizedBox(height: 32),
-                  const Text('Details', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
-                  const SizedBox(height: 4),
-                  const Text('Info', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  _DetailsTable(detail: detail, isSeries: isSeries),
-                ],
                         ],
                       ),
                     ),
@@ -774,6 +761,20 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                         escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
                         itemBuilder: (context, member, index) => _CastMemberCard(member: member, serverUrl: session.serverUrl),
                       ),
+                    // Upstream page order: cast, trailers and extras, more like
+                    // this, then details.
+                    if (trailers.isNotEmpty)
+                      MediaRow<TrailerRailEntry>(
+                        title: 'Trailers & Extras',
+                        items: trailers,
+                        variant: MediaRowVariant.landscape,
+                        escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
+                        itemBuilder: (context, entry, index) => TrailerCard(
+                          entry: entry,
+                          serverUrl: session.serverUrl,
+                          onTap: () => _openTrailer(entry),
+                        ),
+                      ),
                     if (_similar.isNotEmpty)
                       MediaRow<CatalogItem>(
                         title: 'More like this',
@@ -786,6 +787,20 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                           serverUrl: session.serverUrl,
                           watched: item.userState?.played ?? false,
                           onTap: () => _openSimilar(item),
+                        ),
+                      ),
+                    if (_hasDetailsSection(detail))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Details', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+                            const SizedBox(height: 4),
+                            const Text('Info', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
+                            const SizedBox(height: 12),
+                            _DetailsTable(detail: detail, isSeries: isSeries),
+                          ],
                         ),
                       ),
                   ],

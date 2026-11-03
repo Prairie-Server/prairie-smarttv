@@ -215,19 +215,58 @@ class ItemVersion {
 }
 
 class ItemExtra {
-  const ItemExtra({required this.contentId, required this.kind, this.title, this.durationSeconds, this.fileId});
+  const ItemExtra({
+    required this.contentId,
+    required this.kind,
+    this.title,
+    this.durationSeconds,
+    this.fileId,
+    this.stillUrl,
+    this.stillThumbhash,
+  });
   final String contentId;
   final String kind;
   final String? title;
   final int? durationSeconds;
   final int? fileId;
 
+  /// A 16:9 image of the extra (presigned, short-lived); null when it has none.
+  final String? stillUrl;
+  final String? stillThumbhash;
+
   factory ItemExtra.fromJson(Map<String, dynamic> json) => ItemExtra(
     contentId: json['content_id'] as String,
     kind: json['kind'] as String,
     title: json['title'] as String?,
-    durationSeconds: json['duration_seconds'] as int?,
+    durationSeconds: (json['duration_seconds'] as num?)?.toInt(),
     fileId: idFromJson(json['file_id']),
+    stillUrl: json['still_url'] as String?,
+    stillThumbhash: json['still_thumbhash'] as String?,
+  );
+}
+
+/// A provider video of a title (v2 `ItemVideoInfo`): trailers and clips,
+/// usually on YouTube.
+class ItemVideo {
+  const ItemVideo({required this.site, required this.siteKey, this.name, this.kind = '', this.isOfficial = false, this.language});
+
+  /// The hosting site as the provider names it, e.g. `YouTube`.
+  final String site;
+
+  /// The video's id on [site].
+  final String siteKey;
+  final String? name;
+  final String kind;
+  final bool isOfficial;
+  final String? language;
+
+  factory ItemVideo.fromJson(Map<String, dynamic> json) => ItemVideo(
+    site: json['site'] as String? ?? '',
+    siteKey: json['site_key'] as String? ?? '',
+    name: json['name'] as String?,
+    kind: json['kind'] as String? ?? '',
+    isOfficial: json['is_official'] as bool? ?? false,
+    language: json['language'] as String?,
   );
 }
 
@@ -269,6 +308,7 @@ class ItemDetail {
     this.userData,
     this.versions = const [],
     this.extras = const [],
+    this.videos = const [],
   });
 
   final CatalogItem item;
@@ -295,6 +335,10 @@ class ItemDetail {
   final List<ItemVersion> versions;
   final List<ItemExtra> extras;
 
+  /// Provider trailers and clips, in the server's order (trailers and
+  /// official uploads first).
+  final List<ItemVideo> videos;
+
   factory ItemDetail.fromJson(Map<String, dynamic> json) => ItemDetail(
     item: catalogItemFromJson(json),
     tagline: json['tagline'] as String?,
@@ -320,6 +364,7 @@ class ItemDetail {
     userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
     versions: (json['versions'] as List<dynamic>? ?? []).map((j) => ItemVersion.fromJson(j as Map<String, dynamic>)).toList(),
     extras: (json['extras'] as List<dynamic>? ?? []).map((j) => ItemExtra.fromJson(j as Map<String, dynamic>)).toList(),
+    videos: (json['videos'] as List<dynamic>? ?? []).map((j) => ItemVideo.fromJson(j as Map<String, dynamic>)).toList(),
   );
 }
 

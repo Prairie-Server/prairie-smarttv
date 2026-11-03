@@ -55,6 +55,7 @@ export 'src/platform/tv_capabilities.dart';
 export 'src/platform/audio_track_match.dart';
 export 'src/platform/diagnostics_log.dart';
 export 'src/platform/video_backend.dart';
+export 'src/platform/youtube_launcher.dart';
 export 'src/routing/route.dart';
 export 'src/routing/route_notifier.dart';
 export 'src/routing/shell_tabs.dart';
