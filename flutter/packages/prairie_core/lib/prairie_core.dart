@@ -25,6 +25,7 @@ export 'src/lib/artwork_url.dart';
 export 'src/api/api_client.dart';
 export 'src/api/api_error.dart';
 export 'src/api/auth_api.dart';
+export 'src/api/box_sets_api.dart';
 export 'src/api/calendar_api.dart';
 export 'src/api/catalog_api.dart';
 export 'src/api/check_server.dart';

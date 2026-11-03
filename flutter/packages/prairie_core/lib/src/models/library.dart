@@ -6,6 +6,7 @@ class Library {
     required this.type,
     this.sortOrder,
     this.posterUrl,
+    this.boxSetsEnabled = false,
   });
 
   final int id;
@@ -13,4 +14,8 @@ class Library {
   final String type;
   final int? sortOrder;
   final String? posterUrl;
+
+  /// The library gathers the movies of one TMDB collection into a box set,
+  /// shown on movie pages and in search.
+  final bool boxSetsEnabled;
 }
