@@ -10,11 +10,14 @@ import 'package:prairie_core/src/lib/detail_metadata.dart';
 /// cover the same concern natively, so there's no JS-main-thread decode
 /// contention to design around here.
 class ItemDetailScreen extends ConsumerStatefulWidget {
-  const ItemDetailScreen({super.key, required this.contentId, this.seed, required this.back});
+  const ItemDetailScreen({super.key, required this.contentId, this.seed, required this.back, this.fromMoreLikeThis = false});
 
   final String contentId;
   final CatalogItem? seed;
   final Route back;
+
+  /// Opened from another title's More like this rail; see [moreLikeThisRoute].
+  final bool fromMoreLikeThis;
 
   @override
   ConsumerState<ItemDetailScreen> createState() => _ItemDetailScreenState();
@@ -236,6 +239,19 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     }
   }
 
+  /// This page as a route, for pages that come back to it.
+  DetailRoute get _selfRoute => DetailRoute(
+    contentId: widget.contentId,
+    seed: widget.seed,
+    back: widget.back,
+    fromMoreLikeThis: widget.fromMoreLikeThis,
+  );
+
+  void _openSimilar(CatalogItem item) {
+    final next = moreLikeThisRoute(_selfRoute, item);
+    if (next != null) ref.read(routeProvider.notifier).go(next);
+  }
+
   Future<void> _loadSimilar() async {
     try {
       final result = await fetchSimilarItems(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
@@ -315,7 +331,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
             initialAudioTrackIndex: _selectedAudioTrackIndex,
             initialSubtitleLanguage: _selectedSubtitleLanguage,
           ),
-          back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back),
+          back: _selfRoute,
         ),
       );
     } catch (e) {
@@ -767,9 +783,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                           posterUrl: item.posterUrl,
                           serverUrl: session.serverUrl,
                           watched: item.userState?.played ?? false,
-                          onTap: () => ref.read(routeProvider.notifier).go(
-                            DetailRoute(contentId: item.contentId, seed: item, back: DetailRoute(contentId: widget.contentId, seed: widget.seed, back: widget.back)),
-                          ),
+                          onTap: () => _openSimilar(item),
                         ),
                       ),
                   ],

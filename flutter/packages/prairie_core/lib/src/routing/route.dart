@@ -137,11 +137,32 @@ class LiveTvPlayerRoute extends Route {
 }
 
 class DetailRoute extends Route {
-  const DetailRoute({required this.contentId, this.seed, required this.back});
+  const DetailRoute({required this.contentId, this.seed, required this.back, this.fromMoreLikeThis = false});
 
   final String contentId;
   final CatalogItem? seed;
   final Route back;
+
+  /// Opened from another detail page's More like this rail. [back] is then
+  /// the title the chain started from; see [moreLikeThisRoute].
+  final bool fromMoreLikeThis;
+}
+
+/// Where picking [item] from [current]'s More like this rail goes, or null
+/// when nothing should open (a repeat pick of the title already on screen).
+///
+/// The first pick pushes a new page; later picks from a rail-opened page
+/// replace it, so Back returns to the starting title and then to wherever
+/// that title was opened from. Picking the starting title again goes back to
+/// it instead of stacking a copy. Mirrors Android's #737.
+Route? moreLikeThisRoute(DetailRoute current, CatalogItem item) {
+  if (item.contentId == current.contentId) return null;
+  if (!current.fromMoreLikeThis) {
+    return DetailRoute(contentId: item.contentId, seed: item, back: current, fromMoreLikeThis: true);
+  }
+  final start = current.back;
+  if (start is DetailRoute && start.contentId == item.contentId) return start;
+  return DetailRoute(contentId: item.contentId, seed: item, back: start, fromMoreLikeThis: true);
 }
 
 /// What a [CatalogPageRoute] pages through.

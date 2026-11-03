@@ -104,6 +104,37 @@ void main() {
     });
   });
 
+  group('moreLikeThisRoute', () {
+    CatalogItem item(String id) => CatalogItem(contentId: id, type: 'movie', title: id);
+    const home = HomeRoute(restoreContentId: 'a');
+    const start = DetailRoute(contentId: 'a', back: home);
+
+    test('the first pick pushes a page that goes back to the starting title', () {
+      final b = moreLikeThisRoute(start, item('b')) as DetailRoute;
+      expect(b.contentId, 'b');
+      expect(b.fromMoreLikeThis, isTrue);
+      expect(b.back, same(start));
+    });
+
+    test('later picks replace the pushed page, so Back takes two steps', () {
+      final b = moreLikeThisRoute(start, item('b')) as DetailRoute;
+      final c = moreLikeThisRoute(b, item('c')) as DetailRoute;
+      final d = moreLikeThisRoute(c, item('d')) as DetailRoute;
+      expect(d.contentId, 'd');
+      expect(d.back, same(start));
+      expect((d.back as DetailRoute).back, same(home));
+    });
+
+    test('picking the starting title again goes back to it', () {
+      final b = moreLikeThisRoute(start, item('b')) as DetailRoute;
+      expect(moreLikeThisRoute(b, item('a')), same(start));
+    });
+
+    test('a repeat pick of the title on screen opens nothing', () {
+      expect(moreLikeThisRoute(start, item('a')), isNull);
+    });
+  });
+
   group('RouteNotifier', () {
     test('starts on the servers route with auto-scan enabled', () {
       final container = ProviderContainer();

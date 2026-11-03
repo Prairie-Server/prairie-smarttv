@@ -118,7 +118,15 @@ class AppRoot extends ConsumerWidget {
       ForYouRoute(:final restoreContentId) => ForYouScreen(restoreContentId: restoreContentId),
       LiveTvRoute(:final tab, :final restoreChannelId) => LiveTvScreen(initialTab: tab, restoreChannelId: restoreChannelId),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
-      DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
+      // Keyed by title: a More like this pick, or Back to the title a chain
+      // started from, loads that title instead of keeping the last one.
+      DetailRoute(:final contentId, :final seed, :final back, :final fromMoreLikeThis) => ItemDetailScreen(
+        key: ValueKey(contentId),
+        contentId: contentId,
+        seed: seed,
+        back: back,
+        fromMoreLikeThis: fromMoreLikeThis,
+      ),
       final CatalogPageRoute page => CatalogPageScreen(route: page),
       SettingsRoute(:final back) => SettingsScreen(back: back),
       NotificationsRoute(:final back) => NotificationsScreen(back: back),
