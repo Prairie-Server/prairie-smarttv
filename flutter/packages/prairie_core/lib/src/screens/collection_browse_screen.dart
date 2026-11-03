@@ -11,12 +11,16 @@ class CollectionBrowseScreen extends ConsumerStatefulWidget {
     required this.title,
     required this.collectionId,
     this.libraryId,
+    required this.tab,
     this.restoreContentId,
   });
 
   final String title;
   final String collectionId;
   final int? libraryId;
+
+  /// The library-type tab Collections was opened from.
+  final LibraryTabType tab;
   final String? restoreContentId;
 
   @override
@@ -163,7 +167,7 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
     try {
       await deleteCollection(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.collectionId);
       _notify('Deleted “$_title”');
-      if (mounted) ref.read(routeProvider.notifier).go(const CollectionsRoute());
+      if (mounted) ref.read(routeProvider.notifier).go(CollectionsRoute(tab: widget.tab));
     } catch (e) {
       _notify(e is ApiError ? e.message : 'Could not delete the collection');
       if (mounted) setState(() => _busy = false);
@@ -205,6 +209,7 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
         seed: item,
         back: CollectionRoute(
           collection: CollectionCard(id: widget.collectionId, title: _title, libraryId: widget.libraryId),
+          tab: widget.tab,
           restoreContentId: item.contentId,
         ),
       ),
@@ -223,13 +228,13 @@ class _CollectionBrowseScreenState extends ConsumerState<CollectionBrowseScreen>
         if (_removing) {
           setState(() => _removing = false);
         } else {
-          ref.read(routeProvider.notifier).go(const CollectionsRoute());
+          ref.read(routeProvider.notifier).go(CollectionsRoute(tab: widget.tab));
         }
       },
       child: Scaffold(
       appBar: AppBar(
         title: Text(_title, style: const TextStyle(fontFamily: 'Fraunces')),
-        leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(const CollectionsRoute())),
+        leading: BackButton(onPressed: () => ref.read(routeProvider.notifier).go(CollectionsRoute(tab: widget.tab))),
         actions: [
           if (editable != null) ...[
             if (editable.isManual && _items.isNotEmpty)

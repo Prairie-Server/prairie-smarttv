@@ -4,11 +4,12 @@ import 'package:prairie_core/prairie_core.dart';
 
 /// A `Scaffold` pre-wired with [ShellNav], so each browse screen only needs
 /// to supply its [active] tab and [body] rather than repeating the
-/// navigate/profiles/settings/disconnect wiring.
+/// navigate/profile-menu wiring.
 class ShellScaffold extends ConsumerWidget {
   const ShellScaffold({super.key, required this.active, required this.body, this.escapeDownFocus, this.onBack});
 
-  final ShellTab active;
+  /// The highlighted tab; null on a page reached from a tab's content.
+  final ShellTab? active;
   final Widget body;
 
   /// Forwarded to [ShellNav.escapeDownFocus] — see its doc for why this is a
@@ -22,7 +23,8 @@ class ShellScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider)!;
-    final liveTvAvailable = ref.watch(liveTvAvailableProvider).valueOrNull ?? (active == ShellTab.livetv);
+    final liveTvAvailable = ref.watch(liveTvAvailableProvider).valueOrNull ?? false;
+    final libraries = ref.watch(librariesProvider).valueOrNull ?? const <Library>[];
     final unreadCount = (ref.watch(notificationUnreadCountProvider).valueOrNull ?? 0) +
         (ref.watch(appUpdateProvider).valueOrNull != null ? 1 : 0);
     // Back on any tab other than Home returns to Home instead of exiting the
@@ -39,30 +41,18 @@ class ShellScaffold extends ConsumerWidget {
       },
       child: Scaffold(
       appBar: ShellNav(
+        tabs: visibleShellTabs(libraries: libraries, liveTv: liveTvAvailable, active: active),
         active: active,
         profileName: session.profileName,
         profileAvatarUrl: session.profileAvatarUrl,
-        showLiveTv: liveTvAvailable,
-        onNavigate: (tab) => ref.read(routeProvider.notifier).go(switch (tab) {
-          ShellTab.home => const HomeRoute(),
-          ShellTab.libraries => const LibrariesRoute(),
-          ShellTab.collections => const CollectionsRoute(),
-          ShellTab.search => const SearchRoute(),
-          ShellTab.livetv => const LiveTvRoute(),
-          ShellTab.calendar => const CalendarRoute(),
-          ShellTab.forYou => const ForYouRoute(),
-        }),
+        onNavigate: (tab) => ref.read(routeProvider.notifier).go(routeForShellTab(tab)),
         onProfiles: () => ref.read(routeProvider.notifier).go(ProfilesRoute(auth: session.asAuthTokens)),
-        onSettings: () => ref.read(routeProvider.notifier).go(SettingsRoute(back: switch (active) {
-          ShellTab.home => const HomeRoute(),
-          ShellTab.libraries => const LibrariesRoute(),
-          ShellTab.collections => const CollectionsRoute(),
-          ShellTab.search => const SearchRoute(),
-          ShellTab.livetv => const LiveTvRoute(),
-          ShellTab.calendar => const CalendarRoute(),
-          ShellTab.forYou => const ForYouRoute(),
-        })),
-        onDisconnect: () async {
+        onHistory: () => ref.read(routeProvider.notifier).go(
+          CatalogPageRoute(title: 'History', source: CatalogPageSource.history, back: ref.read(routeProvider)),
+        ),
+        onSettings: () => ref.read(routeProvider.notifier).go(SettingsRoute(back: ref.read(routeProvider))),
+        onSwitchServer: () => ref.read(routeProvider.notifier).go(ServersRoute.switchServer),
+        onSignOut: () async {
           await ref.read(sessionProvider.notifier).clear();
           if (!context.mounted) return;
           ref.read(routeProvider.notifier).goServers();

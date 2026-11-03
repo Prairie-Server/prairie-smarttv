@@ -4,6 +4,7 @@ import '../models/collection.dart';
 import '../models/library.dart';
 import '../models/live_tv_channel.dart';
 import '../models/watch_detail.dart';
+import 'shell_tabs.dart';
 
 /// The app's full navigation state, as a sealed class.
 ///
@@ -17,6 +18,10 @@ sealed class Route {
 
 class ServersRoute extends Route {
   const ServersRoute({this.back, this.autoScan});
+
+  /// Switch Server from the profile menu: the session stays, so Back can
+  /// return Home.
+  static const switchServer = ServersRoute(back: 'home', autoScan: false);
 
   /// When `"home"`, a back action is available and returns to Home.
   final String? back;
@@ -53,27 +58,38 @@ class HomeRoute extends Route {
   final String? restoreExploreSectionId;
 }
 
+/// A library-type top-bar tab (Movies, Series, Music, Audiobooks): the
+/// libraries of that type.
 class LibrariesRoute extends Route {
-  const LibrariesRoute();
+  const LibrariesRoute({required this.type});
+
+  final LibraryTabType type;
 }
 
 class LibraryRoute extends Route {
-  const LibraryRoute({required this.library, this.restoreContentId});
+  const LibraryRoute({required this.library, required this.tab, this.restoreContentId});
 
   final Library library;
+
+  /// The library-type tab the library was opened from; Back returns there.
+  final LibraryTabType tab;
 
   /// When returning from item details, focus the card with this content id.
   final String? restoreContentId;
 }
 
 class CollectionsRoute extends Route {
-  const CollectionsRoute();
+  const CollectionsRoute({required this.tab});
+
+  /// The library-type tab Collections was opened from; Back returns there.
+  final LibraryTabType tab;
 }
 
 class CollectionRoute extends Route {
-  const CollectionRoute({required this.collection, this.restoreContentId});
+  const CollectionRoute({required this.collection, required this.tab, this.restoreContentId});
 
   final CollectionCard collection;
+  final LibraryTabType tab;
 
   /// When returning from item details, focus the card with this content id.
   final String? restoreContentId;
@@ -185,19 +201,30 @@ class PlayerRoute extends Route {
   final Route back;
 }
 
-/// The bottom-shell tab a route corresponds to, or null when the route
-/// renders full-screen outside the shell (e.g. player, detail, settings).
+/// The top-bar tab a route corresponds to, or null when the route renders
+/// full-screen outside the shell (e.g. player, detail, settings).
 ///
 /// Mirrors `shellTabFor` in src/App.tsx.
-enum ShellTab { home, forYou, libraries, collections, search, livetv, calendar }
-
 ShellTab? shellTabFor(Route route) => switch (route) {
   HomeRoute() => ShellTab.home,
-  LibrariesRoute() || LibraryRoute() => ShellTab.libraries,
-  CollectionsRoute() || CollectionRoute() => ShellTab.collections,
+  LibrariesRoute(:final type) || LibraryRoute(tab: final type) => type.shellTab,
+  CollectionsRoute(tab: final type) || CollectionRoute(tab: final type) => type.shellTab,
   SearchRoute() => ShellTab.search,
   LiveTvRoute() => ShellTab.livetv,
   CalendarRoute() => ShellTab.calendar,
   ForYouRoute() => ShellTab.forYou,
   _ => null,
+};
+
+/// The route a top-bar tab opens.
+Route routeForShellTab(ShellTab tab) => switch (tab) {
+  ShellTab.search => const SearchRoute(),
+  ShellTab.home => const HomeRoute(),
+  ShellTab.movies => const LibrariesRoute(type: LibraryTabType.movies),
+  ShellTab.series => const LibrariesRoute(type: LibraryTabType.series),
+  ShellTab.music => const LibrariesRoute(type: LibraryTabType.music),
+  ShellTab.audiobooks => const LibrariesRoute(type: LibraryTabType.audiobooks),
+  ShellTab.forYou => const ForYouRoute(),
+  ShellTab.calendar => const CalendarRoute(),
+  ShellTab.livetv => const LiveTvRoute(),
 };

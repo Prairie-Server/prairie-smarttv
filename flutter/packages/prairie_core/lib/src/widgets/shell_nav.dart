@@ -2,19 +2,23 @@ import 'package:flutter/material.dart' hide Route;
 import 'package:flutter/services.dart';
 import 'package:prairie_core/prairie_core.dart';
 
-/// Mirrors ShellNav.tsx: brand mark, main tabs, and a profile avatar that
-/// opens a dropdown (Switch profile / Settings / Disconnect).
+/// Mirrors ShellNav.tsx: brand mark, the top-bar tabs, and a profile avatar
+/// that opens the profile menu (Switch Profile, History, Settings, Switch
+/// Server, Sign Out — Android TV / tvOS order, minus the Requests and Watch
+/// Party rows this client has no pages for).
 class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   const ShellNav({
     super.key,
+    required this.tabs,
     required this.active,
     this.profileName,
     this.profileAvatarUrl,
-    this.showLiveTv = false,
     required this.onNavigate,
     required this.onProfiles,
+    required this.onHistory,
     required this.onSettings,
-    required this.onDisconnect,
+    required this.onSwitchServer,
+    required this.onSignOut,
     this.escapeDownFocus,
     this.unreadCount = 0,
     this.onNotifications,
@@ -26,14 +30,19 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   /// Opens the notification inbox; null hides the bell.
   final VoidCallback? onNotifications;
 
-  final ShellTab active;
+  /// The tabs to show, already in top-bar order (see [visibleShellTabs]).
+  final List<ShellTab> tabs;
+
+  /// The highlighted tab; null on pages opened from a tab's content.
+  final ShellTab? active;
   final String? profileName;
   final String? profileAvatarUrl;
-  final bool showLiveTv;
   final ValueChanged<ShellTab> onNavigate;
   final VoidCallback onProfiles;
+  final VoidCallback onHistory;
   final VoidCallback onSettings;
-  final VoidCallback onDisconnect;
+  final VoidCallback onSwitchServer;
+  final VoidCallback onSignOut;
 
   /// Resolves the body's topmost focusable node, called fresh on every
   /// D-pad Down press from the nav row. On real hardware, Flutter's default
@@ -46,24 +55,23 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   /// no hero, restoring a specific item, etc).
   final FocusNode? Function()? escapeDownFocus;
 
-  static const _tabs = <(ShellTab, String, IconData)>[
-    (ShellTab.home, 'Home', Icons.home_outlined),
-    (ShellTab.forYou, 'For You', Icons.auto_awesome_outlined),
-    (ShellTab.libraries, 'Libraries', Icons.video_library_outlined),
-    (ShellTab.collections, 'Collections', Icons.folder_open_outlined),
-    (ShellTab.search, 'Search', Icons.search),
-    (ShellTab.calendar, 'Calendar', Icons.calendar_month_outlined),
-  ];
+  static (String, IconData) _labelAndIcon(ShellTab tab) => switch (tab) {
+    ShellTab.search => ('Search', Icons.search),
+    ShellTab.home => ('Home', Icons.home_outlined),
+    ShellTab.movies => ('Movies', Icons.movie_outlined),
+    ShellTab.series => ('Series', Icons.tv_outlined),
+    ShellTab.music => ('Music', Icons.music_note_outlined),
+    ShellTab.audiobooks => ('Audiobooks', Icons.headphones_outlined),
+    ShellTab.forYou => ('For You', Icons.auto_awesome_outlined),
+    ShellTab.calendar => ('Calendar', Icons.calendar_month_outlined),
+    ShellTab.livetv => ('Live TV', Icons.live_tv_outlined),
+  };
 
   @override
   Size get preferredSize => const Size.fromHeight(72);
 
   @override
   Widget build(BuildContext context) {
-    final tabs = showLiveTv
-        ? [..._tabs.sublist(0, 4), (ShellTab.livetv, 'Live TV', Icons.live_tv_outlined), ..._tabs.sublist(4)]
-        : _tabs;
-
     return Material(
       color: Colors.transparent,
       child: DecoratedBox(
@@ -96,15 +104,25 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                 const Text('PRAIRIE', style: TextStyle(color: PrairieColors.amber, fontWeight: FontWeight.w600, letterSpacing: 2)),
                 const SizedBox(width: 32),
                 Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (final (tab, label, icon) in tabs)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: _NavTab(label: label, icon: icon, active: tab == active, onPressed: () => onNavigate(tab)),
-                        ),
-                    ],
+                  // Up to nine tabs: shrink rather than overflow on a
+                  // narrow logical width.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final tab in tabs)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: _NavTab(
+                              label: _labelAndIcon(tab).$1,
+                              icon: _labelAndIcon(tab).$2,
+                              active: tab == active,
+                              onPressed: () => onNavigate(tab),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 if (onNotifications != null) ...[
@@ -144,10 +162,14 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                     switch (action) {
                       case _ProfileAction.profiles:
                         onProfiles();
+                      case _ProfileAction.history:
+                        onHistory();
                       case _ProfileAction.settings:
                         onSettings();
-                      case _ProfileAction.disconnect:
-                        onDisconnect();
+                      case _ProfileAction.switchServer:
+                        onSwitchServer();
+                      case _ProfileAction.signOut:
+                        onSignOut();
                     }
                   },
                   itemBuilder: (context) => [
@@ -157,18 +179,11 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                       child: Text(profileName ?? 'Profile', style: const TextStyle(color: PrairieColors.muted, fontSize: 13)),
                     ),
                     const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: _ProfileAction.profiles,
-                      child: _MenuRow(icon: Icons.people_outline, label: 'Switch profile'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ProfileAction.settings,
-                      child: _MenuRow(icon: Icons.settings_outlined, label: 'Settings'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ProfileAction.disconnect,
-                      child: _MenuRow(icon: Icons.power_settings_new, label: 'Disconnect'),
-                    ),
+                    for (final action in _ProfileAction.values)
+                      PopupMenuItem(
+                        value: action,
+                        child: _MenuRow(icon: action.icon, label: action.label),
+                      ),
                   ],
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -199,7 +214,20 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-enum _ProfileAction { profiles, settings, disconnect }
+/// Profile menu rows, in menu order. Watchlist and Favorites live under
+/// For You, not here; Requests and Watch Party have no pages in this client.
+enum _ProfileAction {
+  profiles('Switch Profile', Icons.people_outline),
+  history('History', Icons.history),
+  settings('Settings', Icons.settings_outlined),
+  switchServer('Switch Server', Icons.dns_outlined),
+  signOut('Sign Out', Icons.logout);
+
+  const _ProfileAction(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+}
 
 class _MenuRow extends StatelessWidget {
   const _MenuRow({required this.icon, required this.label});

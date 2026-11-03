@@ -91,7 +91,7 @@ class AppRoot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final route = ref.watch(routeProvider);
     return switch (route) {
-      ServersRoute(:final autoScan) => ServersScreen(autoScan: autoScan ?? true),
+      ServersRoute(:final autoScan, :final back) => ServersScreen(autoScan: autoScan ?? true, canReturnHome: back == 'home'),
       ManualServerRoute(:final initialUrl) => ManualServerScreen(initialUrl: initialUrl),
       ConnectRoute(:final serverUrl, :final serverName, :final initialUsername) => ConnectScreen(
         serverUrl: serverUrl,
@@ -101,14 +101,16 @@ class AppRoot extends ConsumerWidget {
       ProfilesRoute(:final auth) => ProfilesScreen(auth: auth),
       HomeRoute(:final restoreContentId, :final restoreExploreSectionId) =>
           HomeScreen(restoreContentId: restoreContentId, restoreExploreSectionId: restoreExploreSectionId),
-      LibrariesRoute() => const LibrariesScreen(),
-      LibraryRoute(:final library, :final restoreContentId) =>
-          LibraryBrowseScreen(library: library, restoreContentId: restoreContentId),
-      CollectionsRoute() => const CollectionsScreen(),
-      CollectionRoute(:final collection, :final restoreContentId) => CollectionBrowseScreen(
+      // Keyed by type: switching library tabs builds a fresh list.
+      LibrariesRoute(:final type) => LibrariesScreen(key: ValueKey(type), type: type),
+      LibraryRoute(:final library, :final tab, :final restoreContentId) =>
+          LibraryBrowseScreen(library: library, tab: tab, restoreContentId: restoreContentId),
+      CollectionsRoute(:final tab) => CollectionsScreen(tab: tab),
+      CollectionRoute(:final collection, :final tab, :final restoreContentId) => CollectionBrowseScreen(
         title: collection.displayTitle,
         collectionId: collection.id,
         libraryId: collection.libraryId,
+        tab: tab,
         restoreContentId: restoreContentId,
       ),
       SearchRoute(:final restoreContentId) => SearchScreen(restoreContentId: restoreContentId),
