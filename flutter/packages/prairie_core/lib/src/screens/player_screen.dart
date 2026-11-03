@@ -1516,7 +1516,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
         _upNextTimer?.cancel();
         final next = _nextEpisode;
-        if (next != null) unawaited(_playEpisode(next));
+        if (next != null) unawaited(_playEpisode(next, fromStart: true));
       });
     }
     if (!_controlsVisible) _focusIdleOrOverlay();
@@ -1622,7 +1622,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final next = _nextEpisode;
     if (next != null && (_skip?.autoPlayNext ?? true) && !_upNextDismissed) {
       unawaited(_backend?.pause());
-      unawaited(_playEpisode(next));
+      unawaited(_playEpisode(next, fromStart: true));
       return;
     }
     unawaited(_exit());
@@ -1645,7 +1645,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// Replaces this player with one for [episode], stopping the current
   /// session first so the two never hold the decoder at once.
-  Future<void> _playEpisode(EpisodeRef episode) async {
+  ///
+  /// [fromStart] (Up Next, and autoplay at the end) starts it at 0:00 with an
+  /// explicit position rather than resuming; the transport's previous/next
+  /// buttons resume where the viewer left that episode. Only the series'
+  /// next episode is ever autoplayed.
+  Future<void> _playEpisode(EpisodeRef episode, {bool fromStart = false}) async {
     if (_switchingEpisode || _exiting) return;
     _switchingEpisode = true;
     _upNextTimer?.cancel();
@@ -1655,13 +1660,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final fileId = selectPlaybackFileId(watch);
       if (fileId == null) throw StateError('No playable file for ${episode.code}');
       if (!mounted || _exiting) return;
+      final startAt = fromStart
+          ? 0.0
+          : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds) ?? 0.0;
       await _exit(
         to: PlayerRoute(
           launch: PlayerLaunch(
             fileId: fileId,
             title: watch.title.isNotEmpty ? watch.title : episode.title,
             contentId: episode.contentId,
-            startPositionSeconds: resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds) ?? 0.0,
+            startPositionSeconds: startAt,
             watch: watch,
             // Keep the viewer's subtitle choice; audio is per file.
             initialSubtitleLanguage: widget.launch.initialSubtitleLanguage,
@@ -2175,7 +2183,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         title: next.title,
         secondsLeft: _upNextSecondsLeft,
         playFocus: _overlayFocus,
-        onPlayNow: () => _playEpisode(next),
+        onPlayNow: () => _playEpisode(next, fromStart: true),
         onDismiss: _dismissUpNext,
       );
     } else if (intro != null) {
