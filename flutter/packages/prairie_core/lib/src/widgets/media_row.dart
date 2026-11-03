@@ -12,6 +12,7 @@ class MediaRow<T> extends StatelessWidget {
     this.variant = MediaRowVariant.poster,
     this.escapeUpFocusNode,
     this.cacheExtent,
+    this.trailing,
   });
 
   final String title;
@@ -26,6 +27,9 @@ class MediaRow<T> extends StatelessWidget {
   /// Off-screen extent to keep built; raise it so a card past the visible
   /// ones exists (and can take focus) before the rail is scrolled to it.
   final double? cacheExtent;
+
+  /// A card after the items, such as a capped row's Explore all card.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -79,9 +83,10 @@ class MediaRow<T> extends StatelessWidget {
                 cacheExtent: cacheExtent,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 scrollDirection: Axis.horizontal,
-                itemCount: items.length,
+                itemCount: items.length + (trailing != null ? 1 : 0),
                 separatorBuilder: (_, _) => const SizedBox(width: 16),
-                itemBuilder: (context, index) => itemBuilder(context, items[index], index),
+                itemBuilder: (context, index) =>
+                    index < items.length ? itemBuilder(context, items[index], index) : trailing!,
               ),
             ),
           ),

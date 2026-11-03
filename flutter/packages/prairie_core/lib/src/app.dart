@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
 import 'screens/calendar_screen.dart';
+import 'screens/catalog_page_screen.dart';
 import 'screens/collection_browse_screen.dart';
 import 'screens/collections_screen.dart';
 import 'screens/connect_screen.dart';
@@ -98,7 +99,8 @@ class AppRoot extends ConsumerWidget {
         initialUsername: initialUsername,
       ),
       ProfilesRoute(:final auth) => ProfilesScreen(auth: auth),
-      HomeRoute(:final restoreContentId) => HomeScreen(restoreContentId: restoreContentId),
+      HomeRoute(:final restoreContentId, :final restoreExploreSectionId) =>
+          HomeScreen(restoreContentId: restoreContentId, restoreExploreSectionId: restoreExploreSectionId),
       LibrariesRoute() => const LibrariesScreen(),
       LibraryRoute(:final library, :final restoreContentId) =>
           LibraryBrowseScreen(library: library, restoreContentId: restoreContentId),
@@ -115,6 +117,7 @@ class AppRoot extends ConsumerWidget {
       LiveTvRoute(:final tab, :final restoreChannelId) => LiveTvScreen(initialTab: tab, restoreChannelId: restoreChannelId),
       LiveTvPlayerRoute(:final channel, :final back) => LiveTvPlayerScreen(channel: channel, back: back),
       DetailRoute(:final contentId, :final seed, :final back) => ItemDetailScreen(contentId: contentId, seed: seed, back: back),
+      final CatalogPageRoute page => CatalogPageScreen(route: page),
       SettingsRoute(:final back) => SettingsScreen(back: back),
       NotificationsRoute(:final back) => NotificationsScreen(back: back),
       // Keyed by launch: next/previous episode swaps in a fresh player.

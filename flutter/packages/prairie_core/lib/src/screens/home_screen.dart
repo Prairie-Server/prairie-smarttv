@@ -8,10 +8,14 @@ import 'package:prairie_core/src/widgets/landscape_card.dart';
 /// Mirrors HomeBrowseScreen.tsx: featured hero carousel, landscape continue-
 /// watching rails, poster rails, and Live TV On now.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, this.restoreContentId});
+  const HomeScreen({super.key, this.restoreContentId, this.restoreExploreSectionId});
 
   /// Content id to refocus after returning from item details.
   final String? restoreContentId;
+
+  /// Section whose Explore all card to refocus after returning from the
+  /// row's full page.
+  final String? restoreExploreSectionId;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -40,8 +44,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    final session = ref.read(sessionProvider)!;
-    _sections = fetchHomeSections(ref.read(apiClientProvider), session);
+    _sections = _loadSections();
+  }
+
+  /// Rows are capped at [homeRowCardCap] cards: server-side through
+  /// `item_limit` when the server advertises it, and again on the client.
+  Future<List<HomeSection>> _loadSections() async {
+    final itemLimit = await ref.read(sectionItemLimitProvider.future);
+    if (!mounted) return const [];
+    return fetchHomeSections(ref.read(apiClientProvider), ref.read(sessionProvider)!, itemLimit: itemLimit);
   }
 
   @override
@@ -88,6 +99,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  void _openRowPage(HomeSection section) {
+    ref.read(routeProvider.notifier).go(
+      CatalogPageRoute(
+        title: section.title,
+        source: CatalogPageSource.homeSection,
+        sectionId: section.id,
+        back: HomeRoute(restoreExploreSectionId: section.id),
+      ),
+    );
+  }
+
   void _openItem(CatalogItem item) {
     ref.read(routeProvider.notifier).go(
       DetailRoute(
@@ -123,7 +145,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             }
           }
           // Skip empty catalog rows so "first row" is always a focusable rail.
-          final rows = sections.where((s) => s.featured != true && s.items.isNotEmpty).toList();
+          final rows = [
+            for (final s in sections)
+              if (s.featured != true && s.items.isNotEmpty) s.capped(homeRowCardCap),
+          ];
           if (sections.isEmpty && onNow.isEmpty) {
             return const Center(child: Text('Nothing here yet', style: TextStyle(color: PrairieColors.muted)));
           }
@@ -135,7 +160,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           int? restoreSectionIndex;
           int? restoreItemIndex;
           var restoreHero = false;
-          if (restoreId != null) {
+          final restoreExploreId = widget.restoreExploreSectionId;
+          if (restoreExploreId != null) {
+            final s = rows.indexWhere((row) => row.id == restoreExploreId && sectionOffersExploreAll(row));
+            if (s >= 0) restoreSectionIndex = s;
+          }
+          final restoringExplore = restoreSectionIndex != null;
+          if (restoreId != null && !restoringExplore) {
             for (var s = 0; s < rows.length; s++) {
               final i = rows[s].items.indexWhere((item) => item.contentId == restoreId);
               if (i >= 0) {
@@ -148,7 +179,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               restoreHero = featured.items.any((item) => item.contentId == restoreId);
             }
           }
-          final restoring = restoreSectionIndex != null && restoreItemIndex != null;
+          final restoring = restoringExplore || (restoreSectionIndex != null && restoreItemIndex != null);
           final firstRowAutofocus = !restoring && !restoreHero && rows.isNotEmpty;
           final firstOnNowAutofocus = !restoring && !restoreHero && rows.isEmpty && onNow.isNotEmpty;
           final heroAutofocus = restoreHero || (!restoring && !firstRowAutofocus && !firstOnNowAutofocus && featured != null);
@@ -198,6 +229,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         sectionIndex: s,
                         autofocusFirst: firstRowAutofocus && s == 0,
                         restoreItemIndex: restoring && restoreSectionIndex == s ? restoreItemIndex : null,
+                        restoreExplore: restoringExplore && restoreSectionIndex == s,
                       ),
                     if (onNow.isNotEmpty)
                       MediaRow<OnNowEntry>(
@@ -229,6 +261,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required int sectionIndex,
     required bool autofocusFirst,
     int? restoreItemIndex,
+    bool restoreExplore = false,
   }) {
     final row = _buildSectionRowContent(
       session: session,
@@ -236,6 +269,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       sectionIndex: sectionIndex,
       autofocusFirst: autofocusFirst,
       restoreItemIndex: restoreItemIndex,
+      restoreExplore: restoreExplore,
     );
     if (sectionIndex != 0) return row;
     // Only the first row needs the forced scroll-to-top — see
@@ -249,13 +283,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required int sectionIndex,
     required bool autofocusFirst,
     int? restoreItemIndex,
+    bool restoreExplore = false,
   }) {
     final landscape = isContinueStyleSection(section.sectionType);
+    final explore = sectionOffersExploreAll(section)
+        ? ExploreAllCard(
+            landscape: landscape,
+            autofocus: restoreExplore,
+            focusNode: restoreExplore ? _restoreFocus : null,
+            onTap: () => _openRowPage(section),
+          )
+        : null;
+    // Build the whole capped row when focus returns into it, so the card to
+    // refocus (up to the trailing Explore all) exists before it is scrolled to.
+    final cacheExtent = restoreExplore || restoreItemIndex != null ? 6400.0 : null;
     if (landscape) {
       return MediaRow<CatalogItem>(
         title: section.title,
         items: section.items,
         variant: MediaRowVariant.landscape,
+        trailing: explore,
+        cacheExtent: cacheExtent,
         itemBuilder: (context, item, index) {
           final remaining = (item.durationSeconds != null && item.positionSeconds != null)
               ? formatRuntimeSeconds(item.durationSeconds! - item.positionSeconds!)
@@ -287,6 +335,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return MediaRow<CatalogItem>(
       title: section.title,
       items: section.items,
+      trailing: explore,
+      cacheExtent: cacheExtent,
       itemBuilder: (context, item, index) {
         final isRestore = restoreItemIndex == index;
         final isFirstCard = sectionIndex == 0 && index == 0;

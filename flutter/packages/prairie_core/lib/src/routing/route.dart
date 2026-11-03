@@ -44,10 +44,13 @@ class ProfilesRoute extends Route {
 }
 
 class HomeRoute extends Route {
-  const HomeRoute({this.restoreContentId});
+  const HomeRoute({this.restoreContentId, this.restoreExploreSectionId});
 
   /// When returning from item details, focus the card with this content id.
   final String? restoreContentId;
+
+  /// When returning from a row's full page, focus that row's Explore all card.
+  final String? restoreExploreSectionId;
 }
 
 class LibrariesRoute extends Route {
@@ -123,6 +126,44 @@ class DetailRoute extends Route {
   final String contentId;
   final CatalogItem? seed;
   final Route back;
+}
+
+/// What a [CatalogPageRoute] pages through.
+enum CatalogPageSource {
+  /// A Home row's full list (`source=section&scope=home`).
+  homeSection,
+
+  /// The profile's watch history (`source=history`).
+  history,
+}
+
+/// A full, paged poster grid: a Home row's Explore all page, or History.
+class CatalogPageRoute extends Route {
+  const CatalogPageRoute({
+    required this.title,
+    required this.source,
+    this.sectionId,
+    required this.back,
+    this.restoreContentId,
+  });
+
+  final String title;
+  final CatalogPageSource source;
+
+  /// The Home section, for [CatalogPageSource.homeSection].
+  final String? sectionId;
+  final Route back;
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
+
+  CatalogPageRoute withRestore(String contentId) => CatalogPageRoute(
+    title: title,
+    source: source,
+    sectionId: sectionId,
+    back: back,
+    restoreContentId: contentId,
+  );
 }
 
 class SettingsRoute extends Route {
