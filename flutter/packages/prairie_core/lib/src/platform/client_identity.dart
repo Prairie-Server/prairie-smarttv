@@ -37,9 +37,15 @@ class ClientIdentity {
   final String appChannel;
 
   /// Build a versioned Tizen / webOS identity.
+  ///
+  /// [deviceName] is the name the owner gave the TV in its system settings
+  /// (read by the platform app at startup). It is cleaned with
+  /// [fitTvDeviceName]; when absent or blank the identity falls back to
+  /// `Prairie Smart TV (<platformLabel>)`.
   factory ClientIdentity.smartTv({
     required String platformLabel,
     required String devicePlatform,
+    String? deviceName,
     String version = stampedAppVersion == '' ? '1.0.0' : stampedAppVersion,
     String build = '',
     String channel = 'release',
@@ -48,10 +54,44 @@ class ClientIdentity {
     return ClientIdentity(
       userAgent: 'Prairie-SmartTV/$version ($label; Flutter)',
       devicePlatform: devicePlatform,
-      deviceName: 'Prairie Smart TV ($label)',
+      deviceName: fitTvDeviceName(deviceName) ?? 'Prairie Smart TV ($label)',
       appVersion: version,
       appBuild: build,
       appChannel: channel,
     );
   }
+}
+
+/// Longest device name sent to the server, in UTF-8 bytes (matches the
+/// Android TV client's `TvDeviceName`).
+const tvDeviceNameMaxBytes = 63;
+
+/// Clean a TV's user-given name for `X-Prairie-Device-Name` / device-login
+/// `device_name`: control characters become spaces, whitespace runs collapse,
+/// the result is trimmed and cut to [tvDeviceNameMaxBytes] UTF-8 bytes on a
+/// character boundary. Returns null when nothing usable is left so callers
+/// fall back to the generic name.
+String? fitTvDeviceName(String? raw) {
+  if (raw == null) return null;
+  final cleaned = raw
+      .replaceAll(RegExp(r'[\u0000-\u001f\u007f]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (cleaned.isEmpty) return null;
+  final out = StringBuffer();
+  var bytes = 0;
+  for (final rune in cleaned.runes) {
+    final size = rune < 0x80
+        ? 1
+        : rune < 0x800
+            ? 2
+            : rune < 0x10000
+                ? 3
+                : 4;
+    if (bytes + size > tvDeviceNameMaxBytes) break;
+    bytes += size;
+    out.writeCharCode(rune);
+  }
+  final fitted = out.toString().trim();
+  return fitted.isEmpty ? null : fitted;
 }
