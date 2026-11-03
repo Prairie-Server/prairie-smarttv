@@ -167,4 +167,14 @@ void main() {
       expect(route.serverName, 'Living Room');
     });
   });
+
+  test('a box set page is full-screen and comes back to the film opened from it', () {
+    const boxSet = BoxSet(id: '119', libraryId: '7', title: 'Box');
+    const route = BoxSetRoute(boxSet: boxSet, back: SearchRoute());
+    expect(shellTabFor(route), isNull);
+    final restored = route.withRestore('m2');
+    expect(restored.restoreContentId, 'm2');
+    expect(restored.boxSet, same(boxSet));
+    expect(restored.back, isA<SearchRoute>());
+  });
 }
