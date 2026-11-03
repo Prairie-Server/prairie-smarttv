@@ -1,4 +1,4 @@
-import '../lib/language_labels.dart';
+import 'package:prairie_core/src/lib/language_labels.dart';
 import '../models/watch_detail.dart';
 
 /// Whether two track language strings name the same language: `eng`, `en`,
