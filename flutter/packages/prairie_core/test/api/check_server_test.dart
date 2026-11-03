@@ -48,4 +48,30 @@ void main() {
       expect((result as CheckServerFailure).message, contains('not a Prairie server'));
     });
   });
+
+  group('probe wording (Apple TV, Android #758/#771)', () {
+    test('a bare HTTP error says it could not reach a Prairie server', () async {
+      final client = _clientWith((_) => jsonResponse('', 502, statusMessage: 'Bad Gateway'));
+      final result = await checkServerCandidates(client, ['https://a.example.com', 'http://a.example.com']);
+      expect((result as CheckServerFailure).message, 'Could not reach a Prairie server at that address.');
+    });
+
+    test('a bare 404 says it could not reach a Prairie server', () async {
+      final client = _clientWith((_) => jsonResponse('', 404, statusMessage: 'Not Found'));
+      final result = await checkServer(client, 'https://a.example.com');
+      expect((result as CheckServerFailure).message, 'Could not reach a Prairie server at that address.');
+    });
+
+    test("an HTTP error keeps the server's message", () async {
+      final client = _clientWith((_) => jsonResponse('{"message":"Maintenance"}', 503));
+      final result = await checkServer(client, 'https://a.example.com');
+      expect((result as CheckServerFailure).message, 'Could not reach server: Maintenance');
+    });
+
+    test('a transport failure says it could not reach a Prairie server', () async {
+      final client = _clientWith((o) => throw DioException.connectionError(requestOptions: o, reason: 'refused'));
+      final result = await checkServer(client, 'https://a.example.com');
+      expect((result as CheckServerFailure).message, 'Could not reach a Prairie server at that address.');
+    });
+  });
 }
