@@ -61,10 +61,13 @@ MarkerKind? _kindNamed(Object? name) {
   return null;
 }
 
-/// The region of [kind] the playhead is inside, if any.
-MarkerRegion? activeMarker(List<MarkerRegion> regions, MarkerKind kind, double seconds) {
+/// The region of [kind] the playhead is inside, if any. Regions whose
+/// [MarkerRegion.key] is in [except] (already skipped or answered) are passed
+/// over, so a later occurrence that overlaps one is still offered: every
+/// intro/recap/credits occurrence gets its own skip.
+MarkerRegion? activeMarker(List<MarkerRegion> regions, MarkerKind kind, double seconds, {Set<String> except = const {}}) {
   for (final region in regions) {
-    if (region.kind == kind && region.contains(seconds)) return region;
+    if (region.kind == kind && region.contains(seconds) && !except.contains(region.key)) return region;
   }
   return null;
 }

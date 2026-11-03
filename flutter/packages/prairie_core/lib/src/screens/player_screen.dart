@@ -1385,7 +1385,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final skip = _skip;
     if (skip == null) return;
 
-    final intro = activeMarker(_markers, MarkerKind.intro, t);
+    // Each occurrence of a kind is its own marker: one already skipped or
+    // answered is passed over, so a later intro/recap/credits still offers.
+    final intro = activeMarker(_markers, MarkerKind.intro, t, except: _resolvedMarkers);
     if (intro == null || intro.key != _introOfferedKey) _introOfferedKey = null;
     final prompt = _introPrompt;
     if (prompt != null && !_introPromptIsUndo && intro != prompt) {
@@ -1406,8 +1408,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     for (final (kind, auto) in [(MarkerKind.recap, skip.autoSkipRecap), (MarkerKind.credits, skip.autoSkipCredits)]) {
-      final region = activeMarker(_markers, kind, t);
-      if (!auto || region == null || _resolvedMarkers.contains(region.key)) continue;
+      final region = activeMarker(_markers, kind, t, except: _resolvedMarkers);
+      if (!auto || region == null) continue;
       _resolvedMarkers.add(region.key);
       _skipTo(region.end);
       return;
@@ -1442,8 +1444,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_introPrompt != null || _upNextVisible || _ended || _loading || _error != null) return null;
     final t = _position.inMilliseconds / 1000.0;
     for (final kind in const [MarkerKind.recap, MarkerKind.credits, MarkerKind.preview]) {
-      final region = activeMarker(_markers, kind, t);
-      if (region != null && !_resolvedMarkers.contains(region.key)) return region;
+      final region = activeMarker(_markers, kind, t, except: _resolvedMarkers);
+      if (region != null) return region;
     }
     return null;
   }
