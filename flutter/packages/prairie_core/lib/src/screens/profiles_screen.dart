@@ -67,7 +67,7 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
     ref.read(routeProvider.notifier).go(const HomeRoute());
   }
 
-  /// A new TV's first profile pick asks Apple TV's "Open <profile>
+  /// A new TV's first profile pick asks Apple TV's "Open `<profile>`
   /// automatically?" (Android #762): Ask Every Time or Remember, focus on
   /// Remember, Back answers Ask Every Time. An answer that can't be saved
   /// asks again; after a few tries the TV goes on without one.
