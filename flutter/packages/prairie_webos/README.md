@@ -22,7 +22,8 @@ Git dependencies from https://github.com/lg-flutter-webos/plugins (see `doc/plug
 ## appinfo.json requirements
 
 - `"transparent": true` — required for the hardware video plane
-- `requiredACG`: `systemconfig.query` (device info), `securitykey.operation` (secure storage)
+- `requiredACG`: `systemconfig.query` (device info), `securitykey.operation` (secure storage),
+  `settings.query` (TV name), `application.launcher` (opening trailers in LG's YouTube app)
 
 ## Build
 

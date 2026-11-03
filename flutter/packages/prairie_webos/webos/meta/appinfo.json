@@ -20,6 +20,7 @@
     "requiredACG": [
         "systemconfig.query",
         "securitykey.operation",
-        "settings.query"
+        "settings.query",
+        "application.launcher"
     ]
 }

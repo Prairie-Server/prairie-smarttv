@@ -5,6 +5,7 @@ import 'package:prairie_core/prairie_core.dart';
 
 import 'platform/tv_device_name_webos.dart';
 import 'platform/webos_video_backend.dart';
+import 'platform/youtube_launcher_webos.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +47,7 @@ Future<void> main() async {
           ),
         ),
         tvCapabilitiesProvider.overrideWithValue(caps),
+        youTubeLauncherProvider.overrideWithValue(const WebosYouTubeLauncher()),
         clientIdentityProvider.overrideWithValue(
           ClientIdentity.smartTv(
             platformLabel: 'webOS',
