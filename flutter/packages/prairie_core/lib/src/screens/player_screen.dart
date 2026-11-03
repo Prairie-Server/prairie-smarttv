@@ -151,6 +151,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
   SubtitleCaption? _caption;
+
+  /// Subtitle language to show on every attach; `''` is off. Resolved at
+  /// start (launch pick, remembered series choice, this TV's setting, Auto)
+  /// and replaced by a pick in the player.
+  String _subtitleChoice = '';
+
+  /// The viewer's own pick in this player, handed to the next episode so it
+  /// isn't lost to a remembered-choice write still in flight.
+  String? _subtitlePick;
+  AudioTrackInfo? _audioPick;
+
+  /// Series this episode belongs to; picks are remembered for all of it.
+  String? _seriesId;
   CancelToken? _prepareCancel;
   bool _busyAudio = false;
   bool _busyQuality = false;
@@ -222,6 +235,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _seriesId = widget.launch.watch?.seriesId;
     _seekFocus.addListener(_onControlFocusChanged);
     _playFocus.addListener(_onControlFocusChanged);
     _backFocus.addListener(_onControlFocusChanged);
@@ -265,6 +279,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final markers = selectFileVersion(watch, widget.launch.fileId)?.markers ?? const <MarkerRegion>[];
     setState(() => _markers = markers);
     final seriesId = watch.seriesId;
+    if (seriesId != null && seriesId.isNotEmpty) _seriesId = seriesId;
     final season = watch.seasonNumber;
     if (seriesId == null || seriesId.isEmpty || season == null) return;
     try {
@@ -565,10 +580,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return version?.audioTracks ?? const [];
   }
 
-  Future<void> _chooseAudio(int index) async {
+  /// [remember] (a pick in the audio menu) also remembers it for the series
+  /// and carries it to the next episode.
+  Future<void> _chooseAudio(int index, {bool remember = false}) async {
     final current = _playbackSession;
     if (current == null || index == current.audioTrackIndex) return;
+    if (remember) {
+      final tracks = _audioTracks;
+      final track = index >= 0 && index < tracks.length ? tracks[index] : null;
+      _audioPick = track;
+      unawaited(_rememberAudioPick(index, track));
+    }
     await _restartSessionAt(audioTrackIndex: index, positionSeconds: _position.inMilliseconds / 1000.0);
+  }
+
+  Future<void> _rememberAudioPick(int index, AudioTrackInfo? track) async {
+    final seriesId = _seriesId;
+    final session = ref.read(sessionProvider);
+    if (seriesId == null || seriesId.isEmpty || session == null) return;
+    try {
+      await saveSeriesAudioPreference(ref.read(apiClientProvider), session, seriesId, index, track);
+    } catch (e) {
+      debugPrint('prairie.player_screen: remembering the audio pick failed: $e');
+    }
   }
 
   Future<void> _pickQuality() async {
@@ -696,7 +730,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     required PlaybackSettings settings,
     required TvPlaybackCapabilities deviceCaps,
     required void Function([CancelToken?]) clearBusy,
-    String? subtitleLanguage,
   }) async {
     _activeSessionId = prepared.session.sessionId;
     await _positionSub?.cancel();
@@ -781,8 +814,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!mounted || !identical(_backend, backend)) return;
       _onPlaybackEnded();
     });
+    // Only a selected track's cues draw: with subtitles off (picked,
+    // remembered, or Auto resolving to none) a track the file flags default
+    // must not come up on its own — Tizen's player has no explicit "off".
     _captionSub = backend.captionStream.listen((caption) {
-      if (mounted) setState(() => _caption = caption);
+      if (mounted) setState(() => _caption = _selectedSubtitleTrackId == null ? null : caption);
     });
     _errorSub = backend.errorStream.listen((message) {
       if (!mounted || _exiting || _error != null || !identical(_backend, backend)) return;
@@ -792,7 +828,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _endStallTimer ??= Timer.periodic(const Duration(seconds: 1), (_) => _checkEndStall());
     unawaited(reportPlaybackRouteEvent(client, session, prepared.session, 'first_frame'));
     if (startAt != null) unawaited(_verifyStartPosition(backend, prepared.session, startAt));
-    unawaited(_autoSelectSubtitleTrack(backend, subtitleLanguage ?? settings.preferredSubtitleLanguage));
+    unawaited(_autoSelectSubtitleTrack(backend, _subtitleChoice));
     _showControls();
   }
 
@@ -1080,7 +1116,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
     if (choice == null || choice == currentIndex) return;
-    await _chooseAudio(choice);
+    await _chooseAudio(choice, remember: true);
   }
 
   Future<void> _start() async {
@@ -1108,13 +1144,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // An explicit pick wins; otherwise avoid a default the device cannot
       // decode (e.g. TrueHD beside an AC-3 companion), which would force a
       // server audio re-encode instead of playing the original file.
-      final launchVersion = widget.launch.watch == null ? null : selectFileVersion(widget.launch.watch!, widget.launch.fileId);
-      final initialAudioTrackIndex = widget.launch.initialAudioTrackIndex ??
-          selectPlayableAudioTrack(
-            launchVersion?.audioTracks ?? const <AudioTrackInfo>[],
-            deviceCaps.codecsAudio,
-            deviceCaps.maxAudioChannels,
-          );
+      // A remembered per-series pick (the server's effective track) comes
+      // before that fallback.
+      final launchWatch = widget.launch.watch;
+      final launchVersion = launchWatch == null ? null : selectFileVersion(launchWatch, widget.launch.fileId);
+      final launchAudioTracks = launchVersion?.audioTracks ?? const <AudioTrackInfo>[];
+      final initialAudioTrackIndex = resolveStartAudioTrackIndex(
+        launchIndex: widget.launch.initialAudioTrackIndex,
+        effectiveIndex: launchVersion?.effectiveAudioTrackIndex,
+        tracks: launchAudioTracks,
+        playableFallback: selectPlayableAudioTrack(
+          launchAudioTracks,
+          deviceCaps.codecsAudio,
+          deviceCaps.maxAudioChannels,
+        ),
+      );
+      var audioIndexForSubtitles = initialAudioTrackIndex ?? launchAudioTracks.indexWhere((t) => t.isDefault == true);
+      if (audioIndexForSubtitles < 0) audioIndexForSubtitles = 0;
+      _subtitleChoice = resolveStartSubtitleLanguage(
+        launchChoice: widget.launch.initialSubtitleLanguage,
+        preferenceMode: launchWatch?.effectiveSubtitleMode,
+        preferenceLanguage: launchWatch?.effectiveSubtitleLanguage,
+        deviceLanguage: settings.preferredSubtitleLanguage,
+        audioLanguage: audioIndexForSubtitles < launchAudioTracks.length
+            ? launchAudioTracks[audioIndexForSubtitles].language
+            : null,
+        serverTracks: launchVersion?.subtitleTracks ?? const <SubtitleTrackInfo>[],
+      );
       final startedSession = await startPlayback(
         client,
         session,
@@ -1183,7 +1239,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         settings: settings,
         deviceCaps: deviceCaps,
         clearBusy: _clearLoadingIfCurrent,
-        subtitleLanguage: widget.launch.initialSubtitleLanguage,
       );
       if (!mounted || _exiting || cancel.isCancelled) return;
       final initialAudio = widget.launch.initialAudioTrackIndex;
@@ -1296,16 +1351,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  /// Mirrors `resolvePreferredSubtitleIndex`: auto-select a text track
-  /// whose language matches the viewer's saved preference, if any.
-  Future<void> _autoSelectSubtitleTrack(VideoBackend backend, String preferredLanguage) async {
-    if (preferredLanguage.isEmpty) return;
+  /// Applies [language] (see [_subtitleChoice]) to a freshly attached
+  /// stream: the first native text track in that language, or — for `''` —
+  /// subtitles explicitly off, so the player doesn't show a track the file
+  /// flags default when the choice resolved to none.
+  Future<void> _autoSelectSubtitleTrack(VideoBackend backend, String language) async {
+    if (language.isEmpty) {
+      try {
+        await backend.selectSubtitleTrack(null);
+      } catch (err) {
+        backend.reportDiagnostic('subtitle:off-failed:$err');
+      }
+      return;
+    }
     for (final track in backend.subtitleTracks) {
-      if (track.language.toLowerCase() == preferredLanguage) {
+      if (sameTrackLanguage(track.language, language)) {
         await backend.selectSubtitleTrack(track.trackId);
-        if (mounted) setState(() => _selectedSubtitleTrackId = track.trackId);
+        if (mounted && identical(_backend, backend)) setState(() => _selectedSubtitleTrackId = track.trackId);
         return;
       }
+    }
+  }
+
+  /// The watch-detail version of the playing file.
+  FileVersion? get _playingVersion {
+    final watch = widget.launch.watch;
+    if (watch == null) return null;
+    return selectFileVersion(watch, _playbackSession?.mediaFileId ?? widget.launch.fileId);
+  }
+
+  /// Remembers a subtitle pick (`''` = Off) for every episode of the series.
+  /// Never sends the forced-subtitle setting: a pick must not pin it.
+  Future<void> _rememberSubtitlePick(String language, int? nativeOrdinal) async {
+    final seriesId = _seriesId;
+    final session = ref.read(sessionProvider);
+    if (seriesId == null || seriesId.isEmpty || session == null) return;
+    final serverTracks = _playingVersion?.subtitleTracks ?? const <SubtitleTrackInfo>[];
+    final match = language.isEmpty ? null : matchServerSubtitleTrack(serverTracks, language);
+    try {
+      await saveSeriesSubtitlePreference(
+        ref.read(apiClientProvider),
+        session,
+        seriesId,
+        track: match == null ? null : serverTracks[match],
+        trackIndex: match ?? nativeOrdinal,
+        language: language,
+      );
+    } catch (e) {
+      debugPrint('prairie.player_screen: remembering the subtitle pick failed: $e');
     }
   }
 
@@ -1339,6 +1432,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
     if (choice == _selectedSubtitleTrackId) return;
     await backend.selectSubtitleTrack(choice);
+    var language = '';
+    int? nativeOrdinal;
+    for (final (i, track) in backend.subtitleTracks.indexed) {
+      if (track.trackId == choice) {
+        language = track.language;
+        nativeOrdinal = i;
+        break;
+      }
+    }
+    // A track the player reports without a usable language can't be
+    // matched again on the next stream or episode, so it isn't remembered.
+    if (choice == null || language.trim().isNotEmpty) {
+      _subtitleChoice = language;
+      _subtitlePick = language;
+      unawaited(_rememberSubtitlePick(language, nativeOrdinal));
+    }
     if (mounted) {
       setState(() {
         _selectedSubtitleTrackId = choice;
@@ -1699,6 +1808,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final startAt = fromStart
           ? 0.0
           : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds) ?? 0.0;
+      // An audio pick made in this player carries over by language: the
+      // remembered-choice write may not have reached the server yet.
+      int? audioIndex;
+      final audioPick = _audioPick;
+      if (audioPick != null) {
+        final tracks = selectFileVersion(watch, fileId)?.audioTracks ?? const <AudioTrackInfo>[];
+        final match = tracks.indexWhere((t) => sameTrackLanguage(t.language, audioPick.language));
+        if (match >= 0) audioIndex = match;
+      }
       await _exit(
         to: PlayerRoute(
           launch: PlayerLaunch(
@@ -1707,8 +1825,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             contentId: episode.contentId,
             startPositionSeconds: startAt,
             watch: watch,
-            // Keep the viewer's subtitle choice; audio is per file.
-            initialSubtitleLanguage: widget.launch.initialSubtitleLanguage,
+            initialAudioTrackIndex: audioIndex,
+            // Keep the viewer's subtitle choice: a pick made here, else the
+            // one this episode was launched with.
+            initialSubtitleLanguage: _subtitlePick ?? widget.launch.initialSubtitleLanguage,
             sleepDeadline: _sleepDeadline,
           ),
           back: widget.back,
