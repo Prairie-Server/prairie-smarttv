@@ -1406,41 +1406,50 @@ class _EpisodeCardState extends State<_EpisodeCard> {
   Widget build(BuildContext context) {
     final episode = widget.episode;
     final still = episode.stillUrl ?? episode.posterUrl;
+    final meta = episodeCardMeta(airDate: episode.airDate, runtimeMinutes: episode.runtime);
     return InkWell(
       focusNode: widget.focusNode,
       onTap: widget.onTap,
       borderRadius: BorderRadius.circular(12),
       onFocusChange: (value) => setState(() => _focused = value),
       // The theme's default focusColor (a light amber overlay) would
-      // otherwise paint on top of the border/glow below.
+      // otherwise paint on top of the outline below.
       focusColor: Colors.transparent,
       highlightColor: Colors.transparent,
       splashFactory: NoSplash.splashFactory,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: 3),
-          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: still != null
-                    ? Image.network(resolveAssetUrl(widget.serverUrl, still), fit: BoxFit.cover, errorBuilder: (_, _, _) => const PosterFallback())
-                    : const PosterFallback(),
+      child: AnimatedScale(
+        scale: _focused ? prairieCardFocusScale : 1.0,
+        duration: prairieCardFocusDuration,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _focused ? prairieCardFocusOutline : Colors.transparent, width: prairieCardFocusOutlineWidth),
+            boxShadow: _focused ? prairieCardFocusShadow : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: still != null
+                      ? Image.network(resolveAssetUrl(widget.serverUrl, still), fit: BoxFit.cover, errorBuilder: (_, _, _) => const PosterFallback())
+                      : const PosterFallback(),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(episode.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 13)),
-            Text(
-              'Episode ${episode.episodeNumber ?? ''}',
-              style: const TextStyle(color: PrairieColors.muted, fontSize: 12),
-            ),
-          ],
+              const SizedBox(height: 6),
+              // "S01E02 · Title" over air date and runtime, as on tvOS.
+              Text(
+                episodeCardTitle(seasonNumber: episode.seasonNumber, episodeNumber: episode.episodeNumber, title: episode.title),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: PrairieColors.ink, fontSize: 13),
+              ),
+              if (meta != null)
+                Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
+            ],
+          ),
         ),
       ),
     );

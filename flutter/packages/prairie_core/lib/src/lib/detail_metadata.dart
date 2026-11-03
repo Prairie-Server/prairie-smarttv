@@ -87,6 +87,27 @@ String? formatAirDate(String? raw) {
   return '${months[date.month - 1]} ${date.day}, ${date.year}';
 }
 
+/// "S01E02" — zero-padded so codes line up across a row; null unless both
+/// numbers are known. Matches the tvOS episode caption.
+String? episodeCode(int? seasonNumber, int? episodeNumber) {
+  if (seasonNumber == null || episodeNumber == null) return null;
+  String two(int n) => n.toString().padLeft(2, '0');
+  return 'S${two(seasonNumber)}E${two(episodeNumber)}';
+}
+
+/// An episode card's caption: "S01E02 · Pilot", or whichever part is known.
+String episodeCardTitle({int? seasonNumber, int? episodeNumber, required String title}) {
+  final parts = [?episodeCode(seasonNumber, episodeNumber), if (title.trim().isNotEmpty) title.trim()];
+  return parts.join(' · ');
+}
+
+/// The line under an episode card's caption: air date and runtime
+/// ("Mar 4, 2024 · 42m"); null when neither is known.
+String? episodeCardMeta({String? airDate, int? runtimeMinutes}) {
+  final parts = [?formatAirDate(airDate), ?formatRuntimeMinutes(runtimeMinutes)];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
 /// Mirrors `crewLine`.
 String? crewLine(ItemDetail detail) {
   final directors = detail.crew

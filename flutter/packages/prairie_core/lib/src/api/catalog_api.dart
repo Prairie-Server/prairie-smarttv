@@ -328,6 +328,7 @@ class EpisodeSummary {
     this.posterUrl,
     this.stillUrl,
     this.runtime,
+    this.airDate,
     this.userData,
     this.playable = true,
   });
@@ -340,6 +341,9 @@ class EpisodeSummary {
   final String? posterUrl;
   final String? stillUrl;
   final int? runtime;
+
+  /// `YYYY-MM-DD`.
+  final String? airDate;
   final WatchUserData? userData;
 
   /// Has at least one file the server could read. Episode navigation and
@@ -355,6 +359,7 @@ class EpisodeSummary {
     posterUrl: json['poster_url'] as String?,
     stillUrl: json['still_url'] as String?,
     runtime: json['runtime'] as int?,
+    airDate: json['air_date'] as String?,
     userData: json['user_data'] != null ? WatchUserData.fromJson(json['user_data'] as Map<String, dynamic>) : null,
     playable: (json['files'] as List<dynamic>? ?? const []).any((f) => f is Map && f['unreadable'] != true),
   );

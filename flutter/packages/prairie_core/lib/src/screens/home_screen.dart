@@ -180,8 +180,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // No featured hero: the first row (often Continue Watching)
                 // would otherwise sit right under ShellNav's header with only
                 // the rows Column's 24px top padding — not enough clearance
-                // once the focused card's box-shadow blur (28px radius) and
-                // 1.03x focus scale are accounted for, so it read as clipped
+                // once the focused card's drop shadow and 1.05x focus lift
+                // are accounted for, so it read as clipped
                 // behind the header.
                 const SizedBox(height: 24),
               Padding(
@@ -344,15 +344,18 @@ class _OnNowCardState extends State<_OnNowCard> {
       borderRadius: BorderRadius.circular(14),
       onFocusChange: (value) => setState(() => _focused = value),
       // The theme's default focusColor (a light amber overlay) would
-      // otherwise paint on top of the border/glow below.
+      // otherwise paint on top of the outline below.
       focusColor: Colors.transparent,
       highlightColor: Colors.transparent,
       splashFactory: NoSplash.splashFactory,
-      child: DecoratedBox(
+      child: AnimatedScale(
+        scale: _focused ? prairieCardFocusScale : 1.0,
+        duration: prairieCardFocusDuration,
+        child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _focused ? PrairieColors.ring : Colors.transparent, width: 3),
-          boxShadow: _focused ? prairieFocusRing(width: 2) : null,
+          border: Border.all(color: _focused ? prairieCardFocusOutline : Colors.transparent, width: prairieCardFocusOutlineWidth),
+          boxShadow: _focused ? prairieCardFocusShadow : null,
         ),
         child: SizedBox(
         width: 200,
@@ -393,6 +396,7 @@ class _OnNowCardState extends State<_OnNowCard> {
             Text(channelDisplayLabel(entry.channel), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.muted, fontSize: 12)),
             Text(program?.title ?? 'On air', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: PrairieColors.ink, fontSize: 14)),
           ],
+        ),
         ),
         ),
       ),
