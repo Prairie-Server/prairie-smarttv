@@ -1,5 +1,7 @@
 import '../models/auth.dart';
 import 'api_client.dart';
+import 'api_error.dart';
+import 'check_server.dart' show serverProvidedMessage;
 
 ApiClientOptions _sessionOptions(PrairieSession session) => ApiClientOptions(
   serverUrl: session.serverUrl,
@@ -42,6 +44,14 @@ Future<void> setUserRating(ApiClient client, PrairieSession session, String cont
     method: rating == null ? 'DELETE' : 'PUT',
     body: rating == null ? null : {'rating': rating},
   );
+}
+
+/// What a failed Mark as Watched / Unwatched says (Android #706): the
+/// server's reason when it gave one, otherwise "Try again."
+String watchedFailureMessage({required bool watched, required Object error}) {
+  final reason = error is ApiError ? serverProvidedMessage(error) : null;
+  final action = watched ? 'watched' : 'unwatched';
+  return "Couldn't mark as $action. ${reason ?? 'Try again.'}";
 }
 
 /// Mirrors `setWatched` from src/api/userState.ts.

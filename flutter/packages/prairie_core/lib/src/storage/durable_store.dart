@@ -31,6 +31,9 @@ class DurableStore {
   static const performanceModeKey = 'prairie.performanceMode';
   static const deviceIdKey = 'prairie.deviceId';
 
+  /// Profile Selection (Automatic / Every Time); see profile_launch.dart.
+  static const profileLaunchBehaviorKey = 'prairie.profileLaunchBehavior';
+
   /// Keys that must survive app updates. Cleared only by explicit user logout
   /// of *session* material — registry / last URL / settings stay.
   static const preservedStorageKeys = [
@@ -40,6 +43,7 @@ class DurableStore {
     storageSchemaKey,
     performanceModeKey,
     deviceIdKey,
+    profileLaunchBehaviorKey,
   ];
 
   SharedPreferencesAsync get prefs => _prefs;

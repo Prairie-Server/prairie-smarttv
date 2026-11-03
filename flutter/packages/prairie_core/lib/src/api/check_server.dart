@@ -21,18 +21,32 @@ List<String> buildManualUrlCandidates(String raw) {
   return ['https://$withoutSlashes', 'http://$withoutSlashes'];
 }
 
-/// User-facing message for transport/TLS/DNS failures (not HTTP error
-/// bodies). Mirrors `networkFailureMessage`.
-String networkFailureMessage(Object err) {
-  if (err is ApiError) {
-    if (err.code == 'timeout' || err.status == 408) {
-      return 'Request timed out. Check the address and try again.';
-    }
-    return err.message.trim().isNotEmpty
-        ? err.message.trim()
-        : 'Could not reach a Prairie server at that address.';
+/// Apple TV's wording for an address where no Prairie server answered.
+const couldNotReachPrairieMessage = 'Could not reach a Prairie server at that address.';
+
+/// The message the server itself sent with [err], or null for a bare HTTP
+/// error (a 404 or 502 page from something that isn't Prairie), whose
+/// [ApiError.message] is only the HTTP status text.
+String? serverProvidedMessage(ApiError err) {
+  final body = err.body;
+  if (body is! Map) return null;
+  for (final key in const ['message', 'error', 'detail', 'title']) {
+    final value = body[key];
+    if (value is String && value.trim().isNotEmpty) return value.trim();
   }
-  return 'Could not reach a Prairie server at that address. Check http vs https and the port.';
+  return null;
+}
+
+/// User-facing message for a failed server probe. Mirrors Android's
+/// `probeTvServerSetupCandidates` (#758, #771): an HTTP error keeps the
+/// server's own message; a bare HTTP error, a timeout or a transport / TLS /
+/// DNS failure says "Could not reach a Prairie server at that address."
+String networkFailureMessage(Object err) {
+  if (err is ApiError && err.status > 0 && err.code != 'timeout') {
+    final message = serverProvidedMessage(err);
+    if (message != null) return 'Could not reach server: $message';
+  }
+  return couldNotReachPrairieMessage;
 }
 
 sealed class CheckServerResult {
@@ -86,8 +100,14 @@ Future<CheckServerResult> checkServer(ApiClient client, String serverUrl) async 
     if (data is! Map || data['needs_setup'] is! bool) return const CheckServerFailure(_notPrairieMessage);
     needsSetup = data['needs_setup'] as bool;
   } catch (err) {
-    // Neither setup route exists: something is listening, but it isn't Prairie.
-    if (isNativeApiUnavailable(err)) return const CheckServerFailure(_notPrairieMessage);
+    // Neither setup route exists: something is listening, but it isn't
+    // Prairie. A bare 404 with no message reads as Apple TV's "Could not
+    // reach a Prairie server" (#771).
+    if (isNativeApiUnavailable(err)) {
+      return CheckServerFailure(
+        serverProvidedMessage(err as ApiError) == null ? couldNotReachPrairieMessage : _notPrairieMessage,
+      );
+    }
     return CheckServerFailure(networkFailureMessage(err));
   }
 
@@ -114,5 +134,5 @@ Future<CheckServerResult> checkServerCandidates(ApiClient client, List<String> c
     if (result is CheckServerSuccess) return result;
     lastFailure = result as CheckServerFailure;
   }
-  return lastFailure ?? const CheckServerFailure('Could not reach a Prairie server at that address.');
+  return lastFailure ?? const CheckServerFailure(couldNotReachPrairieMessage);
 }

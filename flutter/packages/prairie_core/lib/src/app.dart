@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
+import 'settings/profile_launch.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/catalog_page_screen.dart';
 import 'screens/collection_browse_screen.dart';
@@ -65,8 +66,15 @@ class _StartupGateState extends ConsumerState<_StartupGate> {
   Future<void> _restore() async {
     await ref.read(sessionProvider.notifier).restore();
     if (!mounted) return;
-    if (ref.read(sessionProvider) != null) {
-      ref.read(routeProvider.notifier).go(const HomeRoute());
+    final session = ref.read(sessionProvider);
+    if (session != null) {
+      final launch = await loadProfileLaunchBehavior(ref.read(sharedPreferencesProvider));
+      if (!mounted) return;
+      ref.read(routeProvider.notifier).go(
+        showsWhoIsWatchingAtLaunch(launch)
+            ? ProfilesRoute(auth: session.asAuthTokens, atLaunch: true)
+            : const HomeRoute(),
+      );
     }
     setState(() => _ready = true);
   }
@@ -93,12 +101,13 @@ class AppRoot extends ConsumerWidget {
     return switch (route) {
       ServersRoute(:final autoScan, :final back) => ServersScreen(autoScan: autoScan ?? true, canReturnHome: back == 'home'),
       ManualServerRoute(:final initialUrl) => ManualServerScreen(initialUrl: initialUrl),
-      ConnectRoute(:final serverUrl, :final serverName, :final initialUsername) => ConnectScreen(
+      ConnectRoute(:final serverUrl, :final serverName, :final initialUsername, :final notice) => ConnectScreen(
         serverUrl: serverUrl,
         serverName: serverName,
         initialUsername: initialUsername,
+        notice: notice,
       ),
-      ProfilesRoute(:final auth) => ProfilesScreen(auth: auth),
+      ProfilesRoute(:final auth, :final atLaunch) => ProfilesScreen(auth: auth, atLaunch: atLaunch),
       HomeRoute(:final restoreContentId, :final restoreExploreSectionId) =>
           HomeScreen(restoreContentId: restoreContentId, restoreExploreSectionId: restoreExploreSectionId),
       // Keyed by type: switching library tabs builds a fresh list.

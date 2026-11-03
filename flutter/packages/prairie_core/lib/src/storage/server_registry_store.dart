@@ -265,6 +265,22 @@ class ServerRegistryStore {
     );
   }
 
+  /// Change server on the sign-in screen (Android #759): the registry
+  /// without [serverUrl]'s entry when this TV never signed in to it (no
+  /// saved account or profile) and [session] isn't for it; null when it
+  /// should stay. A server that was signed in to before keeps its entry, so
+  /// its username still pre-fills.
+  static ServerRegistry? forgetIfNeverSignedIn(ServerRegistry registry, String serverUrl, PrairieSession? session) {
+    final id = entryIdFromUrl(serverUrl);
+    if (id.isEmpty) return null;
+    final idx = findIndex(registry, id);
+    if (idx < 0) return null;
+    final entry = registry.entries[idx];
+    if (entry.username.isNotEmpty || entry.profileId.isNotEmpty) return null;
+    if (session != null && entryIdFromUrl(session.serverUrl) == id) return null;
+    return removeServer(registry, id);
+  }
+
   static PrairieSession? sessionFromEntry(ServerEntry? entry) {
     if (entry == null) return null;
     if (entry.accessToken.isEmpty || entry.profileId.isEmpty || entry.username.isEmpty) {

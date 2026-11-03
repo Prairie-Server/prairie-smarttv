@@ -5,9 +5,12 @@ import 'package:prairie_core/prairie_core.dart';
 /// Mirrors ProfileSelectScreen.tsx — PIN-protected profiles require
 /// [verifyProfilePin] and store the returned `profileToken` on the session.
 class ProfilesScreen extends ConsumerStatefulWidget {
-  const ProfilesScreen({super.key, required this.auth});
+  const ProfilesScreen({super.key, required this.auth, this.atLaunch = false});
 
   final AuthTokens auth;
+
+  /// Shown at launch (Profile Selection: Every Time): no Cancel back Home.
+  final bool atLaunch;
 
   @override
   ConsumerState<ProfilesScreen> createState() => _ProfilesScreenState();
@@ -23,7 +26,12 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
   @override
   void initState() {
     super.initState();
-    _profiles = listProfiles(ref.read(apiClientProvider), widget.auth.serverUrl, widget.auth.accessToken);
+    _profiles = listProfiles(
+      ref.read(apiClientProvider),
+      widget.auth.serverUrl,
+      widget.auth.accessToken,
+      refreshToken: widget.auth.refreshToken,
+    );
   }
 
   @override
@@ -35,11 +43,16 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
   Future<void> _finish(Profile profile, {String? profileToken}) async {
     final client = ref.read(apiClientProvider);
     final health = await fetchServerHealth(client, widget.auth.serverUrl);
+    // Tokens refreshed while this screen was up land on the live session.
+    final live = ref.read(sessionProvider);
+    final tokens = live != null && live.serverUrl == widget.auth.serverUrl && live.username == widget.auth.username
+        ? live.asAuthTokens
+        : widget.auth;
     await ref.read(sessionProvider.notifier).set(
       PrairieSession(
         serverUrl: widget.auth.serverUrl,
-        accessToken: widget.auth.accessToken,
-        refreshToken: widget.auth.refreshToken,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
         username: widget.auth.username,
         profileId: profile.id,
         profileName: profile.name,
@@ -49,7 +62,52 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
       fetchedName: health?.serverName ?? '',
     );
     if (!mounted) return;
+    await _offerRememberProfile(profile);
+    if (!mounted) return;
     ref.read(routeProvider.notifier).go(const HomeRoute());
+  }
+
+  /// A new TV's first profile pick asks Apple TV's "Open `<profile>`
+  /// automatically?" (Android #762): Ask Every Time or Remember, focus on
+  /// Remember, Back answers Ask Every Time. An answer that can't be saved
+  /// asks again; after a few tries the TV goes on without one.
+  Future<void> _offerRememberProfile(Profile profile) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    if (!offersRememberProfile(await loadProfileLaunchBehavior(prefs))) return;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (!mounted) return;
+      final remember = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: PrairieColors.bgElevated,
+          title: Text(rememberProfileOfferTitle(profile.name), style: const TextStyle(color: PrairieColors.ink)),
+          content: Text(
+            attempt == 0 ? rememberProfileOfferMessage : "Prairie couldn't save that. Please choose again.",
+            style: const TextStyle(color: PrairieColors.muted),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Ask Every Time'),
+            ),
+            ElevatedButton(
+              autofocus: true,
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Remember'),
+            ),
+          ],
+        ),
+      );
+      try {
+        await saveProfileLaunchBehavior(
+          prefs,
+          remember == true ? ProfileLaunchBehavior.automatic : ProfileLaunchBehavior.askEveryLaunch,
+        );
+        return;
+      } catch (e) {
+        debugPrint('prairie.profiles: could not save Profile Selection: $e');
+      }
+    }
   }
 
   Future<void> _select(Profile profile) async {
@@ -189,7 +247,7 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
                         ],
                       ),
                     ),
-                  if (hasSession && _pinProfile == null) ...[
+                  if (hasSession && !widget.atLaunch && _pinProfile == null) ...[
                     const SizedBox(height: 32),
                     TextButton(
                       onPressed: () => ref.read(routeProvider.notifier).go(const HomeRoute()),

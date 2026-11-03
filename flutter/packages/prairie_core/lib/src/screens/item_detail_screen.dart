@@ -383,7 +383,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     try {
       await setWatched(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId, next);
     } catch (e) {
+      // Without this the rollback is the only sign that the write failed.
       if (mounted) setState(() => _playedOverride = !next);
+      _notify(watchedFailureMessage(watched: next, error: e));
     } finally {
       if (mounted) setState(() => _busyAction = false);
     }

@@ -17,11 +17,12 @@ class RouteNotifier extends Notifier<Route> {
 
   void goServers({bool autoScan = true}) => state = ServersRoute(autoScan: autoScan);
 
-  void openLogin(String serverUrl, {String? serverName, String? initialUsername}) {
+  void openLogin(String serverUrl, {String? serverName, String? initialUsername, String? notice}) {
     state = ConnectRoute(
       serverUrl: serverUrl,
       serverName: serverName,
       initialUsername: initialUsername,
+      notice: notice,
     );
   }
 

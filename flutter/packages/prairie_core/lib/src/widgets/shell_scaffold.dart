@@ -52,11 +52,7 @@ class ShellScaffold extends ConsumerWidget {
         ),
         onSettings: () => ref.read(routeProvider.notifier).go(SettingsRoute(back: ref.read(routeProvider))),
         onSwitchServer: () => ref.read(routeProvider.notifier).go(ServersRoute.switchServer),
-        onSignOut: () async {
-          await ref.read(sessionProvider.notifier).clear();
-          if (!context.mounted) return;
-          ref.read(routeProvider.notifier).goServers();
-        },
+        onSignOut: () => requestSignOut(context, ref),
         escapeDownFocus: escapeDownFocus,
         unreadCount: unreadCount,
         onNotifications: () => ref.read(routeProvider.notifier).go(NotificationsRoute(back: ref.read(routeProvider))),

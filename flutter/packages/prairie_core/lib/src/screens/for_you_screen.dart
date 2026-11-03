@@ -32,14 +32,21 @@ class _ForYouScreenState extends ConsumerState<ForYouScreen> {
   final _restoreFocus = FocusNode(debugLabel: 'for-you-restore-item');
   bool _restoreApplied = false;
 
+  /// Refreshes quietly when the app comes back to the foreground (Android
+  /// #676): a title watched elsewhere leaves the rows. Each visit to the tab
+  /// builds this screen afresh, so returning to it reloads as well.
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onResume: () => _load(quiet: true));
     _load();
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _tuneFocus.dispose();
     _restoreFocus.dispose();
     super.dispose();
@@ -56,22 +63,29 @@ class _ForYouScreenState extends ConsumerState<ForYouScreen> {
     });
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// Loads the rows. [quiet] keeps what is on screen while it loads and
+  /// after a failure, and skips while the picker is open or a load runs.
+  Future<void> _load({bool quiet = false}) async {
+    if (quiet && (_loading || _tuning || _error != null)) return;
+    final session = ref.read(sessionProvider);
+    if (session == null) return;
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
-      final rows = await fetchDiscover(ref.read(apiClientProvider), ref.read(sessionProvider)!);
+      final rows = await fetchDiscover(ref.read(apiClientProvider), session);
       if (!mounted) return;
       setState(() {
         _personalized = rows.any((r) => r.personalized);
         _rows = rows.where((r) => !homeDuplicateRowKinds.contains(r.kind)).toList();
       });
     } catch (e) {
-      if (mounted) setState(() => _error = e is ApiError ? e.message : 'Could not load recommendations');
+      if (mounted && !quiet) setState(() => _error = e is ApiError ? e.message : 'Could not load recommendations');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !quiet) setState(() => _loading = false);
     }
   }
 

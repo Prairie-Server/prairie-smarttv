@@ -43,6 +43,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   PerformanceMode _mode = defaultPerformanceMode;
+
+  /// Profile Selection; null (never asked) behaves as Automatic.
+  ProfileLaunchBehavior? _profileLaunch;
   PlaybackSettings _settings = const PlaybackSettings();
   /// Profile-level skip/autoplay settings stored on the server; null until
   /// read (or when there's no session / the read failed).
@@ -69,11 +72,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = SharedPreferencesAsync();
     final mode = await loadPerformanceMode(prefs);
     final settings = await loadPlaybackSettings(prefs);
+    final profileLaunch = await loadProfileLaunchBehavior(prefs);
     // `ref` is unusable once disposed, so bail before reading the session.
     if (!mounted) return;
     setState(() {
       _mode = mode;
       _settings = settings;
+      _profileLaunch = profileLaunch;
       _loaded = true;
     });
     final session = ref.read(sessionProvider);
@@ -100,6 +105,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(e is ApiError ? e.message : 'Could not save setting')),
       );
+    }
+  }
+
+  Future<void> _toggleProfileLaunch() async {
+    final previous = _profileLaunch;
+    final next = previous == ProfileLaunchBehavior.askEveryLaunch
+        ? ProfileLaunchBehavior.automatic
+        : ProfileLaunchBehavior.askEveryLaunch;
+    setState(() => _profileLaunch = next);
+    try {
+      await saveProfileLaunchBehavior(SharedPreferencesAsync(), next);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _profileLaunch = previous);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Could not save setting')));
     }
   }
 
@@ -221,6 +241,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ref.read(routeProvider.notifier).goServers();
       },
     ),
+    if (session != null) ...[
+      const SizedBox(height: 10),
+      _SettingsRow(
+        label: 'Profile Selection',
+        hint: (_profileLaunch ?? ProfileLaunchBehavior.automatic).description,
+        value: (_profileLaunch ?? ProfileLaunchBehavior.automatic).title,
+        onTap: _toggleProfileLaunch,
+      ),
+      const SizedBox(height: 10),
+      _SettingsRow(
+        label: 'Sign Out',
+        hint: 'Sign out of this server, keeping it on this TV or removing it.',
+        trailing: const Icon(Icons.logout, color: PrairieColors.amber, size: 20),
+        onTap: () => requestSignOut(context, ref),
+      ),
+    ],
   ];
 
   List<Widget> _playbackSection() {
