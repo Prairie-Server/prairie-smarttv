@@ -157,6 +157,7 @@ class PlaybackSessionResponse {
     this.streamHeaderRefresh,
     this.serverFeatures = const [],
     this.selectedTracks = const {},
+    this.deliveredHeight,
   });
 
   final String sessionId;
@@ -215,6 +216,10 @@ class PlaybackSessionResponse {
   /// (`id` + `index`) the replan schema accepts.
   final Map<String, dynamic> selectedTracks;
 
+  /// Video height the plan delivers (`effective_recipe.height`), when the
+  /// server states it; null for legacy sessions.
+  final int? deliveredHeight;
+
   bool get supportsSeekReanchor => isProtocolV3 && serverFeatures.contains(featureSeekReanchorV3);
 
   PlaybackSessionResponse copyWith({
@@ -256,6 +261,7 @@ class PlaybackSessionResponse {
     streamHeaderRefresh: streamHeaderRefresh,
     serverFeatures: serverFeatures ?? this.serverFeatures,
     selectedTracks: selectedTracks,
+    deliveredHeight: deliveredHeight,
   );
 
   factory PlaybackSessionResponse.fromJson(Map<String, dynamic> json) {
@@ -347,6 +353,7 @@ class PlaybackSessionResponse {
             if (f is String) f,
       ],
       selectedTracks: trackIdentitiesV3(selected),
+      deliveredHeight: (recipe['height'] as num?)?.toInt(),
     );
   }
 

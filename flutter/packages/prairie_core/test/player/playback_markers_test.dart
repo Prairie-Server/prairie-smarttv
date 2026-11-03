@@ -66,6 +66,25 @@ void main() {
     expect(activeMarker(regions, MarkerKind.credits, 70), isNull);
   });
 
+  test('activeMarker offers every occurrence, passing over answered ones', () {
+    final regions = parseMarkerRegions({
+      'marker_segments': [
+        {'kind': 'credits', 'start_seconds': 1200, 'end_seconds': 1260},
+        {'kind': 'credits', 'start_seconds': 1250, 'end_seconds': 1300},
+        {'kind': 'credits', 'start_seconds': 1380, 'end_seconds': 1400},
+      ],
+    });
+    final first = activeMarker(regions, MarkerKind.credits, 1255)!;
+    expect(first, _r(MarkerKind.credits, 1200, 1260));
+    // The first range was skipped: the overlapping second one still offers.
+    expect(activeMarker(regions, MarkerKind.credits, 1255, except: {first.key}), _r(MarkerKind.credits, 1250, 1300));
+    // A later, separate range is its own skip; the scene between plays.
+    expect(activeMarker(regions, MarkerKind.credits, 1350, except: {first.key}), isNull);
+    expect(activeMarker(regions, MarkerKind.credits, 1390, except: {first.key}), _r(MarkerKind.credits, 1380, 1400));
+    // Up next waits for the last credits range, not the first.
+    expect(autoplayRegionStart(regions, 1400, allowPreview: false), 1380);
+  });
+
   test('SeriesContext finds neighbors across season boundaries', () {
     const series = SeriesContext(seriesId: 's', episodes: [
       EpisodeRef(contentId: 'e1x9', title: 'Finale', seasonNumber: 1, episodeNumber: 9),

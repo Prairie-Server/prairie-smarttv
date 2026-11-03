@@ -1143,14 +1143,30 @@ class _Hero extends StatelessWidget {
                                               ),
                                               for (final (i, track) in subtitleTracks.indexed)
                                                 if ((track.language ?? '').isNotEmpty)
-                                                  ListTile(
-                                                    title: Text(
-                                                      formatSubtitleTrackLabel(track, i),
-                                                      style: const TextStyle(color: PrairieColors.ink),
-                                                    ),
-                                                    trailing: selectedSubtitleLanguage == track.language ? const Icon(Icons.check, color: PrairieColors.amber) : null,
-                                                    onTap: () => Navigator.pop(context, track.language),
-                                                  ),
+                                                  // A track the server can't show stays listed but
+                                                  // can't be picked (or focused).
+                                                  isUnplayableSubtitle(track)
+                                                      ? ListTile(
+                                                          enabled: false,
+                                                          title: Text(
+                                                            formatSubtitleTrackLabel(track, i),
+                                                            style: const TextStyle(color: PrairieColors.muted),
+                                                          ),
+                                                          subtitle: const Text(
+                                                            'Unsupported format',
+                                                            style: TextStyle(color: PrairieColors.muted, fontSize: 12),
+                                                          ),
+                                                        )
+                                                      : ListTile(
+                                                          title: Text(
+                                                            formatSubtitleTrackLabel(track, i),
+                                                            style: const TextStyle(color: PrairieColors.ink),
+                                                          ),
+                                                          trailing: selectedSubtitleLanguage == track.language
+                                                              ? const Icon(Icons.check, color: PrairieColors.amber)
+                                                              : null,
+                                                          onTap: () => Navigator.pop(context, track.language),
+                                                        ),
                                             ],
                                           ),
                                         ),

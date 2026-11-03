@@ -69,6 +69,14 @@ const _endSlackSeconds = 2.0;
 /// counts as the end — see [_PlayerScreenState._checkEndStall].
 const _endStallTimeout = Duration(seconds: 3);
 const _endStallWindowSeconds = 15.0;
+/// A position frozen this long while playing counts as a stall, for TV
+/// players that don't raise buffering callbacks on a dropped connection.
+const _frozenStallAfter = Duration(seconds: 2);
+/// Buffering right after a seek is the seek's, not a network stall.
+const _seekWaitGrace = Duration(seconds: 3);
+/// How long "Restore quality" stays up after a buffering step down
+/// (the buffering-quality spec's PROMPT_SECONDS).
+const _bufferingPillDuration = Duration(seconds: 15);
 
 /// Mirrors web's usePlaybackSession/VideoPlayer lifecycle on protocol v3:
 /// start (with transient retry), sequenced progress, stop with the final
@@ -111,6 +119,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _loading = true;
   String? _error;
   bool _controlsVisible = true;
+
+  /// This item has played (its first stream attached and started). Until
+  /// then only the spinner shows; afterwards the controls stay up through
+  /// stalls, seeks that reopen the stream, and quality or track reloads.
+  bool _hasStarted = false;
+
+  /// The one centered spinner: after 500 ms of waiting, for at least 500 ms.
+  final LoadingSpinnerGate _spinnerGate = LoadingSpinnerGate();
+  Timer? _spinnerTimer;
   bool _showStats = false;
 
   /// Path (no query, so no credentials) of the stream handed to the native
@@ -139,6 +156,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   SubtitleAppearance _subtitleAppearance = const SubtitleAppearance();
   int? _selectedSubtitleTrackId;
   SubtitleCaption? _caption;
+
+  /// Subtitle language to show on every attach; `''` is off. Resolved at
+  /// start (launch pick, remembered series choice, this TV's setting, Auto)
+  /// and replaced by a pick in the player.
+  String _subtitleChoice = '';
+
+  /// The viewer's own pick in this player, handed to the next episode so it
+  /// isn't lost to a remembered-choice write still in flight.
+  String? _subtitlePick;
+  AudioTrackInfo? _audioPick;
+
+  /// Series this episode belongs to; picks are remembered for all of it.
+  String? _seriesId;
   CancelToken? _prepareCancel;
   bool _busyAudio = false;
   bool _busyQuality = false;
@@ -154,6 +184,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String _activeQualityId = 'original';
   List<QualityLadderRung> _qualityLadder = fallbackQualityLadder;
   String? _qualityError;
+
+  /// Steps Auto quality down when playback keeps buffering.
+  final BufferingStallTracker _stallTracker = BufferingStallTracker();
+  Timer? _bufferingTimer;
+  DateTime? _lastSeekAt;
+
+  /// Quality preference before a buffering step down (`auto`); null when
+  /// quality was not lowered for buffering. While set, further stalls may
+  /// step down again.
+  String? _qualityBeforeBufferingDrop;
+  bool _bufferingPillVisible = false;
+  Timer? _bufferingPillTimer;
 
   /// Receives D-pad keys while chrome is hidden so nav can bring it back.
   final FocusNode _idleFocus = FocusNode(debugLabel: 'player.idle');
@@ -210,6 +252,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _seriesId = widget.launch.watch?.seriesId;
     _seekFocus.addListener(_onControlFocusChanged);
     _playFocus.addListener(_onControlFocusChanged);
     _backFocus.addListener(_onControlFocusChanged);
@@ -253,6 +296,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final markers = selectFileVersion(watch, widget.launch.fileId)?.markers ?? const <MarkerRegion>[];
     setState(() => _markers = markers);
     final seriesId = watch.seriesId;
+    if (seriesId != null && seriesId.isNotEmpty) _seriesId = seriesId;
     final season = watch.seasonNumber;
     if (seriesId == null || seriesId.isEmpty || season == null) return;
     try {
@@ -286,6 +330,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _introPromptTimer?.cancel();
     _upNextTimer?.cancel();
     _sleepTicker?.cancel();
+    _spinnerTimer?.cancel();
+    _bufferingTimer?.cancel();
+    _bufferingPillTimer?.cancel();
     _seekFocus.removeListener(_onControlFocusChanged);
     _playFocus.removeListener(_onControlFocusChanged);
     _backFocus.removeListener(_onControlFocusChanged);
@@ -341,7 +388,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _focusIdleOrOverlay();
   }
 
-  bool get _overlayVisible => _introPrompt != null || _upNextVisible || _manualSkipRegion != null;
+  bool get _overlayVisible =>
+      _introPrompt != null || _upNextVisible || _bufferingPillVisible || _manualSkipRegion != null;
 
   void _focusIdleOrOverlay() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -552,10 +600,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return version?.audioTracks ?? const [];
   }
 
-  Future<void> _chooseAudio(int index) async {
+  /// [remember] (a pick in the audio menu) also remembers it for the series
+  /// and carries it to the next episode.
+  Future<void> _chooseAudio(int index, {bool remember = false}) async {
     final current = _playbackSession;
     if (current == null || index == current.audioTrackIndex) return;
+    if (remember) {
+      final tracks = _audioTracks;
+      final track = index >= 0 && index < tracks.length ? tracks[index] : null;
+      _audioPick = track;
+      unawaited(_rememberAudioPick(index, track));
+    }
     await _restartSessionAt(audioTrackIndex: index, positionSeconds: _position.inMilliseconds / 1000.0);
+  }
+
+  Future<void> _rememberAudioPick(int index, AudioTrackInfo? track) async {
+    final seriesId = _seriesId;
+    final session = ref.read(sessionProvider);
+    if (seriesId == null || seriesId.isEmpty || session == null) return;
+    try {
+      await saveSeriesAudioPreference(ref.read(apiClientProvider), session, seriesId, index, track);
+    } catch (e) {
+      debugPrint('prairie.player_screen: remembering the audio pick failed: $e');
+    }
   }
 
   Future<void> _pickQuality() async {
@@ -588,6 +655,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
     if (choice == null || choice == activeId) return;
+    // The viewer's own pick replaces any buffering step down.
+    _qualityBeforeBufferingDrop = null;
+    _hideBufferingPill();
     await _switchQuality(choice);
   }
 
@@ -683,7 +753,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     required PlaybackSettings settings,
     required TvPlaybackCapabilities deviceCaps,
     required void Function([CancelToken?]) clearBusy,
-    String? subtitleLanguage,
   }) async {
     _activeSessionId = prepared.session.sessionId;
     await _positionSub?.cancel();
@@ -747,8 +816,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     clearBusy(cancel);
+    if (!_hasStarted) setState(() => _hasStarted = true);
     _lastProgressPosition = _position;
     _lastProgressAt = DateTime.now();
+    _stallTracker.planStarted(DateTime.now());
+    _bufferingTimer ??= Timer.periodic(const Duration(seconds: 1), (_) => _checkBufferingQuality());
     if (needsHlsBootstrap(prepared.session.playMethod)) {
       _stallTimer?.cancel();
       _stallTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkHlsStall());
@@ -767,8 +839,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (!mounted || !identical(_backend, backend)) return;
       _onPlaybackEnded();
     });
+    // Only a selected track's cues draw: with subtitles off (picked,
+    // remembered, or Auto resolving to none) a track the file flags default
+    // must not come up on its own — Tizen's player has no explicit "off".
     _captionSub = backend.captionStream.listen((caption) {
-      if (mounted) setState(() => _caption = caption);
+      if (mounted) setState(() => _caption = _selectedSubtitleTrackId == null ? null : caption);
     });
     _errorSub = backend.errorStream.listen((message) {
       if (!mounted || _exiting || _error != null || !identical(_backend, backend)) return;
@@ -778,7 +853,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _endStallTimer ??= Timer.periodic(const Duration(seconds: 1), (_) => _checkEndStall());
     unawaited(reportPlaybackRouteEvent(client, session, prepared.session, 'first_frame'));
     if (startAt != null) unawaited(_verifyStartPosition(backend, prepared.session, startAt));
-    unawaited(_autoSelectSubtitleTrack(backend, subtitleLanguage ?? settings.preferredSubtitleLanguage));
+    unawaited(_autoSelectSubtitleTrack(backend, _subtitleChoice));
     _showControls();
   }
 
@@ -1066,7 +1141,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       ),
     );
     if (choice == null || choice == currentIndex) return;
-    await _chooseAudio(choice);
+    await _chooseAudio(choice, remember: true);
   }
 
   Future<void> _start() async {
@@ -1094,13 +1169,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // An explicit pick wins; otherwise avoid a default the device cannot
       // decode (e.g. TrueHD beside an AC-3 companion), which would force a
       // server audio re-encode instead of playing the original file.
-      final launchVersion = widget.launch.watch == null ? null : selectFileVersion(widget.launch.watch!, widget.launch.fileId);
-      final initialAudioTrackIndex = widget.launch.initialAudioTrackIndex ??
-          selectPlayableAudioTrack(
-            launchVersion?.audioTracks ?? const <AudioTrackInfo>[],
-            deviceCaps.codecsAudio,
-            deviceCaps.maxAudioChannels,
-          );
+      // A remembered per-series pick (the server's effective track) comes
+      // before that fallback.
+      final launchWatch = widget.launch.watch;
+      final launchVersion = launchWatch == null ? null : selectFileVersion(launchWatch, widget.launch.fileId);
+      final launchAudioTracks = launchVersion?.audioTracks ?? const <AudioTrackInfo>[];
+      final initialAudioTrackIndex = resolveStartAudioTrackIndex(
+        launchIndex: widget.launch.initialAudioTrackIndex,
+        effectiveIndex: launchVersion?.effectiveAudioTrackIndex,
+        tracks: launchAudioTracks,
+        playableFallback: selectPlayableAudioTrack(
+          launchAudioTracks,
+          deviceCaps.codecsAudio,
+          deviceCaps.maxAudioChannels,
+        ),
+      );
+      var audioIndexForSubtitles = initialAudioTrackIndex ?? launchAudioTracks.indexWhere((t) => t.isDefault == true);
+      if (audioIndexForSubtitles < 0) audioIndexForSubtitles = 0;
+      _subtitleChoice = resolveStartSubtitleLanguage(
+        launchChoice: widget.launch.initialSubtitleLanguage,
+        preferenceMode: launchWatch?.effectiveSubtitleMode,
+        preferenceLanguage: launchWatch?.effectiveSubtitleLanguage,
+        deviceLanguage: settings.preferredSubtitleLanguage,
+        audioLanguage: audioIndexForSubtitles < launchAudioTracks.length
+            ? launchAudioTracks[audioIndexForSubtitles].language
+            : null,
+        serverTracks: launchVersion?.subtitleTracks ?? const <SubtitleTrackInfo>[],
+      );
       final startedSession = await startPlayback(
         client,
         session,
@@ -1169,7 +1264,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         settings: settings,
         deviceCaps: deviceCaps,
         clearBusy: _clearLoadingIfCurrent,
-        subtitleLanguage: widget.launch.initialSubtitleLanguage,
       );
       if (!mounted || _exiting || cancel.isCancelled) return;
       final initialAudio = widget.launch.initialAudioTrackIndex;
@@ -1189,6 +1283,107 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       _showFatal(_describeFailure(e));
     }
+  }
+
+  /// Playing (not paused, not ended) but the position hasn't moved for
+  /// [_frozenStallAfter].
+  bool _isFrozen(VideoBackend? backend, DateTime now) {
+    final lastAdvance = _lastProgressAt;
+    return backend != null &&
+        backend.isPlaying &&
+        !_viewerPaused &&
+        !_ended &&
+        lastAdvance != null &&
+        now.difference(lastAdvance) >= _frozenStallAfter;
+  }
+
+  /// Rebuilds when the spinner's show delay or minimum time runs out, since
+  /// nothing else may rebuild the screen at that moment.
+  void _scheduleSpinnerRecheck(DateTime now) {
+    final wait = _spinnerGate.nextChangeIn(now);
+    if (wait == null || (_spinnerTimer?.isActive ?? false)) return;
+    _spinnerTimer = Timer(wait + const Duration(milliseconds: 20), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// Once a second: feeds network stalls (not seeks, pauses or reloads) to
+  /// the buffering-quality tracker and steps Auto quality down when it says.
+  void _checkBufferingQuality() {
+    if (!mounted || _exiting || _error != null || _recovering || _ended) return;
+    final backend = _backend;
+    final now = DateTime.now();
+    final seekedAt = _lastSeekAt;
+    final seeking = _scrubTarget != null ||
+        _pendingReanchorSeek != null ||
+        (seekedAt != null && now.difference(seekedAt) < _seekWaitGrace);
+    final stalled = backend != null &&
+        !_loading &&
+        !seeking &&
+        !_viewerPaused &&
+        (backend.isBuffering || _isFrozen(backend, now));
+    if (_stallTracker.update(stalled: stalled, now: now)) unawaited(_lowerQualityForBuffering());
+  }
+
+  /// Video height playing now: the plan's delivered height, else the picked
+  /// rung's, else the source's.
+  int _currentPlaybackHeight() {
+    final delivered = _playbackSession?.deliveredHeight;
+    if (delivered != null && delivered > 0) return delivered;
+    for (final rung in _qualityLadder) {
+      if (rung.id == _activeQualityId) return rung.height;
+    }
+    return _sourceHeightForFile(widget.launch.watch, _playbackSession?.mediaFileId ?? widget.launch.fileId);
+  }
+
+  /// Auto quality (or quality this tracker already lowered) steps down one
+  /// rung, with "Restore quality" offered over the video. A quality the
+  /// viewer picked is left alone, and a TV without HLS transcode has no
+  /// lower rung to offer.
+  Future<void> _lowerQualityForBuffering() async {
+    final plan = _playbackSession;
+    if (plan == null || _busyQuality || _busyAudio || _exiting) return;
+    final lowered = _qualityBeforeBufferingDrop != null;
+    if (!lowered && plan.qualityPreference != 'auto') return;
+    final rung = bufferingStepDownRung(
+      _qualityLadder,
+      currentHeight: _currentPlaybackHeight(),
+      offeredIds: {for (final option in _qualityOptions) option.id},
+    );
+    if (rung == null) {
+      _backend?.reportDiagnostic('buffering:cannot-lower');
+      return;
+    }
+    _backend?.reportDiagnostic('buffering:lower:${rung.id}');
+    _qualityBeforeBufferingDrop ??= plan.qualityPreference;
+    await _switchQuality(rung.id);
+    if (!mounted || _exiting || _activeQualityId != rung.id || _qualityError != null) return;
+    _showBufferingPill();
+  }
+
+  void _showBufferingPill() {
+    _bufferingPillTimer?.cancel();
+    setState(() => _bufferingPillVisible = true);
+    _bufferingPillTimer = Timer(_bufferingPillDuration, _hideBufferingPill);
+    if (!_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  void _hideBufferingPill() {
+    _bufferingPillTimer?.cancel();
+    if (!mounted || !_bufferingPillVisible) return;
+    final hadFocus = _overlayFocus.hasFocus;
+    setState(() => _bufferingPillVisible = false);
+    if (hadFocus && !_controlsVisible) _focusIdleOrOverlay();
+  }
+
+  /// Undoes a buffering step down; quality isn't lowered again for
+  /// [BufferingStallTracker.noLowerCooldown].
+  void _restoreQualityAfterBuffering() {
+    final restore = _qualityBeforeBufferingDrop ?? 'auto';
+    _qualityBeforeBufferingDrop = null;
+    _stallTracker.suppress(DateTime.now());
+    _hideBufferingPill();
+    unawaited(_switchQuality(restore));
   }
 
   void _checkHlsStall() {
@@ -1260,16 +1455,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
-  /// Mirrors `resolvePreferredSubtitleIndex`: auto-select a text track
-  /// whose language matches the viewer's saved preference, if any.
-  Future<void> _autoSelectSubtitleTrack(VideoBackend backend, String preferredLanguage) async {
-    if (preferredLanguage.isEmpty) return;
+  /// Applies [language] (see [_subtitleChoice]) to a freshly attached
+  /// stream: the first native text track in that language, or — for `''` —
+  /// subtitles explicitly off, so the player doesn't show a track the file
+  /// flags default when the choice resolved to none.
+  Future<void> _autoSelectSubtitleTrack(VideoBackend backend, String language) async {
+    if (language.isEmpty) {
+      try {
+        await backend.selectSubtitleTrack(null);
+      } catch (err) {
+        backend.reportDiagnostic('subtitle:off-failed:$err');
+      }
+      return;
+    }
     for (final track in backend.subtitleTracks) {
-      if (track.language.toLowerCase() == preferredLanguage) {
+      if (sameTrackLanguage(track.language, language)) {
         await backend.selectSubtitleTrack(track.trackId);
-        if (mounted) setState(() => _selectedSubtitleTrackId = track.trackId);
+        if (mounted && identical(_backend, backend)) setState(() => _selectedSubtitleTrackId = track.trackId);
         return;
       }
+    }
+  }
+
+  /// The watch-detail version of the playing file.
+  FileVersion? get _playingVersion {
+    final watch = widget.launch.watch;
+    if (watch == null) return null;
+    return selectFileVersion(watch, _playbackSession?.mediaFileId ?? widget.launch.fileId);
+  }
+
+  /// Remembers a subtitle pick (`''` = Off) for every episode of the series.
+  /// Never sends the forced-subtitle setting: a pick must not pin it.
+  Future<void> _rememberSubtitlePick(String language, int? nativeOrdinal) async {
+    final seriesId = _seriesId;
+    final session = ref.read(sessionProvider);
+    if (seriesId == null || seriesId.isEmpty || session == null) return;
+    final serverTracks = _playingVersion?.subtitleTracks ?? const <SubtitleTrackInfo>[];
+    final match = language.isEmpty ? null : matchServerSubtitleTrack(serverTracks, language);
+    try {
+      await saveSeriesSubtitlePreference(
+        ref.read(apiClientProvider),
+        session,
+        seriesId,
+        track: match == null ? null : serverTracks[match],
+        trackIndex: match ?? nativeOrdinal,
+        language: language,
+      );
+    } catch (e) {
+      debugPrint('prairie.player_screen: remembering the subtitle pick failed: $e');
     }
   }
 
@@ -1303,6 +1536,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
     if (choice == _selectedSubtitleTrackId) return;
     await backend.selectSubtitleTrack(choice);
+    var language = '';
+    int? nativeOrdinal;
+    for (final (i, track) in backend.subtitleTracks.indexed) {
+      if (track.trackId == choice) {
+        language = track.language;
+        nativeOrdinal = i;
+        break;
+      }
+    }
+    // A track the player reports without a usable language can't be
+    // matched again on the next stream or episode, so it isn't remembered.
+    if (choice == null || language.trim().isNotEmpty) {
+      _subtitleChoice = language;
+      _subtitlePick = language;
+      unawaited(_rememberSubtitlePick(language, nativeOrdinal));
+    }
     if (mounted) {
       setState(() {
         _selectedSubtitleTrackId = choice;
@@ -1345,6 +1594,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _introPromptTimer?.cancel();
     _upNextTimer?.cancel();
     _sleepTicker?.cancel();
+    _bufferingTimer?.cancel();
+    _bufferingPillTimer?.cancel();
     await _errorSub?.cancel();
     _errorSub = null;
     await _completedSub?.cancel();
@@ -1385,7 +1636,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final skip = _skip;
     if (skip == null) return;
 
-    final intro = activeMarker(_markers, MarkerKind.intro, t);
+    // Each occurrence of a kind is its own marker: one already skipped or
+    // answered is passed over, so a later intro/recap/credits still offers.
+    final intro = activeMarker(_markers, MarkerKind.intro, t, except: _resolvedMarkers);
     if (intro == null || intro.key != _introOfferedKey) _introOfferedKey = null;
     final prompt = _introPrompt;
     if (prompt != null && !_introPromptIsUndo && intro != prompt) {
@@ -1406,8 +1659,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     for (final (kind, auto) in [(MarkerKind.recap, skip.autoSkipRecap), (MarkerKind.credits, skip.autoSkipCredits)]) {
-      final region = activeMarker(_markers, kind, t);
-      if (!auto || region == null || _resolvedMarkers.contains(region.key)) continue;
+      final region = activeMarker(_markers, kind, t, except: _resolvedMarkers);
+      if (!auto || region == null) continue;
       _resolvedMarkers.add(region.key);
       _skipTo(region.end);
       return;
@@ -1442,8 +1695,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (_introPrompt != null || _upNextVisible || _ended || _loading || _error != null) return null;
     final t = _position.inMilliseconds / 1000.0;
     for (final kind in const [MarkerKind.recap, MarkerKind.credits, MarkerKind.preview]) {
-      final region = activeMarker(_markers, kind, t);
-      if (region != null && !_resolvedMarkers.contains(region.key)) return region;
+      final region = activeMarker(_markers, kind, t, except: _resolvedMarkers);
+      if (region != null) return region;
     }
     return null;
   }
@@ -1514,7 +1767,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         }
         _upNextTimer?.cancel();
         final next = _nextEpisode;
-        if (next != null) unawaited(_playEpisode(next));
+        if (next != null) unawaited(_playEpisode(next, fromStart: true));
       });
     }
     if (!_controlsVisible) _focusIdleOrOverlay();
@@ -1620,7 +1873,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final next = _nextEpisode;
     if (next != null && (_skip?.autoPlayNext ?? true) && !_upNextDismissed) {
       unawaited(_backend?.pause());
-      unawaited(_playEpisode(next));
+      unawaited(_playEpisode(next, fromStart: true));
       return;
     }
     unawaited(_exit());
@@ -1643,7 +1896,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// Replaces this player with one for [episode], stopping the current
   /// session first so the two never hold the decoder at once.
-  Future<void> _playEpisode(EpisodeRef episode) async {
+  ///
+  /// [fromStart] (Up Next, and autoplay at the end) starts it at 0:00 with an
+  /// explicit position rather than resuming; the transport's previous/next
+  /// buttons resume where the viewer left that episode. Only the series'
+  /// next episode is ever autoplayed.
+  Future<void> _playEpisode(EpisodeRef episode, {bool fromStart = false}) async {
     if (_switchingEpisode || _exiting) return;
     _switchingEpisode = true;
     _upNextTimer?.cancel();
@@ -1653,16 +1911,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       final fileId = selectPlaybackFileId(watch);
       if (fileId == null) throw StateError('No playable file for ${episode.code}');
       if (!mounted || _exiting) return;
+      final startAt = fromStart
+          ? 0.0
+          : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds) ?? 0.0;
+      // An audio pick made in this player carries over by language: the
+      // remembered-choice write may not have reached the server yet.
+      int? audioIndex;
+      final audioPick = _audioPick;
+      if (audioPick != null) {
+        final tracks = selectFileVersion(watch, fileId)?.audioTracks ?? const <AudioTrackInfo>[];
+        final match = tracks.indexWhere((t) => sameTrackLanguage(t.language, audioPick.language));
+        if (match >= 0) audioIndex = match;
+      }
       await _exit(
         to: PlayerRoute(
           launch: PlayerLaunch(
             fileId: fileId,
             title: watch.title.isNotEmpty ? watch.title : episode.title,
             contentId: episode.contentId,
-            startPositionSeconds: resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds) ?? 0.0,
+            startPositionSeconds: startAt,
             watch: watch,
-            // Keep the viewer's subtitle choice; audio is per file.
-            initialSubtitleLanguage: widget.launch.initialSubtitleLanguage,
+            initialAudioTrackIndex: audioIndex,
+            // Keep the viewer's subtitle choice: a pick made here, else the
+            // one this episode was launched with.
+            initialSubtitleLanguage: _subtitlePick ?? widget.launch.initialSubtitleLanguage,
             sleepDeadline: _sleepDeadline,
           ),
           back: widget.back,
@@ -1683,7 +1955,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _togglePlayPause() async {
     final backend = _backend;
-    if (backend == null) return;
+    // The controls stay up while a reload prepares; the incoming stream has
+    // nothing to command until it is attached and started.
+    if (backend == null || _loading) return;
     if (backend.isPlaying) {
       _viewerPaused = true;
       await backend.pause();
@@ -1751,8 +2025,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// shouldn't pop the whole transport up.
   Future<void> _seekToPosition(Duration target, {bool revealChrome = true}) async {
     final backend = _backend;
-    if (backend == null || _recovering) return;
+    // While a reload prepares (controls stay up through it) there is no
+    // stream to seek; the reload already lands where playback was.
+    if (backend == null || _recovering || _loading) return;
     final generation = ++_seekGeneration;
+    _lastSeekAt = DateTime.now();
     final duration = _totalDuration ?? Duration.zero;
     var next = target < Duration.zero ? Duration.zero : target;
     if (duration > Duration.zero && next > duration) next = duration;
@@ -1915,14 +2192,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // Native buffering events cover normal stalls; a frozen position is a
     // useful fallback for TV players that fail to emit buffering callbacks
     // on a dropped connection. Position updates already rebuild this screen.
-    final lastAdvance = _lastProgressAt;
-    final stalled = backend != null &&
-        backend.isPlaying &&
-        !_viewerPaused &&
-        !_ended &&
-        lastAdvance != null &&
-        DateTime.now().difference(lastAdvance) >= const Duration(seconds: 2);
-    final waiting = _loading || (backend?.isBuffering ?? false) || stalled;
+    final now = DateTime.now();
+    final waiting = _error == null && (_loading || (backend?.isBuffering ?? false) || _isFrozen(backend, now));
+    final spinner = _spinnerGate.update(waiting: waiting, now: now);
+    _scheduleSpinnerRecheck(now);
     // Directional mode lets arrow keys leave widgets that don't claim them.
     // Material Slider in traditional mode eats Down as "decrease", which is
     // why D-pad Down on the seek bar never reached the transport buttons.
@@ -1955,7 +2228,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (backend != null) backend.buildSurface(),
-                  PlayerScrim(loading: waiting && _error == null, chromeVisible: _controlsVisible),
+                  PlayerScrim(loading: spinner, chromeVisible: _controlsVisible),
                   if (_showStats && backend != null) _buildStatsOverlay(backend),
                   if (_caption != null && _caption!.text.isNotEmpty)
                     Align(
@@ -1984,7 +2257,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ),
                       ),
                     ),
-                  if (waiting && _error == null) const Center(child: PrairieLoadingIndicator()),
+                  if (spinner) const Center(child: PrairieLoadingIndicator()),
                   if (_error != null)
                     Center(
                       child: Column(
@@ -2006,7 +2279,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                         ],
                       ),
                     ),
-                  if (_controlsVisible && backend != null && !waiting && _error == null)
+                  // Only an item's first load keeps the controls away; a stall
+                  // or reload after it has played leaves them up and usable.
+                  if (_controlsVisible && backend != null && _hasStarted && _error == null)
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -2173,7 +2448,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         title: next.title,
         secondsLeft: _upNextSecondsLeft,
         playFocus: _overlayFocus,
-        onPlayNow: () => _playEpisode(next),
+        onPlayNow: () => _playEpisode(next, fromStart: true),
         onDismiss: _dismissUpNext,
       );
     } else if (intro != null) {
@@ -2182,6 +2457,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         caption: _introPromptIsUndo ? 'Intro skipped' : null,
         focusNode: _overlayFocus,
         onPressed: _onIntroPromptPressed,
+      );
+    } else if (_bufferingPillVisible) {
+      child = PlayerSkipButton(
+        label: 'Restore quality',
+        caption: 'Quality lowered to stop buffering',
+        icon: Icons.high_quality,
+        focusNode: _overlayFocus,
+        onPressed: _restoreQualityAfterBuffering,
       );
     } else if (manual != null && !_loading) {
       child = PlayerSkipButton(

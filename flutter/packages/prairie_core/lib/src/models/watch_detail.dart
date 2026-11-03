@@ -91,6 +91,7 @@ class SubtitleTrackInfo {
     this.isDefault,
     this.hearingImpaired,
     this.external,
+    this.unplayable,
   });
 
   final int? index;
@@ -102,6 +103,11 @@ class SubtitleTrackInfo {
   final bool? hearingImpaired;
   final bool? external;
 
+  /// The server's optional `unplayable` flag: it cannot deliver this track
+  /// (e.g. an embedded track it stored with no codec). See
+  /// `isUnplayableSubtitle` for the rule when an older server omits it.
+  final bool? unplayable;
+
   factory SubtitleTrackInfo.fromJson(Map<String, dynamic> json) => SubtitleTrackInfo(
     index: json['index'] as int?,
     language: json['language'] as String?,
@@ -111,6 +117,7 @@ class SubtitleTrackInfo {
     isDefault: json['default'] as bool?,
     hearingImpaired: json['hearing_impaired'] as bool?,
     external: json['external'] as bool?,
+    unplayable: json['unplayable'] as bool?,
   );
 }
 
@@ -128,6 +135,7 @@ class FileVersion {
     this.subtitleTracks = const [],
     this.trickplay,
     this.markers = const [],
+    this.effectiveAudioTrackIndex,
   });
 
   final int fileId;
@@ -145,6 +153,10 @@ class FileVersion {
   /// The server only fills these for the file the watch read selected.
   final List<MarkerRegion> markers;
 
+  /// The audio track the profile's preferences (including a remembered
+  /// per-series pick) resolve to for this file, if the server says.
+  final int? effectiveAudioTrackIndex;
+
   factory FileVersion.fromJson(Map<String, dynamic> json) => FileVersion(
     fileId: idFromJson(json['file_id']) ?? 0,
     resolution: json['resolution'] as String?,
@@ -158,6 +170,7 @@ class FileVersion {
     subtitleTracks: (json['subtitle_tracks'] as List<dynamic>? ?? []).map((j) => SubtitleTrackInfo.fromJson(j as Map<String, dynamic>)).toList(),
     trickplay: json['trickplay'] != null ? TrickplayInfo.fromJson(json['trickplay'] as Map<String, dynamic>) : null,
     markers: parseMarkerRegions(json),
+    effectiveAudioTrackIndex: (json['effective_audio_track_index'] as num?)?.toInt(),
   );
 }
 
@@ -203,6 +216,8 @@ class WatchDetail {
     this.seriesTitle,
     this.seasonNumber,
     this.episodeNumber,
+    this.effectiveSubtitleMode,
+    this.effectiveSubtitleLanguage,
   });
 
   final String contentId;
@@ -219,6 +234,13 @@ class WatchDetail {
   final int? seasonNumber;
   final int? episodeNumber;
 
+  /// `auto`, `always` or `off`: the subtitle mode the profile's preferences
+  /// (including a remembered per-series choice) resolve to.
+  final String? effectiveSubtitleMode;
+
+  /// The subtitle language those preferences resolve to; empty for none.
+  final String? effectiveSubtitleLanguage;
+
   factory WatchDetail.fromJson(Map<String, dynamic> json) => WatchDetail(
     contentId: json['content_id'] as String,
     type: json['type'] as String,
@@ -233,6 +255,8 @@ class WatchDetail {
     seriesTitle: json['series_title'] as String?,
     seasonNumber: json['season_number'] as int?,
     episodeNumber: json['episode_number'] as int?,
+    effectiveSubtitleMode: json['effective_subtitle_mode'] as String?,
+    effectiveSubtitleLanguage: json['effective_subtitle_language'] as String?,
   );
 }
 
