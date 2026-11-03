@@ -221,6 +221,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ref.read(routeProvider.notifier).goServers();
       },
     ),
+    if (session != null) ...[
+      const SizedBox(height: 10),
+      _SettingsRow(
+        label: 'Sign Out',
+        hint: 'Sign out of this server, keeping it on this TV or removing it.',
+        trailing: const Icon(Icons.logout, color: PrairieColors.amber, size: 20),
+        onTap: () => requestSignOut(context, ref),
+      ),
+    ],
   ];
 
   List<Widget> _playbackSection() {
