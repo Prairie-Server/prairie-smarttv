@@ -573,7 +573,7 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
                                         ElevatedButton.icon(
                                           autofocus: true,
                                           onPressed: () => ref.read(routeProvider.notifier).go(
-                                            DetailRoute(contentId: contentId, back: widget.route.back),
+                                            DetailRoute(contentId: contentId!, back: widget.route.back),
                                           ),
                                           icon: const Icon(Icons.play_arrow),
                                           label: const Text('Open in library'),
@@ -588,7 +588,7 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
                                       if (canCancel && !canOpen)
                                         OutlinedButton.icon(
                                           autofocus: !request.requestable,
-                                          onPressed: _busy ? null : () => _cancel(requestId),
+                                          onPressed: _busy ? null : () => _cancel(requestId!),
                                           icon: const Icon(Icons.close),
                                           label: const Text('Cancel request'),
                                         ),
