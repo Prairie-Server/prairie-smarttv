@@ -4,6 +4,7 @@ import 'package:prairie_core/prairie_core.dart';
 import 'package:prairie_core/src/lib/thumbhash.dart';
 import 'package:prairie_core/src/lib/trailer_rail.dart';
 import 'package:prairie_core/src/platform/youtube_launcher.dart';
+import 'package:prairie_core/src/player/theme_music.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 /// A 16:9 card in a title page's Trailers & Extras rail: the still (or its
@@ -143,6 +144,8 @@ Future<void> openYouTubeTrailer(BuildContext context, WidgetRef ref, YouTubeTrai
   final videoId = entry.video.siteKey.trim();
   final watchUrl = youTubeWatchUrl(videoId);
   final launcher = ref.read(youTubeLauncherProvider);
+  // Silence the page's theme before the TV switches apps.
+  if (launcher != null) await ref.read(themeMusicControllerProvider).stop();
   final opened = launcher != null && await launcher.openWatchPage(videoId: videoId, watchUrl: watchUrl);
   if (opened || !context.mounted) return;
   await showDialog<void>(

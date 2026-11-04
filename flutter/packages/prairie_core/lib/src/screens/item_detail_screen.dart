@@ -172,6 +172,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         _loading = false;
       });
       _pinToHeroActions(playEnabled: !isSeriesType(item.item.type));
+      _selectThemeMusic(item);
       if (isSeriesType(item.item.type)) {
         _loadSeasons();
       } else {
@@ -257,6 +258,25 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   void _openSimilar(CatalogItem item) {
     final next = moreLikeThisRoute(_selfRoute, item);
     if (next != null) ref.read(routeProvider.notifier).go(next);
+  }
+
+  /// Plays the page's theme music when the profile turned it on for this TV,
+  /// or silences a theme from another title. A page of the same series keeps
+  /// the theme playing.
+  Future<void> _selectThemeMusic(ItemDetail detail) async {
+    ThemeMusicSettings? preferences;
+    try {
+      preferences = await ref.read(themeMusicPreferencesProvider.future);
+    } catch (_) {
+      preferences = null;
+    }
+    if (!mounted || _detail != detail) return;
+    final controller = ref.read(themeMusicControllerProvider);
+    if (preferences == null || !preferences.enabled) {
+      controller.select(null, loop: false);
+    } else {
+      controller.select(detail.themes, loop: preferences.loop);
+    }
   }
 
   /// Only asked when some library gathers box sets; the row is optional.
@@ -346,6 +366,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       final startPosition = startFromBeginning
           ? 0.0
           : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds);
+      if (!mounted) return;
+      // The TV has one decoder: the theme lets it go before the video starts.
+      await ref.read(themeMusicControllerProvider).stop();
       if (!mounted) return;
       ref.read(routeProvider.notifier).go(
         PlayerRoute(

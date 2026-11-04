@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:prairie_core/src/player/theme_music.dart';
+
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
 import 'settings/profile_launch.dart';
@@ -99,7 +101,11 @@ class AppRoot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final route = ref.watch(routeProvider);
-    return switch (route) {
+    // Theme music belongs to title pages; anywhere else silences it.
+    ref.listen(routeProvider, (_, next) {
+      if (next is! DetailRoute) ref.read(themeMusicControllerProvider).stop();
+    });
+    final screen = switch (route) {
       ServersRoute(:final autoScan, :final back) => ServersScreen(autoScan: autoScan ?? true, canReturnHome: back == 'home'),
       ManualServerRoute(:final initialUrl) => ManualServerScreen(initialUrl: initialUrl),
       ConnectRoute(:final serverUrl, :final serverName, :final initialUsername, :final notice) => ConnectScreen(
@@ -144,5 +150,10 @@ class AppRoot extends ConsumerWidget {
       // Keyed by launch: next/previous episode swaps in a fresh player.
       PlayerRoute(:final launch, :final back) => PlayerScreen(key: ObjectKey(launch), launch: launch, back: back),
     };
+    return Stack(
+      fit: StackFit.expand,
+      // The theme player's one-pixel surface sits under the screen.
+      children: [const ThemeMusicSurface(), screen],
+    );
   }
 }
