@@ -10,7 +10,7 @@ import 'package:video_player_drm/video_player.dart';
 ///
 /// DRM (`drmConfigs` on `VideoPlayerController.network`) is supported by the
 /// underlying plugin but not yet wired up here — same gap as Tizen AVPlay.
-class WebosVideoBackend implements VideoBackend {
+class WebosVideoBackend implements VideoBackend, VideoBackendVolume {
   /// Diagnostics-only: posts state changes to
   /// `POST /api/v2/diagnostics/client-events`, same as Tizen's
   /// `VideoholeVideoBackend`, so a support report from either platform ships
@@ -220,6 +220,10 @@ class WebosVideoBackend implements VideoBackend {
 
   @override
   Future<void> pause() async => _controller?.pause();
+
+  /// Theme music plays quietly under a title page and fades in.
+  @override
+  Future<void> setVolume(double volume) async => _controller?.setVolume(volume);
 
   @override
   Future<void> seekTo(Duration position) async => _controller?.seekTo(position);

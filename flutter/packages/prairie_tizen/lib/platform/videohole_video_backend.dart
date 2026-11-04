@@ -17,7 +17,7 @@ import 'package:video_player_videohole/video_player_platform_interface.dart' sho
 /// Tizen's standard `player_set_uri` directly and never touches that
 /// dependency, so it works on a retail cert. Trade-off: this plugin has no
 /// DRM support at all — fine, since Prairie never serves DRM content.
-class VideoholeVideoBackend implements VideoBackend {
+class VideoholeVideoBackend implements VideoBackend, VideoBackendVolume {
   /// Diagnostics-only: the TV has no reachable local logging (`developer.log`
   /// needs a VM service that a release build doesn't attach, and `debugPrint`
   /// needs an `sdb dlog` session at the TV). State changes go to
@@ -251,6 +251,10 @@ class VideoholeVideoBackend implements VideoBackend {
 
   @override
   Future<void> pause() async => _controller?.pause();
+
+  /// Theme music plays quietly under a title page and fades in.
+  @override
+  Future<void> setVolume(double volume) async => _controller?.setVolume(volume);
 
   @override
   Future<void> seekTo(Duration position) async => _controller?.seekTo(position);
