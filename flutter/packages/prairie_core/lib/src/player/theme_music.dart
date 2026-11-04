@@ -224,8 +224,9 @@ class VideoBackendThemeOutput implements ThemeAudioOutput {
 
   @override
   Future<void> setVolume(double volume) async {
-    final backend = this.backend;
-    if (backend is VideoBackendVolume) await backend.setVolume(volume);
+    if (backend case final VideoBackendVolume volumeBackend) {
+      await volumeBackend.setVolume(volume);
+    }
   }
 
   @override

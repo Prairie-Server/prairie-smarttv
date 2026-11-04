@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:prairie_core/src/lib/thumbhash.dart';
 import 'package:prairie_core/src/lib/trailer_rail.dart';
-import 'package:prairie_core/src/platform/youtube_launcher.dart';
-import 'package:prairie_core/src/player/theme_music.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 /// A 16:9 card in a title page's Trailers & Extras rail: the still (or its
