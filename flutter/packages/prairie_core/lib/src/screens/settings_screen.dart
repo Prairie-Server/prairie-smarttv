@@ -413,7 +413,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
       const SizedBox(height: 10),
     ],
+    ..._themeMusicRows(),
   ];
+
+  /// Shown only when the server plays theme music for this profile. Saved
+  /// for this profile on this TV, as Apple TV does.
+  List<Widget> _themeMusicRows() {
+    final preferences = ref.watch(themeMusicPreferencesProvider).valueOrNull;
+    if (preferences == null) return const [];
+    return [
+      const SizedBox(height: 16),
+      const Text('Theme music', style: TextStyle(color: PrairieColors.ink, fontFamily: 'Fraunces', fontSize: 22)),
+      const SizedBox(height: 16),
+      _SettingsToggleRow(
+        label: 'Play theme music',
+        hint: "Play a title's own theme song quietly on its page, when the library has one.",
+        value: preferences.enabled,
+        onChanged: (v) => _saveThemeMusic(ThemeMusicSettings.enabledKey, v),
+      ),
+      const SizedBox(height: 10),
+      _SettingsToggleRow(
+        label: 'Repeat theme music',
+        hint: 'Start the theme again when it ends, for as long as the page is open.',
+        value: preferences.loop,
+        onChanged: (v) => _saveThemeMusic(ThemeMusicSettings.loopKey, v),
+      ),
+      const SizedBox(height: 10),
+    ];
+  }
+
+  Future<void> _saveThemeMusic(String key, bool value) async {
+    final session = ref.read(sessionProvider);
+    if (session == null) return;
+    try {
+      await saveThemeMusicSetting(ref.read(apiClientProvider), session, key, value);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(e is ApiError ? e.message : 'Could not save setting')),
+      );
+    }
+    if (mounted) ref.invalidate(themeMusicPreferencesProvider);
+  }
 
   List<Widget> _subtitlesSection() {
     final appearance = _settings.subtitleAppearance;

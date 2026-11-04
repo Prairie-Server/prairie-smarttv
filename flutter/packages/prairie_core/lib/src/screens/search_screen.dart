@@ -25,6 +25,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _loadingMore = false;
   String? _error;
 
+  /// Box sets matching the query, listed above the titles.
+  List<BoxSet> _boxSets = [];
+
+  /// Titles the library lacks that the viewer can request, listed below
+  /// the titles under "Available to request".
+  List<RequestTitle> _requestable = [];
+
+  /// Bumped per search so a slow answer to an older query is dropped.
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
@@ -59,7 +69,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Future<void> _submit() async {
     final q = _controller.text.trim();
-    setState(() => _submitted = q);
+    final generation = ++_generation;
+    setState(() {
+      _submitted = q;
+      _boxSets = [];
+      _requestable = [];
+    });
     if (q.isEmpty) {
       setState(() {
         _items = [];
@@ -73,10 +88,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _loading = true;
       _error = null;
     });
+    // Box sets only add to the titles, so a slow answer never holds them up.
+    _searchBoxSets(q, generation);
+    _searchRequestable(q, generation);
     try {
       final session = ref.read(sessionProvider)!;
       final page = await fetchCatalog(ref.read(apiClientProvider), session, CatalogQuery(q: q, offset: 0, limit: 48));
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _items = page.items;
         _hasMore = page.hasMore ?? false;
@@ -87,6 +105,66 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _searchBoxSets(String q, int generation) async {
+    try {
+      final libraries = await ref.read(librariesProvider.future);
+      if (!librariesHaveBoxSets(libraries)) return;
+      final sets = await searchBoxSets(ref.read(apiClientProvider), ref.read(sessionProvider)!, q);
+      if (!mounted || generation != _generation) return;
+      setState(() => _boxSets = sets);
+    } catch (_) {
+      // Optional: the titles still show.
+    }
+  }
+
+  /// Android TV's request search: two characters at least, and only titles
+  /// the library doesn't have (those are among the results already).
+  Future<void> _searchRequestable(String q, int generation) async {
+    if (q.length < 2) return;
+    try {
+      if (!await ref.read(requestsAvailableProvider.future)) return;
+      final titles = await searchRequestTitles(ref.read(apiClientProvider), ref.read(sessionProvider)!, q);
+      if (!mounted || generation != _generation) return;
+      setState(() => _requestable = withoutLibraryTitles(titles));
+    } catch (_) {
+      // Optional: the library results still show.
+    }
+  }
+
+  Widget _resultsFooter(String serverUrl) {
+    if (_requestable.isEmpty) return const SizedBox.shrink();
+    return MediaRow<RequestTitle>(
+      title: 'Available to request',
+      items: _requestable,
+      itemBuilder: (context, title, index) => RequestTitleCard(
+        title: title,
+        serverUrl: serverUrl,
+        onTap: () => ref.read(routeProvider.notifier).go(RequestTitleRoute(title: title, back: const SearchRoute())),
+      ),
+    );
+  }
+
+  /// Rows above the titles. Always a widget, even an empty one, so the grid
+  /// keeps one scroll view (and its focus) when a row arrives late.
+  Widget _resultsHeader(String serverUrl) {
+    if (_boxSets.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: MediaRow<BoxSet>(
+        title: 'Box sets',
+        items: _boxSets,
+        escapeUpFocusNode: _entryFocus,
+        itemBuilder: (context, boxSet, index) => PosterCard(
+          title: boxSet.title,
+          subtitle: boxSet.cardCaption,
+          posterUrl: boxSet.posterUrl,
+          serverUrl: serverUrl,
+          onTap: () => ref.read(routeProvider.notifier).go(BoxSetRoute(boxSet: boxSet, back: const SearchRoute())),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadMore() async {
@@ -150,7 +228,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
           if (_error != null) Text(_error!, style: const TextStyle(color: PrairieColors.danger)),
-          if (!_loading && _submitted.isNotEmpty && _items.isEmpty)
+          if (!_loading && _submitted.isNotEmpty && _items.isEmpty && _boxSets.isEmpty && _requestable.isEmpty)
             Text('No matches for "$_submitted".', style: const TextStyle(color: PrairieColors.muted)),
           Expanded(
             child: _loading
@@ -159,6 +237,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     items: _items,
                     serverUrl: session.serverUrl,
                     restoreContentId: widget.restoreContentId,
+                    header: _resultsHeader(session.serverUrl),
+                    footer: _resultsFooter(session.serverUrl),
                     onOpen: (item) => ref.read(routeProvider.notifier).go(
                       DetailRoute(
                         contentId: item.contentId,

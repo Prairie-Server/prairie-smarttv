@@ -14,6 +14,7 @@ class CalendarEvent {
     this.episodeTitle,
     this.posterUrl,
     this.watched = false,
+    this.badges = const [],
   });
 
   final String contentId;
@@ -39,6 +40,10 @@ class CalendarEvent {
   final String? posterUrl;
   final bool watched;
 
+  /// The server's badges: `series_premiere`, `season_premiere`, `finale`;
+  /// on a movie, `digital` or `physical`.
+  final List<String> badges;
+
   factory CalendarEvent.fromJson(Map<String, dynamic> json) => CalendarEvent(
     contentId: json['content_id'] as String,
     type: json['type'] as String,
@@ -52,7 +57,18 @@ class CalendarEvent {
     episodeTitle: json['episode_title'] as String?,
     posterUrl: json['poster_url'] as String?,
     watched: json['watched'] as bool? ?? false,
+    badges: [
+      for (final badge in json['badges'] as List<dynamic>? ?? const [])
+        if (badge is String) badge,
+    ],
   );
+
+  /// The card's badge labels, in the server's order: PREMIERE, NEW SEASON
+  /// and FINALE, as on web, Android and Apple TV (i#919). Other badges
+  /// (a movie's home release) have no label and are left out.
+  List<String> get badgeLabels => [
+    for (final badge in badges) ?calendarBadgeLabel(badge),
+  ];
 
   /// The item the detail screen should open: episodes and premieres go to
   /// their series (matching the web's CalendarEventCard), movies to themselves.
@@ -77,6 +93,15 @@ class CalendarEvent {
     return DateTime.parse(airDate);
   }
 }
+
+/// The label a calendar card shows for a server badge, or null when the
+/// badge has none.
+String? calendarBadgeLabel(String badge) => switch (badge) {
+  'series_premiere' => 'PREMIERE',
+  'season_premiere' => 'NEW SEASON',
+  'finale' => 'FINALE',
+  _ => null,
+};
 
 /// A day heading and the events airing on it.
 class CalendarDay {

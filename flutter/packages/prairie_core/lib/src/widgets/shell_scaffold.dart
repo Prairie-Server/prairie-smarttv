@@ -25,6 +25,7 @@ class ShellScaffold extends ConsumerWidget {
     final session = ref.watch(sessionProvider)!;
     final liveTvAvailable = ref.watch(liveTvAvailableProvider).valueOrNull ?? false;
     final libraries = ref.watch(librariesProvider).valueOrNull ?? const <Library>[];
+    final requestsAvailable = ref.watch(requestsAvailableProvider).valueOrNull ?? false;
     final unreadCount = (ref.watch(notificationUnreadCountProvider).valueOrNull ?? 0) +
         (ref.watch(appUpdateProvider).valueOrNull != null ? 1 : 0);
     // Back on any tab other than Home returns to Home instead of exiting the
@@ -50,6 +51,9 @@ class ShellScaffold extends ConsumerWidget {
         onHistory: () => ref.read(routeProvider.notifier).go(
           CatalogPageRoute(title: 'History', source: CatalogPageSource.history, back: ref.read(routeProvider)),
         ),
+        onRequests: requestsAvailable
+            ? () => ref.read(routeProvider.notifier).go(RequestsRoute(back: ref.read(routeProvider)))
+            : null,
         onSettings: () => ref.read(routeProvider.notifier).go(SettingsRoute(back: ref.read(routeProvider))),
         onSwitchServer: () => ref.read(routeProvider.notifier).go(ServersRoute.switchServer),
         onSignOut: () => requestSignOut(context, ref),

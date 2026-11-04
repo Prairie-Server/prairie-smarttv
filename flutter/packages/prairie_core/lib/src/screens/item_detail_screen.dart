@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:prairie_core/src/lib/detail_metadata.dart';
+import 'package:prairie_core/src/lib/trailer_rail.dart';
+import 'package:prairie_core/src/widgets/trailer_card.dart';
 
 /// Mirrors ItemDetailScreen.tsx. Viewport-based lazy-loading/hero-settle
 /// timing (IntersectionObserver, `heroSettled`/`heroBackdropReady` gating)
@@ -30,6 +32,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
   List<EpisodeSummary> _episodes = [];
   bool _episodesLoading = false;
   List<CatalogItem> _similar = [];
+
+  /// The box set this movie belongs to, for the row under the trailers.
+  BoxSetDetail? _boxSet;
   bool _loading = true;
   bool _busyPlay = false;
   bool _busyAction = false;
@@ -144,6 +149,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       _episodes = [];
       _seasonNumber = null;
       _similar = [];
+      _boxSet = null;
       _selectedFileId = null;
       _favoriteOverride = null;
       _watchlistOverride = null;
@@ -166,10 +172,12 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         _loading = false;
       });
       _pinToHeroActions(playEnabled: !isSeriesType(item.item.type));
+      _selectThemeMusic(item);
       if (isSeriesType(item.item.type)) {
         _loadSeasons();
       } else {
         _loadPlaybackOptionsFor(widget.contentId);
+        if (item.item.type.toLowerCase() == 'movie') _loadBoxSet();
       }
       _loadSimilar();
     } catch (e) {
@@ -252,6 +260,45 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     if (next != null) ref.read(routeProvider.notifier).go(next);
   }
 
+  /// Plays the page's theme music when the profile turned it on for this TV,
+  /// or silences a theme from another title. A page of the same series keeps
+  /// the theme playing.
+  Future<void> _selectThemeMusic(ItemDetail detail) async {
+    ThemeMusicSettings? preferences;
+    try {
+      preferences = await ref.read(themeMusicPreferencesProvider.future);
+    } catch (_) {
+      preferences = null;
+    }
+    if (!mounted || _detail != detail) return;
+    final controller = ref.read(themeMusicControllerProvider);
+    if (preferences == null || !preferences.enabled) {
+      controller.select(null, loop: false);
+    } else {
+      controller.select(detail.themes, loop: preferences.loop);
+    }
+  }
+
+  /// Only asked when some library gathers box sets; the row is optional.
+  Future<void> _loadBoxSet() async {
+    try {
+      final libraries = await ref.read(librariesProvider.future);
+      if (!librariesHaveBoxSets(libraries)) return;
+      final boxSet = await fetchItemBoxSet(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
+      if (!mounted || boxSet == null || boxSet.items.isEmpty) return;
+      setState(() => _boxSet = boxSet);
+    } catch (_) {}
+  }
+
+  void _openBoxSetMovie(CatalogItem item) {
+    final next = moreLikeThisRoute(_selfRoute, item);
+    if (next != null) ref.read(routeProvider.notifier).go(next);
+  }
+
+  void _openBoxSet(BoxSet boxSet) {
+    ref.read(routeProvider.notifier).go(BoxSetRoute(boxSet: boxSet, back: _selfRoute));
+  }
+
   Future<void> _loadSimilar() async {
     try {
       final result = await fetchSimilarItems(ref.read(apiClientProvider), ref.read(sessionProvider)!, widget.contentId);
@@ -320,6 +367,9 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
           ? 0.0
           : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds);
       if (!mounted) return;
+      // The TV has one decoder: the theme lets it go before the video starts.
+      await ref.read(themeMusicControllerProvider).stop();
+      if (!mounted) return;
       ref.read(routeProvider.notifier).go(
         PlayerRoute(
           launch: PlayerLaunch(
@@ -338,6 +388,17 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       if (mounted) setState(() => _error = e is ApiError ? e.message : 'Play failed');
     } finally {
       if (mounted) setState(() => _busyPlay = false);
+    }
+  }
+
+  /// A local extra plays here; a YouTube video opens in the TV's YouTube app.
+  void _openTrailer(TrailerRailEntry entry) {
+    switch (entry) {
+      case LocalTrailerEntry(:final extra):
+        if (_busyPlay) return;
+        _play(extra.contentId, entry.title);
+      case final YouTubeTrailerEntry video:
+        openYouTubeTrailer(context, ref, video);
     }
   }
 
@@ -545,6 +606,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         );
     final showStartOver = movieResume || (isSeries && episodeResume);
     final playLabel = _playLabel(isSeries: isSeries, nextUp: nextUp);
+    final trailers = detail == null ? const <TrailerRailEntry>[] : trailerRailEntries(detail);
 
     return PopScope(
       canPop: false,
@@ -734,33 +796,6 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                       },
                     ),
                 ],
-                if (detail.extras.isNotEmpty) ...[
-                  const SizedBox(height: 32),
-                  const Text('Bonus Content', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
-                  const SizedBox(height: 4),
-                  const Text('Extras', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      for (final extra in detail.extras)
-                        OutlinedButton.icon(
-                          onPressed: _busyPlay ? null : () => _play(extra.contentId, extra.title ?? 'Extra'),
-                          icon: const Icon(Icons.play_arrow),
-                          label: Text(extra.title?.isNotEmpty == true ? extra.title! : extra.kind),
-                        ),
-                    ],
-                  ),
-                ],
-                if (_hasDetailsSection(detail)) ...[
-                  const SizedBox(height: 32),
-                  const Text('Details', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
-                  const SizedBox(height: 4),
-                  const Text('Info', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  _DetailsTable(detail: detail, isSeries: isSeries),
-                ],
                         ],
                       ),
                     ),
@@ -774,6 +809,39 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                         escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
                         itemBuilder: (context, member, index) => _CastMemberCard(member: member, serverUrl: session.serverUrl),
                       ),
+                    // Upstream page order: cast, trailers and extras, more like
+                    // this, then details.
+                    if (trailers.isNotEmpty)
+                      MediaRow<TrailerRailEntry>(
+                        title: 'Trailers & Extras',
+                        items: trailers,
+                        variant: MediaRowVariant.landscape,
+                        escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
+                        itemBuilder: (context, entry, index) => TrailerCard(
+                          entry: entry,
+                          serverUrl: session.serverUrl,
+                          onTap: () => _openTrailer(entry),
+                        ),
+                      ),
+                    // The movie's box set, in release order, ending in an
+                    // Explore all card that opens the box set's page.
+                    if (_boxSet case final boxSet?)
+                      MediaRow<CatalogItem>(
+                        title: boxSet.boxSet.title,
+                        items: boxSet.items,
+                        escapeUpFocusNode: _playFocus.skipTraversal ? _backFocus : _playFocus,
+                        itemBuilder: (context, item, index) => PosterCard(
+                          title: item.title,
+                          subtitle: item.subtitle,
+                          posterUrl: item.posterUrl,
+                          serverUrl: session.serverUrl,
+                          watched: item.userState?.played ?? false,
+                          progress: item.progress,
+                          badges: [if (item.contentId == widget.contentId) 'THIS FILM'],
+                          onTap: () => _openBoxSetMovie(item),
+                        ),
+                        trailing: ExploreAllCard(onTap: () => _openBoxSet(boxSet.boxSet)),
+                      ),
                     if (_similar.isNotEmpty)
                       MediaRow<CatalogItem>(
                         title: 'More like this',
@@ -786,6 +854,20 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                           serverUrl: session.serverUrl,
                           watched: item.userState?.played ?? false,
                           onTap: () => _openSimilar(item),
+                        ),
+                      ),
+                    if (_hasDetailsSection(detail))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Details', style: TextStyle(fontFamily: 'Fraunces', fontSize: 22, color: PrairieColors.ink)),
+                            const SizedBox(height: 4),
+                            const Text('Info', style: TextStyle(color: PrairieColors.muted, fontSize: 12)),
+                            const SizedBox(height: 12),
+                            _DetailsTable(detail: detail, isSeries: isSeries),
+                          ],
                         ),
                       ),
                   ],

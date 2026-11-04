@@ -36,6 +36,7 @@ Future<List<Library>> fetchLibraries(ApiClient client, PrairieSession session) a
       type: m['type'] as String,
       sortOrder: m['sort_order'] as int?,
       posterUrl: m['poster_url'] as String?,
+      boxSetsEnabled: m['box_sets_enabled'] == true,
     );
   }).toList();
 }

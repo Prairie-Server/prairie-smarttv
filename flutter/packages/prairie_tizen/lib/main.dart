@@ -5,6 +5,7 @@ import 'package:prairie_core/prairie_core.dart';
 
 import 'platform/tv_device_name_tizen.dart';
 import 'platform/videohole_video_backend.dart';
+import 'platform/youtube_launcher_tizen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +44,7 @@ Future<void> main() async {
           ),
         ),
         tvCapabilitiesProvider.overrideWithValue(caps),
+        youTubeLauncherProvider.overrideWithValue(const TizenYouTubeLauncher()),
         clientIdentityProvider.overrideWithValue(
           ClientIdentity.smartTv(
             platformLabel: 'Tizen',

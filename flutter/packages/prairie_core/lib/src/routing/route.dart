@@ -1,3 +1,6 @@
+import 'package:prairie_core/src/api/box_sets_api.dart';
+import 'package:prairie_core/src/api/requests_api.dart';
+
 import '../models/auth.dart';
 import '../models/catalog_item.dart';
 import '../models/collection.dart';
@@ -171,6 +174,62 @@ Route? moreLikeThisRoute(DetailRoute current, CatalogItem item) {
   if (start is DetailRoute && start.contentId == item.contentId) return start;
   return DetailRoute(contentId: item.contentId, seed: item, back: start, fromMoreLikeThis: true);
 }
+
+/// A movie box set's page: its films in release order.
+class BoxSetRoute extends Route {
+  const BoxSetRoute({required this.boxSet, required this.back, this.restoreContentId});
+
+  /// The box set as the card that opened it knew it; the page reloads it.
+  final BoxSet boxSet;
+  final Route back;
+
+  /// When returning from item details, focus the card with this content id.
+  final String? restoreContentId;
+
+  BoxSetRoute withRestore(String contentId) => BoxSetRoute(boxSet: boxSet, back: back, restoreContentId: contentId);
+}
+
+/// The Requests hub: the viewer's requests, then the server's Discover
+/// rows. Opened from the profile menu.
+class RequestsRoute extends Route {
+  const RequestsRoute({required this.back, this.restoreKey});
+
+  final Route back;
+
+  /// When returning from a title or a row, focus the card (a
+  /// [RequestTitle.key]) or the row's See all card (`row:` plus its key).
+  final String? restoreKey;
+
+  RequestsRoute withRestore(String key) => RequestsRoute(back: back, restoreKey: key);
+}
+
+/// A Discover row's See all page, paged from
+/// `GET /api/v2/requests/discover/rows/{key}`.
+class RequestsRowRoute extends Route {
+  const RequestsRowRoute({required this.rowKey, required this.title, required this.back, this.restoreKey});
+
+  final String rowKey;
+  final String title;
+  final Route back;
+
+  /// When returning from a title, focus its card.
+  final String? restoreKey;
+
+  RequestsRowRoute withRestore(String key) => RequestsRowRoute(rowKey: rowKey, title: title, back: back, restoreKey: key);
+}
+
+/// A title the viewer can request (or follow the request of).
+class RequestTitleRoute extends Route {
+  const RequestTitleRoute({required this.title, required this.back});
+
+  /// The card that opened the page; the page reloads its request state.
+  final RequestTitle title;
+  final Route back;
+}
+
+/// Whether [route] is one of the requests screens, which close to Home once
+/// the server turns requests off.
+bool isRequestsRoute(Route route) => route is RequestsRoute || route is RequestsRowRoute || route is RequestTitleRoute;
 
 /// What a [CatalogPageRoute] pages through.
 enum CatalogPageSource {

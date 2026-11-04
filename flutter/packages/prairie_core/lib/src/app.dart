@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:prairie_core/src/player/theme_music.dart';
+
 import 'routing/route.dart';
 import 'routing/route_notifier.dart';
 import 'settings/profile_launch.dart';
+import 'screens/box_set_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/catalog_page_screen.dart';
 import 'screens/collection_browse_screen.dart';
@@ -20,9 +23,11 @@ import 'screens/manual_server_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/profiles_screen.dart';
+import 'screens/requests_screens.dart';
 import 'screens/search_screen.dart';
 import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
+import 'state/requests_availability_provider.dart';
 import 'state/session_provider.dart';
 import 'theme/prairie_theme.dart';
 import 'widgets/prairie_loading_indicator.dart';
@@ -98,7 +103,17 @@ class AppRoot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final route = ref.watch(routeProvider);
-    return switch (route) {
+    // Theme music belongs to title pages; anywhere else silences it.
+    ref.listen(routeProvider, (_, next) {
+      if (next is! DetailRoute) ref.read(themeMusicControllerProvider).stop();
+    });
+    // Requests turned off while a requests screen is open: back to Home.
+    ref.listen(requestsAvailableProvider, (_, next) {
+      if (next.valueOrNull == false && isRequestsRoute(ref.read(routeProvider))) {
+        ref.read(routeProvider.notifier).go(const HomeRoute());
+      }
+    });
+    final screen = switch (route) {
       ServersRoute(:final autoScan, :final back) => ServersScreen(autoScan: autoScan ?? true, canReturnHome: back == 'home'),
       ManualServerRoute(:final initialUrl) => ManualServerScreen(initialUrl: initialUrl),
       ConnectRoute(:final serverUrl, :final serverName, :final initialUsername, :final notice) => ConnectScreen(
@@ -137,10 +152,19 @@ class AppRoot extends ConsumerWidget {
         fromMoreLikeThis: fromMoreLikeThis,
       ),
       final CatalogPageRoute page => CatalogPageScreen(route: page),
+      final BoxSetRoute page => BoxSetScreen(key: ValueKey('${page.boxSet.libraryId}:${page.boxSet.id}'), route: page),
+      final RequestsRoute page => RequestsScreen(route: page),
+      final RequestsRowRoute page => RequestsRowScreen(key: ValueKey(page.rowKey), route: page),
+      final RequestTitleRoute page => RequestTitleScreen(key: ValueKey(page.title.key), route: page),
       SettingsRoute(:final back) => SettingsScreen(back: back),
       NotificationsRoute(:final back) => NotificationsScreen(back: back),
       // Keyed by launch: next/previous episode swaps in a fresh player.
       PlayerRoute(:final launch, :final back) => PlayerScreen(key: ObjectKey(launch), launch: launch, back: back),
     };
+    return Stack(
+      fit: StackFit.expand,
+      // The theme player's one-pixel surface sits under the screen.
+      children: [const ThemeMusicSurface(), screen],
+    );
   }
 }
