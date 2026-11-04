@@ -160,6 +160,14 @@ abstract class VideoBackend {
   Future<void> dispose();
 }
 
+/// A [VideoBackend] that can set its own output level, used to play theme
+/// music quietly under a title page and fade it in. Backends without it play
+/// themes at the TV's volume.
+abstract interface class VideoBackendVolume {
+  /// 0 (silent) to 1 (full).
+  Future<void> setVolume(double volume);
+}
+
 /// Supplies a fresh [VideoBackend] instance per playback session. Platform
 /// apps override [videoBackendFactoryProvider] with their real
 /// implementation (see prairie_tizen's `VideoholeVideoBackend`) — `prairie_core`

@@ -309,6 +309,7 @@ class ItemDetail {
     this.versions = const [],
     this.extras = const [],
     this.videos = const [],
+    this.themes,
   });
 
   final CatalogItem item;
@@ -339,6 +340,10 @@ class ItemDetail {
   /// official uploads first).
   final List<ItemVideo> videos;
 
+  /// The local theme music this page plays, when the profile turned it on:
+  /// the title's own, or (for a season or episode) its series'.
+  final ThemeSongSet? themes;
+
   factory ItemDetail.fromJson(Map<String, dynamic> json) => ItemDetail(
     item: catalogItemFromJson(json),
     tagline: json['tagline'] as String?,
@@ -365,6 +370,7 @@ class ItemDetail {
     versions: (json['versions'] as List<dynamic>? ?? []).map((j) => ItemVersion.fromJson(j as Map<String, dynamic>)).toList(),
     extras: (json['extras'] as List<dynamic>? ?? []).map((j) => ItemExtra.fromJson(j as Map<String, dynamic>)).toList(),
     videos: (json['videos'] as List<dynamic>? ?? []).map((j) => ItemVideo.fromJson(j as Map<String, dynamic>)).toList(),
+    themes: ThemeSongSet.fromJson(json['themes']),
   );
 }
 
@@ -508,4 +514,42 @@ Future<SeriesContext> loadSeriesContext(
           EpisodeRef(contentId: e.contentId, title: e.title, seasonNumber: e.seasonNumber!, episodeNumber: e.episodeNumber!),
   ]..sort((a, b) => a.seasonNumber != b.seasonNumber ? a.seasonNumber - b.seasonNumber : a.episodeNumber - b.episodeNumber);
   return SeriesContext(seriesId: seriesId, seriesTitle: seriesTitle, episodes: episodes);
+}
+
+/// One local theme song (v2 `ThemeSong`).
+class ThemeSong {
+  const ThemeSong({required this.id, required this.title, this.container = '', this.durationSeconds = 0});
+
+  final String id;
+  final String title;
+  final String container;
+  final int durationSeconds;
+}
+
+/// A page's theme songs and the title that owns them (v2 `ThemeSongSet`).
+/// A series' seasons and episodes share its set, so the owner is what keeps
+/// music playing from page to page.
+class ThemeSongSet {
+  const ThemeSongSet({required this.ownerId, required this.items});
+
+  final String ownerId;
+  final List<ThemeSong> items;
+
+  /// Null when [json] is absent, names no owner, or lists no songs.
+  static ThemeSongSet? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final owner = '${json['owner_id'] ?? ''}';
+    final items = [
+      for (final song in json['items'] as List<dynamic>? ?? const [])
+        if (song is Map<String, dynamic> && '${song['id'] ?? ''}'.isNotEmpty)
+          ThemeSong(
+            id: '${song['id']}',
+            title: song['title'] as String? ?? '',
+            container: song['container'] as String? ?? '',
+            durationSeconds: (song['duration_seconds'] as num?)?.toInt() ?? 0,
+          ),
+    ];
+    if (owner.isEmpty || items.isEmpty) return null;
+    return ThemeSongSet(ownerId: owner, items: items);
+  }
 }
