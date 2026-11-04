@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prairie_core/prairie_core.dart';
 import 'package:prairie_core/src/widgets/request_seasons_dialog.dart';

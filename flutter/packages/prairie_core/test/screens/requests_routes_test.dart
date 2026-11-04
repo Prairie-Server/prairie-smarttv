@@ -53,4 +53,27 @@ void main() {
     expect(restored.restoreKey, 'series:8');
     expect(_missing.key, 'movie:7');
   });
+
+  test('a brand browse page keeps its choices across a title and back', () {
+    const hub = RequestsRoute(back: HomeRoute());
+    const drama = DiscoverBrand(kind: 'genres', slug: 'drama', displayName: 'Drama', seriesSupported: true);
+    const page = BrandBrowseRoute(brand: drama, back: hub);
+    expect(isRequestsRoute(page), isTrue);
+    expect(shellTabFor(page), isNull);
+    final series = page.withChoice(mediaType: 'series');
+    expect(series.mediaType, 'series');
+    expect(series.sort, 'popularity');
+    expect(series.focusChoice, 'series');
+    final topRated = series.withChoice(sort: 'vote_average');
+    expect(topRated.mediaType, 'series');
+    expect(topRated.sort, 'vote_average');
+    expect(topRated.focusChoice, 'vote_average');
+    final restored = topRated.withRestore('series:8');
+    expect(restored.restoreKey, 'series:8');
+    expect(restored.focusChoice, isNull);
+    expect(restored.mediaType, 'series');
+    expect(restored.sort, 'vote_average');
+    expect(restored.back, same(hub));
+    expect(drama.key, 'genres:drama');
+  });
 }

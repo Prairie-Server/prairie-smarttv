@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Route;
 import 'package:prairie_core/prairie_core.dart';
 
 /// What the season picker answers: the seasons to send, or null for the
