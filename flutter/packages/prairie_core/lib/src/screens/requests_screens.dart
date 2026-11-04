@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
+import 'package:prairie_core/src/widgets/request_seasons_dialog.dart';
 
 /// Shared by the requests screens: they re-check that requests are still on
 /// when they open and when the app resumes, and close to Home once the
@@ -29,13 +30,19 @@ mixin _RequestsGuard<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (session == null) return;
     try {
       final status = await fetchRequestsStatus(ref.read(apiClientProvider), session);
-      if (status.available) return;
+      if (status.available) {
+        if (mounted) _onRequestsStatus(status);
+        return;
+      }
     } catch (e) {
       // A network hiccup isn't the server turning requests off.
       if (!isRequestsOffError(e)) return;
     }
     _closeRequests();
   }
+
+  /// The server's requests status, each time the check finds requests on.
+  void _onRequestsStatus(RequestsStatus status) {}
 
   /// After a failed call: close at once on a capability problem, otherwise
   /// ask the server whether requests are still on.
@@ -406,8 +413,11 @@ class _RequestsRowScreenState extends ConsumerState<RequestsRowScreen> with _Req
   }
 }
 
-/// One TMDB title: its poster, overview and request state, with Request,
-/// Cancel request (the viewer's own pending request) or Open in library.
+/// One TMDB title: its poster, overview and request state, with Request
+/// (picking seasons of a series where the server takes them), Request
+/// missing seasons (a series in the library), Cancel request (the viewer's
+/// own pending request), Notify me (someone else's request) or Open in
+/// library.
 class RequestTitleScreen extends ConsumerStatefulWidget {
   const RequestTitleScreen({super.key, required this.route});
 
@@ -423,11 +433,23 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
   bool _busy = false;
   String? _error;
 
+  /// Null until the status check answers; the season, follow and
+  /// missing-season actions wait for it.
+  RequestsStatus? _status;
+
   @override
   void initState() {
     super.initState();
     _load();
   }
+
+  @override
+  void _onRequestsStatus(RequestsStatus status) => setState(() => _status = status);
+
+  /// A series request picks its seasons when the server takes them and
+  /// lists them.
+  bool get _picksSeasons =>
+      _title.mediaType == 'series' && (_status?.seasonRequestsSupported ?? false) && _title.seasons.isNotEmpty;
 
   Future<void> _load() async {
     try {
@@ -451,13 +473,23 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _request() async {
+  Future<void> _request({bool missingSeasons = false}) async {
+    List<int>? seasons;
+    if (_picksSeasons) {
+      final pick = await showRequestSeasonsDialog(
+        context,
+        title: _title,
+        confirmLabel: missingSeasons ? 'Request seasons' : 'Request',
+      );
+      if (pick == null || !mounted) return;
+      seasons = pick.seasons;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await createRequest(ref.read(apiClientProvider), ref.read(sessionProvider)!, _title);
+      await createRequest(ref.read(apiClientProvider), ref.read(sessionProvider)!, _title, seasons: seasons);
       _notify('Requested “${_title.title}”');
       await _load();
     } catch (e) {
@@ -492,16 +524,51 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
     }
   }
 
+  /// Follows or stops following someone else's request for the title.
+  Future<void> _toggleFollow() async {
+    final following = _title.request.following;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final client = ref.read(apiClientProvider);
+      final session = ref.read(sessionProvider)!;
+      if (following) {
+        await unfollowRequestTitle(client, session, _title);
+        _notify("You won't be notified about “${_title.title}”");
+      } else {
+        await followRequestTitle(client, session, _title);
+        _notify("We'll let you know when “${_title.title}” is available");
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) setState(() => _error = e is ApiError ? e.message : 'Could not update notifications');
+      _afterRequestsError(e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _back() => ref.read(routeProvider.notifier).go(widget.route.back);
 
   @override
   Widget build(BuildContext context) {
     final title = _title;
+    final status = _status;
     final request = title.request;
     final requestId = request.requestId;
     final contentId = title.libraryContentId;
     final canOpen = title.inLibrary && contentId != null;
     final canCancel = requestId != null && request.requestedByViewer && request.state == 'pending';
+    // A series in the library missing seasons can still be requested.
+    final canRequestMissing =
+        canOpen &&
+        title.mediaType == 'series' &&
+        request.requestable &&
+        (status?.missingSeasonsRequestable ?? false) &&
+        _picksSeasons;
+    final canFollow = !canOpen && canFollowRequest(title, followSupported: status?.followSupported ?? false);
     final poster = tmdbImageUrl(title.posterPath, width: 'w500');
     final backdrop = tmdbImageUrl(title.backdropPath, width: 'w1280');
     final facts = [
@@ -509,7 +576,7 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
       title.mediaType == 'series' ? 'Series' : 'Movie',
       if (title.inLibrary) 'In your library' else if (request.state != null) requestStateLabel(request.state),
     ];
-    final status = switch (request) {
+    final standing = switch (request) {
       _ when title.inLibrary => null,
       RequestState(requestId: _?, requestedByViewer: true) => 'You requested this title.',
       RequestState(requestId: _?) => 'Someone has already requested this title.',
@@ -585,6 +652,12 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
                                           icon: const Icon(Icons.add),
                                           label: Text(_busy ? 'Requesting…' : 'Request'),
                                         ),
+                                      if (canRequestMissing)
+                                        OutlinedButton.icon(
+                                          onPressed: _busy || _loading ? null : () => _request(missingSeasons: true),
+                                          icon: const Icon(Icons.add),
+                                          label: Text(_busy ? 'Requesting…' : 'Request missing seasons'),
+                                        ),
                                       if (canCancel && !canOpen)
                                         OutlinedButton.icon(
                                           autofocus: !request.requestable,
@@ -592,11 +665,25 @@ class _RequestTitleScreenState extends ConsumerState<RequestTitleScreen> with _R
                                           icon: const Icon(Icons.close),
                                           label: const Text('Cancel request'),
                                         ),
+                                      if (canFollow)
+                                        OutlinedButton.icon(
+                                          autofocus: !canCancel,
+                                          onPressed: _busy || _loading ? null : _toggleFollow,
+                                          icon: Icon(request.following ? Icons.notifications_off : Icons.notifications_active),
+                                          label: Text(request.following ? 'Stop notifying me' : 'Notify me when available'),
+                                        ),
                                     ],
                                   ),
-                                  if (status != null) ...[
+                                  if (standing != null) ...[
                                     const SizedBox(height: 12),
-                                    Text(status, style: const TextStyle(color: PrairieColors.muted)),
+                                    Text(standing, style: const TextStyle(color: PrairieColors.muted)),
+                                  ],
+                                  if (canFollow && request.following) ...[
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      "You'll be notified when it's available.",
+                                      style: TextStyle(color: PrairieColors.muted),
+                                    ),
                                   ],
                                   if (_error != null) ...[
                                     const SizedBox(height: 12),
