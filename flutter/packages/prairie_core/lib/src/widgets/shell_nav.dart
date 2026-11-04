@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:prairie_core/prairie_core.dart';
 
 /// Mirrors ShellNav.tsx: brand mark, the top-bar tabs, and a profile avatar
-/// that opens the profile menu (Switch Profile, History, Settings, Switch
-/// Server, Sign Out — Android TV / tvOS order, minus the Requests and Watch
-/// Party rows this client has no pages for).
+/// that opens the profile menu (Switch Profile, History, Requests when the
+/// server has them on, Settings, Switch Server, Sign Out — Android TV / tvOS
+/// order, minus the Watch Party row this client has no pages for).
 class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   const ShellNav({
     super.key,
@@ -16,6 +16,7 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
     required this.onNavigate,
     required this.onProfiles,
     required this.onHistory,
+    this.onRequests,
     required this.onSettings,
     required this.onSwitchServer,
     required this.onSignOut,
@@ -40,6 +41,9 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
   final ValueChanged<ShellTab> onNavigate;
   final VoidCallback onProfiles;
   final VoidCallback onHistory;
+
+  /// Opens Requests; null (requests off) hides the row.
+  final VoidCallback? onRequests;
   final VoidCallback onSettings;
   final VoidCallback onSwitchServer;
   final VoidCallback onSignOut;
@@ -164,6 +168,8 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                         onProfiles();
                       case _ProfileAction.history:
                         onHistory();
+                      case _ProfileAction.requests:
+                        onRequests?.call();
                       case _ProfileAction.settings:
                         onSettings();
                       case _ProfileAction.switchServer:
@@ -180,10 +186,11 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
                     ),
                     const PopupMenuDivider(),
                     for (final action in _ProfileAction.values)
-                      PopupMenuItem(
-                        value: action,
-                        child: _MenuRow(icon: action.icon, label: action.label),
-                      ),
+                      if (action != _ProfileAction.requests || onRequests != null)
+                        PopupMenuItem(
+                          value: action,
+                          child: _MenuRow(icon: action.icon, label: action.label),
+                        ),
                   ],
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -215,10 +222,11 @@ class ShellNav extends StatelessWidget implements PreferredSizeWidget {
 }
 
 /// Profile menu rows, in menu order. Watchlist and Favorites live under
-/// For You, not here; Requests and Watch Party have no pages in this client.
+/// For You, not here; Watch Party has no pages in this client.
 enum _ProfileAction {
   profiles('Switch Profile', Icons.people_outline),
   history('History', Icons.history),
+  requests('Requests', Icons.playlist_add),
   settings('Settings', Icons.settings_outlined),
   switchServer('Switch Server', Icons.dns_outlined),
   signOut('Sign Out', Icons.logout);

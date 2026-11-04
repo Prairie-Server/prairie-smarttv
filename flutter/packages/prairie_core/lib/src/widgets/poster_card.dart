@@ -218,6 +218,7 @@ class PosterGrid extends StatefulWidget {
     required this.onOpen,
     this.restoreContentId,
     this.header,
+    this.footer,
   });
 
   final List<CatalogItem> items;
@@ -231,6 +232,10 @@ class PosterGrid extends StatefulWidget {
   /// Scrolls above the grid with it, such as Search's Box sets row or a box
   /// set page's overview.
   final Widget? header;
+
+  /// Scrolls below the grid with it, such as Search's "Available to
+  /// request" row.
+  final Widget? footer;
 
   @override
   State<PosterGrid> createState() => _PosterGridState();
@@ -295,7 +300,8 @@ class _PosterGridState extends State<PosterGrid> {
     }
 
     final header = widget.header;
-    if (header == null) {
+    final footer = widget.footer;
+    if (header == null && footer == null) {
       return GridView.builder(
         clipBehavior: Clip.none,
         padding: padding,
@@ -307,11 +313,12 @@ class _PosterGridState extends State<PosterGrid> {
     return CustomScrollView(
       clipBehavior: Clip.none,
       slivers: [
-        SliverToBoxAdapter(child: header),
+        if (header != null) SliverToBoxAdapter(child: header),
         SliverPadding(
           padding: padding,
           sliver: SliverGrid.builder(gridDelegate: gridDelegate, itemCount: widget.items.length, itemBuilder: card),
         ),
+        if (footer != null) SliverToBoxAdapter(child: footer),
       ],
     );
   }
