@@ -174,4 +174,198 @@ void main() {
     expect(tmdbImageUrl(null), isNull);
     expect(tmdbImageUrl('  '), isNull);
   });
+
+  test('status reads the season, follow and missing-season flags', () async {
+    var body =
+        '{"requests_enabled":true,"allowed":true,"state":"available","season_requests_supported":true,'
+        '"follow_supported":true,"missing_seasons_requestable":true}';
+    final client = _clientWith((_) => jsonResponse(body, 200));
+    final current = await fetchRequestsStatus(client, _session);
+    expect(current.seasonRequestsSupported, isTrue);
+    expect(current.followSupported, isTrue);
+    expect(current.missingSeasonsRequestable, isTrue);
+    body = '{"requests_enabled":true,"allowed":true,"state":"available"}';
+    final older = await fetchRequestsStatus(client, _session);
+    expect(older.seasonRequestsSupported, isFalse);
+    expect(older.followSupported, isFalse);
+    expect(older.missingSeasonsRequestable, isFalse);
+  });
+
+  test("a series page lists its seasons in order and what each can be", () async {
+    final client = _clientWith(
+      (_) => jsonResponse(
+        '{"tmdb_id":1399,"media_type":"series","title":"Show","availability":"missing",'
+        '"request":{"requestable":true},"seasons":['
+        '{"season_number":2,"episode_count":10,"availability":"partial","requested":false,"air_date":"2012-04-01"},'
+        '{"season_number":0,"episode_count":3,"availability":"missing","requested":false,"name":"Specials"},'
+        '{"season_number":1,"episode_count":1,"availability":"available","requested":false,"air_date":"2011-04-17"},'
+        '{"season_number":3,"episode_count":0,"availability":"missing","requested":false}]}',
+        200,
+      ),
+    );
+    final title = await fetchRequestTitle(client, _session, mediaType: 'series', tmdbId: 1399);
+    final now = DateTime(2026, 11, 3);
+    expect(title.seasons.map((s) => s.seasonNumber), [0, 1, 2, 3]);
+    expect(title.seasons.map((s) => s.requestable), [false, false, true, true]);
+    expect(title.seasons[1].metaLabel, '2011 · 1 episode');
+    expect(title.seasons[3].metaLabel, 'Not announced');
+    expect(title.seasons[3].label, 'Season 3');
+    expect(title.seasons[1].statusLabel(now), 'In library');
+    expect(title.seasons[2].statusLabel(now), 'Partly in library');
+    expect(title.seasons[3].statusLabel(now), 'Not announced');
+    expect(defaultRequestSeasons(title.seasons, now), [2]);
+    expect(title.withRequest(const RequestState()).seasons, hasLength(4));
+  });
+
+  test('an untouched season pick leaves the choice to the server when it has one', () {
+    final now = DateTime(2026, 11, 3);
+    const aired = RequestSeason(seasonNumber: 1, episodeCount: 8, airDate: '2020-01-01');
+    const upcoming = RequestSeason(seasonNumber: 2, episodeCount: 8, airDate: '2027-01-01');
+    const missing = RequestTitle(tmdbId: 1, mediaType: 'series', title: 'S', seasons: [aired, upcoming]);
+    expect(requestSeasonsToSend(title: missing, picked: const [1], untouched: true, now: now), isNull);
+    expect(requestSeasonsToSend(title: missing, picked: const [2, 1, 2], untouched: false, now: now), [1, 2]);
+    // In the library with only an upcoming season left, the viewer has to name it.
+    const inLibrary = RequestTitle(
+      tmdbId: 1,
+      mediaType: 'series',
+      title: 'S',
+      availability: 'available',
+      seasons: [RequestSeason(seasonNumber: 1, episodeCount: 8, airDate: '2020-01-01', availability: 'available'), upcoming],
+    );
+    expect(requestSeasonsToSend(title: inLibrary, picked: const [], untouched: true, now: now), isEmpty);
+    expect(requestSeasonsToSend(title: inLibrary, picked: const [0, 2], untouched: false, now: now), [2]);
+  });
+
+  test('a series request names its picked seasons; a movie never does', () async {
+    final sent = <Object?>[];
+    final client = _clientWith((o) {
+      sent.add(o.data);
+      return jsonResponse('{"id":"r1","media_type":"series","tmdb_id":5,"title":"S","state":"pending"}', 201);
+    });
+    const series = RequestTitle(tmdbId: 5, mediaType: 'series', title: 'S');
+    await createRequest(client, _session, series, seasons: const [2, 3]);
+    await createRequest(client, _session, series);
+    await createRequest(client, _session, const RequestTitle(tmdbId: 6, mediaType: 'movie', title: 'M'), seasons: const [1]);
+    expect((sent[0]! as Map)['seasons'], [2, 3]);
+    expect((sent[1]! as Map).containsKey('seasons'), isFalse);
+    expect((sent[2]! as Map).containsKey('seasons'), isFalse);
+  });
+
+  test("following someone else's request puts and deletes the follow", () async {
+    final seen = <String>[];
+    final client = _clientWith((o) {
+      seen.add('${o.method} ${o.uri.path}');
+      return o.method == 'PUT'
+          ? jsonResponse('{"requestable":false,"reason":"already_requested","request_id":"r9","following":true}', 200)
+          : ResponseBody.fromString('', 204);
+    });
+    const title = RequestTitle(tmdbId: 1399, mediaType: 'series', title: 'S');
+    final state = await followRequestTitle(client, _session, title);
+    expect(state.following, isTrue);
+    await unfollowRequestTitle(client, _session, title);
+    expect(seen, ['PUT /api/v2/requests/follows/series/1399', 'DELETE /api/v2/requests/follows/series/1399']);
+  });
+
+  test("only someone else's open request can be followed", () {
+    RequestTitle title({
+      bool requestable = false,
+      bool mine = false,
+      String? reason = 'already_requested',
+      String availability = 'missing',
+    }) => RequestTitle(
+      tmdbId: 1,
+      mediaType: 'movie',
+      title: 'M',
+      availability: availability,
+      request: RequestState(requestable: requestable, requestedByViewer: mine, reason: reason, requestId: 'r1', state: 'pending'),
+    );
+    expect(canFollowRequest(title(), followSupported: true), isTrue);
+    expect(canFollowRequest(title(), followSupported: false), isFalse);
+    expect(canFollowRequest(title(mine: true), followSupported: true), isFalse);
+    expect(canFollowRequest(title(requestable: true), followSupported: true), isFalse);
+    expect(canFollowRequest(title(reason: 'requests_disabled'), followSupported: true), isFalse);
+    expect(canFollowRequest(title(availability: 'available'), followSupported: true), isFalse);
+  });
+
+  test('the discover layout keeps brand rows in place with their cards', () async {
+    final paths = <String>[];
+    final client = _clientWith((o) {
+      paths.add(o.uri.path);
+      return switch (o.uri.path) {
+        '/api/v2/requests/discover' => jsonResponse(
+          '{"items":[${_section('trending_movies', 'Trending Movies', [1, 2])}],'
+          '"row_order":['
+          '{"key":"studios","title":"Studios","type":"studios"},'
+          '{"key":"trending_movies","title":"Trending Movies","type":"tmdb_chart"},'
+          '{"key":"networks","title":"","type":"networks"},'
+          '{"key":"genres","title":"Genres","type":"genres"},'
+          '{"key":"x","title":"X","type":"future_kind"}]}',
+          200,
+        ),
+        '/api/v2/requests/discover/studios' => jsonResponse(
+          '{"items":[{"slug":"marvel-studios","display_name":"Marvel Studios","gradient_from":"#1a1a2e",'
+          '"gradient_to":"#16213e","logo_url":null,"tmdb_id":420},{"slug":"","display_name":"Nameless"}]}',
+          200,
+        ),
+        '/api/v2/requests/discover/networks' => jsonResponse(
+          '{"items":[{"slug":"hbo","display_name":"HBO","logo_url":"https://image.tmdb.org/t/p/w300/hbo.png"}]}',
+          200,
+        ),
+        _ => jsonResponse('{"error":"boom"}', 500),
+      };
+    });
+    final rows = await fetchDiscoverLayout(client, _session);
+    // The genres list failed, so its row is left out; the page still shows.
+    expect(rows.map((r) => r.key), ['studios', 'trending_movies', 'networks']);
+    final studios = rows.first as DiscoverBrandRow;
+    expect(studios.brands.map((b) => b.slug), ['marvel-studios']);
+    expect(studios.brands.single.logoUrl, isNull);
+    expect(studios.brands.single.mediaTypes, ['movie']);
+    expect((rows[1] as DiscoverTitleRow).section.results, hasLength(2));
+    final networks = rows[2] as DiscoverBrandRow;
+    expect(networks.title, 'Networks');
+    expect(networks.brands.single.mediaTypes, ['series']);
+    expect(paths.where((p) => p == '/api/v2/requests/discover/studios'), hasLength(1));
+  });
+
+  test('a layout without row_order has title rows only', () async {
+    final client = _clientWith((_) => jsonResponse('{"items":[${_section('b', 'B', [1])}]}', 200));
+    final rows = await fetchDiscoverLayout(client, _session);
+    expect(rows.map((r) => r.key), ['b']);
+    expect(rows.single, isA<DiscoverTitleRow>());
+  });
+
+  test('brand browse pages ask by kind, slug, sort and page', () async {
+    final seen = <Uri>[];
+    final client = _clientWith((o) {
+      seen.add(o.uri);
+      return jsonResponse(
+        '{"kind":"genre","slug":"drama","display_name":"Drama","media_type":"series","sort":"vote_average",'
+        '"page":2,"total_pages":2,"results":[${_title(9, type: 'series')}]}',
+        200,
+      );
+    });
+    const genre = DiscoverBrand(kind: 'genres', slug: 'drama', displayName: 'Drama', seriesSupported: true);
+    expect(genre.mediaTypes, ['movie', 'series']);
+    final page = await browseDiscoverBrand(client, _session, genre, mediaType: 'series', sort: 'vote_average', page: 2);
+    expect(seen.last.path, '/api/v2/requests/discover/browse/genre/drama');
+    expect(seen.last.queryParameters, {'media_type': 'series', 'sort': 'vote_average', 'page': '2'});
+    expect(page.results.single.mediaType, 'series');
+    expect(page.followingPage, isNull);
+
+    await browseDiscoverBrand(client, _session, const DiscoverBrand(kind: 'studios', slug: 'a24', displayName: 'A24'));
+    expect(seen.last.path, '/api/v2/requests/discover/browse/studio/a24');
+    expect(seen.last.queryParameters, {'sort': 'popularity', 'page': '1'});
+    await browseDiscoverBrand(client, _session, const DiscoverBrand(kind: 'networks', slug: 'hbo', displayName: 'HBO'));
+    expect(seen.last.path, '/api/v2/requests/discover/browse/network/hbo');
+    expect(const DiscoverBrand(kind: 'genres', slug: 'x', displayName: 'X').mediaTypes, ['movie']);
+  });
+
+  test('brand colors read as opaque ARGB', () {
+    expect(parseBrandColor('#1a1a2e'), 0xFF1A1A2E);
+    expect(parseBrandColor('16213e'), 0xFF16213E);
+    expect(parseBrandColor('#fff'), isNull);
+    expect(parseBrandColor(null), isNull);
+    expect(parseBrandColor('#zzzzzz'), isNull);
+  });
 }

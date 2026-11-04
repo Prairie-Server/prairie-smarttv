@@ -156,6 +156,10 @@ class AppRoot extends ConsumerWidget {
       final RequestsRoute page => RequestsScreen(route: page),
       final RequestsRowRoute page => RequestsRowScreen(key: ValueKey(page.rowKey), route: page),
       final RequestTitleRoute page => RequestTitleScreen(key: ValueKey(page.title.key), route: page),
+      final BrandBrowseRoute page => BrandBrowseScreen(
+        key: ValueKey('${page.brand.key}:${page.mediaType}:${page.sort}'),
+        route: page,
+      ),
       SettingsRoute(:final back) => SettingsScreen(back: back),
       NotificationsRoute(:final back) => NotificationsScreen(back: back),
       // Keyed by launch: next/previous episode swaps in a fresh player.

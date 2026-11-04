@@ -25,6 +25,9 @@ class RequestsStatus {
     this.allowed = false,
     this.state = '',
     this.discoverRowsSupported = false,
+    this.seasonRequestsSupported = false,
+    this.followSupported = false,
+    this.missingSeasonsRequestable = false,
   });
 
   final bool requestsEnabled;
@@ -36,6 +39,16 @@ class RequestsStatus {
   /// The Discover page follows the admin's row layout (`row_order`).
   final bool discoverRowsSupported;
 
+  /// A series request may name its seasons (`seasons` on create).
+  final bool seasonRequestsSupported;
+
+  /// The server takes follows of someone else's request
+  /// (`PUT`/`DELETE /api/v2/requests/follows/...`).
+  final bool followSupported;
+
+  /// A series in the library may still be requested for its missing seasons.
+  final bool missingSeasonsRequestable;
+
   /// Android's `RequestsFeatureStatus.isEnabled`.
   bool get available => requestsEnabled && allowed && state == 'available';
 
@@ -44,6 +57,9 @@ class RequestsStatus {
     allowed: json['allowed'] == true,
     state: json['state'] as String? ?? '',
     discoverRowsSupported: json['discover_rows_supported'] == true,
+    seasonRequestsSupported: json['season_requests_supported'] == true,
+    followSupported: json['follow_supported'] == true,
+    missingSeasonsRequestable: json['missing_seasons_requestable'] == true,
   );
 }
 
@@ -119,6 +135,7 @@ class RequestTitle {
     this.availability = 'missing',
     this.libraryContentId,
     this.request = const RequestState(),
+    this.seasons = const [],
   });
 
   final int tmdbId;
@@ -140,6 +157,9 @@ class RequestTitle {
   final String? libraryContentId;
   final RequestState request;
 
+  /// A series' seasons, on its request page only (empty elsewhere).
+  final List<RequestSeason> seasons;
+
   bool get inLibrary => availability == 'available';
 
   /// Discover rows and search can hold the same title twice (as a movie
@@ -157,6 +177,10 @@ class RequestTitle {
     availability: json['availability'] as String? ?? 'missing',
     libraryContentId: _text(json['library_content_id']),
     request: RequestState.fromJson(json['request']),
+    seasons: [
+      for (final season in json['seasons'] is List ? json['seasons'] as List : const [])
+        if (season is Map<String, dynamic>) RequestSeason.fromJson(season),
+    ]..sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber)),
   );
 
   RequestTitle withRequest(RequestState next) => RequestTitle(
@@ -170,7 +194,116 @@ class RequestTitle {
     availability: availability,
     libraryContentId: libraryContentId,
     request: next,
+    seasons: seasons,
   );
+}
+
+/// One season of a series on its request page (v2 `RequestMediaSeason`).
+class RequestSeason {
+  const RequestSeason({
+    required this.seasonNumber,
+    this.episodeCount = 0,
+    this.availability = 'missing',
+    this.requested = false,
+    this.name,
+    this.airDate,
+  });
+
+  final int seasonNumber;
+
+  /// Episodes TMDB lists, aired or not.
+  final int episodeCount;
+
+  /// `missing`, `partial` or `available` (every aired episode is in).
+  final String availability;
+
+  /// The title's active request covers this season.
+  final bool requested;
+  final String? name;
+
+  /// `YYYY-MM-DD`.
+  final String? airDate;
+
+  /// A new request can still ask for it: not complete, not already asked
+  /// for, and not specials (the server refuses season 0).
+  bool get requestable => seasonNumber >= 1 && availability != 'available' && !requested;
+
+  /// Has episodes and first aired on or before [now]'s date.
+  bool hasAired(DateTime now) {
+    final date = airDate ?? '';
+    if (episodeCount <= 0 || date.isEmpty) return false;
+    return date.compareTo(now.toIso8601String().substring(0, 10)) <= 0;
+  }
+
+  String get label => name ?? (seasonNumber == 0 ? 'Specials' : 'Season $seasonNumber');
+
+  /// "2022 · 9 episodes", or "Not announced". The web's
+  /// `formatRequestSeasonMeta`.
+  String get metaLabel {
+    final date = airDate ?? '';
+    final parts = [
+      if (date.length >= 4) date.substring(0, 4),
+      if (episodeCount > 0) '$episodeCount ${episodeCount == 1 ? 'episode' : 'episodes'}',
+    ];
+    return parts.isEmpty ? 'Not announced' : parts.join(' · ');
+  }
+
+  /// Where a season stands when that matters to the pick: in the library,
+  /// requested, part in, or not aired; null for an aired missing season.
+  String? statusLabel(DateTime now) {
+    if (availability == 'available') return 'In library';
+    if (requested) return 'Requested';
+    if (availability == 'partial') return 'Partly in library';
+    if (hasAired(now)) return null;
+    return airDate != null && episodeCount > 0 ? 'Not aired yet' : 'Not announced';
+  }
+
+  factory RequestSeason.fromJson(Map<String, dynamic> json) => RequestSeason(
+    seasonNumber: _int(json['season_number']) ?? 0,
+    episodeCount: _int(json['episode_count']) ?? 0,
+    availability: json['availability'] as String? ?? 'missing',
+    requested: json['requested'] == true,
+    name: _text(json['name']),
+    airDate: _text(json['air_date']),
+  );
+}
+
+/// The seasons a series request asks for unless the viewer changes them:
+/// every aired season not yet in the library, as the server picks when
+/// given none. The web's `defaultRequestSeasons`.
+List<int> defaultRequestSeasons(Iterable<RequestSeason> seasons, DateTime now) => [
+  for (final season in seasons)
+    if (season.requestable && season.hasAired(now)) season.seasonNumber,
+];
+
+/// The `seasons` to send for a pick: null leaves the choice to the server,
+/// which it may when the viewer kept the default pick and the server has
+/// something to choose (an aired missing season, or a series outside the
+/// library, requested whole). Season 0 is never sent; the server refuses
+/// it. The web's `RequestSeasonsDialog` submit.
+List<int>? requestSeasonsToSend({
+  required RequestTitle title,
+  required Iterable<int> picked,
+  required bool untouched,
+  required DateTime now,
+}) {
+  final defaults = defaultRequestSeasons(title.seasons, now);
+  if (untouched && (title.seasons.isEmpty || defaults.isNotEmpty || !title.inLibrary)) return null;
+  return [
+    for (final number in picked.toSet().toList()..sort())
+      if (number >= 1) number,
+  ];
+}
+
+/// Someone else's open request the viewer could follow (to hear when the
+/// title lands) instead of requesting it again. Not for the requester, a
+/// title in the library, or one that can be requested. Android's
+/// `RequestDetailUiState.canFollow`.
+bool canFollowRequest(RequestTitle title, {required bool followSupported}) {
+  if (!followSupported) return false;
+  final request = title.request;
+  if (request.requestable || request.requestedByViewer || request.reason != 'already_requested') return false;
+  return !title.inLibrary && request.requestId != null;
 }
 
 List<RequestTitle> _titles(Object? json) => [
@@ -231,35 +364,193 @@ class DiscoverSection {
   );
 }
 
-/// Row types that list titles. Brand rows (`studios`, `networks`, `genres`)
-/// and types this client doesn't know are left out.
+/// Row types that list titles. Brand rows ([discoverBrandKinds]) and types
+/// this client doesn't know are left out.
 const discoverTitleRowTypes = {'tmdb_chart', 'tmdb_discover', 'tmdb_list', 'mdblist'};
+
+/// Brand row types: each draws the cards of its brand list
+/// (`GET /api/v2/requests/discover/{kind}`).
+const discoverBrandKinds = {'studios', 'networks', 'genres'};
+
+/// One row of the Discover page, in the admin's order.
+sealed class DiscoverRow {
+  const DiscoverRow();
+
+  String get title;
+
+  /// Stable across loads; a See all page returns focus by it.
+  String get key;
+}
+
+/// A row of titles.
+class DiscoverTitleRow extends DiscoverRow {
+  const DiscoverTitleRow(this.section);
+
+  final DiscoverSection section;
+
+  @override
+  String get title => section.title;
+
+  @override
+  String get key => section.key;
+}
+
+/// A row of studio, network or genre cards, each opening its browse page.
+class DiscoverBrandRow extends DiscoverRow {
+  const DiscoverBrandRow({required this.kind, required this.title, required this.brands});
+
+  /// `studios`, `networks` or `genres`.
+  final String kind;
+  @override
+  final String title;
+  final List<DiscoverBrand> brands;
+
+  @override
+  String get key => kind;
+}
+
+/// A studio, network or genre on the Discover page (v2 `DiscoverBrand`).
+class DiscoverBrand {
+  const DiscoverBrand({
+    required this.kind,
+    required this.slug,
+    required this.displayName,
+    this.gradientFrom,
+    this.gradientTo,
+    this.logoUrl,
+    this.seriesSupported = false,
+  });
+
+  /// `studios`, `networks` or `genres`: the list it came from.
+  final String kind;
+  final String slug;
+  final String displayName;
+
+  /// `#rrggbb` card colors; see [parseBrandColor].
+  final String? gradientFrom;
+  final String? gradientTo;
+  final String? logoUrl;
+
+  /// A genre that can also be browsed for series.
+  final bool seriesSupported;
+
+  /// The media types its browse page offers: a studio's movies, a network's
+  /// series, a genre's movies and, when supported, its series.
+  List<String> get mediaTypes => switch (kind) {
+    'networks' => const ['series'],
+    'genres' when seriesSupported => const ['movie', 'series'],
+    _ => const ['movie'],
+  };
+
+  /// Keys a card and its browse page.
+  String get key => '$kind:$slug';
+
+  factory DiscoverBrand.fromJson(String kind, Map<String, dynamic> json) => DiscoverBrand(
+    kind: kind,
+    slug: json['slug'] as String? ?? '',
+    displayName: json['display_name'] as String? ?? '',
+    gradientFrom: _text(json['gradient_from']),
+    gradientTo: _text(json['gradient_to']),
+    logoUrl: _text(json['logo_url']),
+    seriesSupported: json['series_supported'] == true,
+  );
+}
+
+/// A `#rrggbb` (or `rrggbb`) brand color as an opaque ARGB value, or null.
+int? parseBrandColor(String? hex) {
+  var digits = hex?.trim() ?? '';
+  if (digits.startsWith('#')) digits = digits.substring(1);
+  if (digits.length != 6) return null;
+  final value = int.tryParse(digits, radix: 16);
+  return value == null ? null : 0xFF000000 | value;
+}
+
+const _brandRowTitles = {'studios': 'Studios', 'networks': 'Networks', 'genres': 'Genres'};
+
+/// `GET /api/v2/requests/discover/{kind}`: the studios, networks or genres a
+/// brand row shows.
+Future<List<DiscoverBrand>> fetchDiscoverBrands(ApiClient client, PrairieSession session, String kind) async {
+  final json = await client.request<Map<String, dynamic>>(
+    _sessionOptions(session),
+    '/api/v2/requests/discover/${Uri.encodeComponent(kind)}',
+  );
+  return [
+    for (final item in json['items'] as List<dynamic>? ?? const [])
+      if (item is Map<String, dynamic>) DiscoverBrand.fromJson(kind, item),
+  ].where((brand) => brand.slug.isNotEmpty && brand.displayName.isNotEmpty).toList();
+}
+
+List<DiscoverSection> _discoverSections(Map<String, dynamic> json) => [
+  for (final item in json['items'] as List<dynamic>? ?? const [])
+    if (item is Map<String, dynamic>) DiscoverSection.fromJson(item),
+].where((section) => section.key.isNotEmpty && section.results.isNotEmpty).toList();
+
+/// The section at [row]'s key under the layout's title (the admin's; the
+/// section's may be older), or null when the row has no titles.
+DiscoverSection? _sectionForRow(Map<String, DiscoverSection> byKey, Map<String, dynamic> row) {
+  final section = byKey[row['key']];
+  if (section == null) return null;
+  return DiscoverSection(
+    key: section.key,
+    title: _text(row['title']) ?? section.title,
+    results: section.results,
+    page: section.page,
+    totalPages: section.totalPages,
+    nextPage: section.nextPage,
+  );
+}
 
 /// `GET /api/v2/requests/discover`: the title rows with titles, in the
 /// admin's `row_order`. A server without `row_order` keeps its own order.
 Future<List<DiscoverSection>> fetchDiscoverRows(ApiClient client, PrairieSession session) async {
   final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v2/requests/discover');
-  final sections = [
-    for (final item in json['items'] as List<dynamic>? ?? const [])
-      if (item is Map<String, dynamic>) DiscoverSection.fromJson(item),
-  ].where((section) => section.key.isNotEmpty && section.results.isNotEmpty).toList();
+  final sections = _discoverSections(json);
   final order = json['row_order'];
   if (order is! List || order.isEmpty) return sections;
   final byKey = {for (final section in sections) section.key: section};
   return [
     for (final row in order)
       if (row is Map<String, dynamic> && discoverTitleRowTypes.contains(row['type']))
-        if (byKey[row['key']] case final section?)
-          // The layout's title is the admin's; the section's may be older.
-          DiscoverSection(
-            key: section.key,
-            title: _text(row['title']) ?? section.title,
-            results: section.results,
-            page: section.page,
-            totalPages: section.totalPages,
-            nextPage: section.nextPage,
-          ),
+        ?_sectionForRow(byKey, row),
   ];
+}
+
+/// The whole Discover page in the admin's `row_order`: title rows with
+/// titles, and brand rows with their cards (read alongside). A brand list
+/// that fails or comes back empty drops its row; the page still shows. A
+/// server without `row_order` has title rows only.
+Future<List<DiscoverRow>> fetchDiscoverLayout(ApiClient client, PrairieSession session) async {
+  final json = await client.request<Map<String, dynamic>>(_sessionOptions(session), '/api/v2/requests/discover');
+  final sections = _discoverSections(json);
+  final order = json['row_order'];
+  if (order is! List || order.isEmpty) return [for (final section in sections) DiscoverTitleRow(section)];
+  final byKey = {for (final section in sections) section.key: section};
+  final rows = [
+    for (final row in order)
+      if (row is Map<String, dynamic>) row,
+  ];
+  // Read each brand list once, all at once.
+  final kinds = {
+    for (final row in rows)
+      if (discoverBrandKinds.contains(row['type'])) row['type'] as String,
+  };
+  final lists = await Future.wait([
+    for (final kind in kinds)
+      fetchDiscoverBrands(client, session, kind).catchError((Object _) => const <DiscoverBrand>[]),
+  ]);
+  final brands = Map.fromIterables(kinds, lists);
+  DiscoverRow? layoutRow(Map<String, dynamic> row) {
+    final type = row['type'];
+    if (discoverTitleRowTypes.contains(type)) {
+      final section = _sectionForRow(byKey, row);
+      return section == null ? null : DiscoverTitleRow(section);
+    }
+    final list = brands[type];
+    if (type is! String || list == null || list.isEmpty) return null;
+    return DiscoverBrandRow(kind: type, title: _text(row['title']) ?? _brandRowTitles[type]!, brands: list);
+  }
+
+  return [for (final row in rows) ?layoutRow(row)];
 }
 
 /// `GET /api/v2/requests/discover/rows/{key}?page=`: a row's See all page.
@@ -269,6 +560,71 @@ Future<DiscoverSection> fetchDiscoverRow(ApiClient client, PrairieSession sessio
     '/api/v2/requests/discover/rows/${Uri.encodeComponent(key)}?page=$page',
   );
   return DiscoverSection.fromJson(json);
+}
+
+/// Brand browse orders, as the server names them, with their labels.
+const brandBrowseSorts = {'popularity': 'Popular', 'vote_average': 'Top rated', 'release_date': 'Newest'};
+
+/// One page of a studio's, network's or genre's titles (v2
+/// `DiscoverBrowsePage`).
+class DiscoverBrowsePage {
+  const DiscoverBrowsePage({
+    required this.results,
+    this.displayName = '',
+    this.mediaType = 'movie',
+    this.sort = 'popularity',
+    this.page = 1,
+    this.totalPages = 1,
+  });
+
+  final List<RequestTitle> results;
+  final String displayName;
+  final String mediaType;
+  final String sort;
+  final int page;
+  final int totalPages;
+
+  /// The page after this one, or null at the end.
+  int? get followingPage => page + 1 > totalPages ? null : page + 1;
+
+  factory DiscoverBrowsePage.fromJson(Map<String, dynamic> json) => DiscoverBrowsePage(
+    results: _titles(json['results']),
+    displayName: json['display_name'] as String? ?? '',
+    mediaType: json['media_type'] as String? ?? 'movie',
+    sort: json['sort'] as String? ?? 'popularity',
+    page: _int(json['page']) ?? 1,
+    totalPages: _int(json['total_pages']) ?? 1,
+  );
+}
+
+/// `GET /api/v2/requests/discover/browse/{studio|network|genre}/{slug}`: a
+/// page of [brand]'s titles in [sort] order. [mediaType] picks a genre's
+/// movies or series; a studio is movies and a network series either way.
+Future<DiscoverBrowsePage> browseDiscoverBrand(
+  ApiClient client,
+  PrairieSession session,
+  DiscoverBrand brand, {
+  String? mediaType,
+  String sort = 'popularity',
+  int page = 1,
+}) async {
+  final segment = switch (brand.kind) {
+    'studios' => 'studio',
+    'networks' => 'network',
+    _ => 'genre',
+  };
+  final params = Uri(
+    queryParameters: {
+      if (brand.kind == 'genres') 'media_type': mediaType ?? brand.mediaTypes.first,
+      'sort': sort,
+      'page': '$page',
+    },
+  ).query;
+  final json = await client.request<Map<String, dynamic>>(
+    _sessionOptions(session),
+    '/api/v2/requests/discover/browse/$segment/${Uri.encodeComponent(brand.slug)}?$params',
+  );
+  return DiscoverBrowsePage.fromJson(json);
 }
 
 /// `GET /api/v2/requests/search?q=`: TMDB titles matching [query], in- and
@@ -368,8 +724,15 @@ Future<List<MediaRequest>> fetchMyRequests(ApiClient client, PrairieSession sess
   ].where((request) => request.id.isNotEmpty && request.tmdbId > 0).toList();
 }
 
-/// `POST /api/v2/requests`: requests [title] (a whole series for a series).
-Future<MediaRequest> createRequest(ApiClient client, PrairieSession session, RequestTitle title) async {
+/// `POST /api/v2/requests`: requests [title]. For a series, [seasons] names
+/// the seasons; without it the server picks every aired season not yet
+/// complete (the whole series before one has aired).
+Future<MediaRequest> createRequest(
+  ApiClient client,
+  PrairieSession session,
+  RequestTitle title, {
+  List<int>? seasons,
+}) async {
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
     '/api/v2/requests',
@@ -382,6 +745,7 @@ Future<MediaRequest> createRequest(ApiClient client, PrairieSession session, Req
       'poster_path': ?title.posterPath,
       'backdrop_path': ?title.backdropPath,
       'overview': ?title.overview,
+      if (title.mediaType == 'series' && seasons != null) 'seasons': seasons,
     },
   );
   return MediaRequest.fromJson(json);
@@ -393,3 +757,23 @@ Future<void> cancelRequest(ApiClient client, PrairieSession session, String requ
   '/api/v2/requests/${Uri.encodeComponent(requestId)}/cancel',
   method: 'POST',
 );
+
+/// `PUT /api/v2/requests/follows/{media_type}/{tmdb_id}`: tell the viewer
+/// when [title] lands. Answers the viewer's new standing with it.
+Future<RequestState> followRequestTitle(ApiClient client, PrairieSession session, RequestTitle title) async {
+  final json = await client.request<dynamic>(
+    _sessionOptions(session),
+    '/api/v2/requests/follows/${Uri.encodeComponent(title.mediaType)}/${title.tmdbId}',
+    method: 'PUT',
+  );
+  return RequestState.fromJson(json);
+}
+
+/// `DELETE /api/v2/requests/follows/{media_type}/{tmdb_id}`: stop telling the
+/// viewer.
+Future<void> unfollowRequestTitle(ApiClient client, PrairieSession session, RequestTitle title) =>
+    client.request<dynamic>(
+      _sessionOptions(session),
+      '/api/v2/requests/follows/${Uri.encodeComponent(title.mediaType)}/${title.tmdbId}',
+      method: 'DELETE',
+    );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prairie_core/prairie_core.dart';
+import 'package:prairie_core/src/lib/detail_metadata.dart';
 
 /// One movie box set: its overview and facts over its films in release
 /// order (`GET /api/v2/catalog/box-sets/{id}`). A set the library turned off,
@@ -20,6 +21,7 @@ class _BoxSetScreenState extends ConsumerState<BoxSetScreen> {
   List<CatalogItem> _items = [];
   bool _loading = true;
   bool _gone = false;
+  bool _starting = false;
   String? _error;
 
   @override
@@ -57,15 +59,62 @@ class _BoxSetScreenState extends ConsumerState<BoxSetScreen> {
 
   void _back() => ref.read(routeProvider.notifier).go(widget.route.back);
 
+  /// Plays [movie] where the profile left it, like a title page's Play.
+  Future<void> _play(CatalogItem movie) async {
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
+    try {
+      final watch = await fetchWatchDetail(ref.read(apiClientProvider), ref.read(sessionProvider)!, movie.contentId);
+      final fileId = selectPlaybackFileId(watch);
+      if (fileId == null) throw StateError('No playable file for this title');
+      final start = movie.userState?.played == true
+          ? 0.0
+          : resumePositionSeconds(watch.userData?.positionSeconds, watch.userData?.durationSeconds);
+      if (!mounted) return;
+      // The TV has one decoder: a theme still playing lets it go first.
+      await ref.read(themeMusicControllerProvider).stop();
+      if (!mounted) return;
+      ref.read(routeProvider.notifier).go(
+        PlayerRoute(
+          launch: PlayerLaunch(
+            fileId: fileId,
+            title: watch.title.isNotEmpty ? watch.title : movie.title,
+            contentId: movie.contentId,
+            startPositionSeconds: start,
+            watch: watch,
+          ),
+          back: widget.route.withRestore(movie.contentId),
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _error = e is ApiError ? e.message : 'Could not start playback');
+    } finally {
+      if (mounted) setState(() => _starting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider)!;
     final overview = _boxSet.overview?.trim() ?? '';
+    final next = boxSetNextMovie(_items);
     final header = Padding(
       padding: const EdgeInsets.fromLTRB(28, 8, 28, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (next != null) ...[
+            ElevatedButton.icon(
+              // Back from a film focuses its card instead.
+              autofocus: widget.route.restoreContentId == null,
+              onPressed: _starting ? null : () => _play(next),
+              icon: const Icon(Icons.play_arrow),
+              label: Text(_starting ? 'Starting…' : boxSetPlayLabel(_boxSet, next)),
+            ),
+            const SizedBox(height: 16),
+          ],
           Text(_boxSet.heroFacts.join(' · '), style: const TextStyle(color: PrairieColors.muted, fontSize: 14)),
           if (overview.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -113,6 +162,7 @@ class _BoxSetScreenState extends ConsumerState<BoxSetScreen> {
                       serverUrl: session.serverUrl,
                       restoreContentId: widget.route.restoreContentId,
                       header: header,
+                      autofocusFirst: false,
                       onOpen: (item) => ref.read(routeProvider.notifier).go(
                         DetailRoute(contentId: item.contentId, seed: item, back: widget.route.withRestore(item.contentId)),
                       ),

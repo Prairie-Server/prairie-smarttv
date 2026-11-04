@@ -227,9 +227,44 @@ class RequestTitleRoute extends Route {
   final Route back;
 }
 
+/// A studio's, network's or genre's titles from a Discover brand row. Keeps
+/// the chosen media type and order, so a return from a title finds them.
+class BrandBrowseRoute extends Route {
+  const BrandBrowseRoute({required this.brand, required this.back, this.mediaType, this.sort = 'popularity', this.restoreKey, this.focusChoice});
+
+  final DiscoverBrand brand;
+  final Route back;
+
+  /// `movie` or `series`; null for the brand's first ([DiscoverBrand.mediaTypes]).
+  final String? mediaType;
+
+  /// A [brandBrowseSorts] key.
+  final String sort;
+
+  /// When returning from a title, focus its card.
+  final String? restoreKey;
+
+  /// After picking a media type or order, focus stays on that choice (its
+  /// value) instead of moving to the first card.
+  final String? focusChoice;
+
+  BrandBrowseRoute withRestore(String key) =>
+      BrandBrowseRoute(brand: brand, back: back, mediaType: mediaType, sort: sort, restoreKey: key);
+
+  /// The same page in another media type or order, from its first page.
+  BrandBrowseRoute withChoice({String? mediaType, String? sort}) => BrandBrowseRoute(
+    brand: brand,
+    back: back,
+    mediaType: mediaType ?? this.mediaType,
+    sort: sort ?? this.sort,
+    focusChoice: mediaType ?? sort,
+  );
+}
+
 /// Whether [route] is one of the requests screens, which close to Home once
 /// the server turns requests off.
-bool isRequestsRoute(Route route) => route is RequestsRoute || route is RequestsRowRoute || route is RequestTitleRoute;
+bool isRequestsRoute(Route route) =>
+    route is RequestsRoute || route is RequestsRowRoute || route is RequestTitleRoute || route is BrandBrowseRoute;
 
 /// What a [CatalogPageRoute] pages through.
 enum CatalogPageSource {
