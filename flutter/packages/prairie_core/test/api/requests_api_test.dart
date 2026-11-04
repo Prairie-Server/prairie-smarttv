@@ -286,4 +286,86 @@ void main() {
     expect(canFollowRequest(title(reason: 'requests_disabled'), followSupported: true), isFalse);
     expect(canFollowRequest(title(availability: 'available'), followSupported: true), isFalse);
   });
+
+  test('the discover layout keeps brand rows in place with their cards', () async {
+    final paths = <String>[];
+    final client = _clientWith((o) {
+      paths.add(o.uri.path);
+      return switch (o.uri.path) {
+        '/api/v2/requests/discover' => jsonResponse(
+          '{"items":[${_section('trending_movies', 'Trending Movies', [1, 2])}],'
+          '"row_order":['
+          '{"key":"studios","title":"Studios","type":"studios"},'
+          '{"key":"trending_movies","title":"Trending Movies","type":"tmdb_chart"},'
+          '{"key":"networks","title":"","type":"networks"},'
+          '{"key":"genres","title":"Genres","type":"genres"},'
+          '{"key":"x","title":"X","type":"future_kind"}]}',
+          200,
+        ),
+        '/api/v2/requests/discover/studios' => jsonResponse(
+          '{"items":[{"slug":"marvel-studios","display_name":"Marvel Studios","gradient_from":"#1a1a2e",'
+          '"gradient_to":"#16213e","logo_url":null,"tmdb_id":420},{"slug":"","display_name":"Nameless"}]}',
+          200,
+        ),
+        '/api/v2/requests/discover/networks' => jsonResponse(
+          '{"items":[{"slug":"hbo","display_name":"HBO","logo_url":"https://image.tmdb.org/t/p/w300/hbo.png"}]}',
+          200,
+        ),
+        _ => jsonResponse('{"error":"boom"}', 500),
+      };
+    });
+    final rows = await fetchDiscoverLayout(client, _session);
+    // The genres list failed, so its row is left out; the page still shows.
+    expect(rows.map((r) => r.key), ['studios', 'trending_movies', 'networks']);
+    final studios = rows.first as DiscoverBrandRow;
+    expect(studios.brands.map((b) => b.slug), ['marvel-studios']);
+    expect(studios.brands.single.logoUrl, isNull);
+    expect(studios.brands.single.mediaTypes, ['movie']);
+    expect((rows[1] as DiscoverTitleRow).section.results, hasLength(2));
+    final networks = rows[2] as DiscoverBrandRow;
+    expect(networks.title, 'Networks');
+    expect(networks.brands.single.mediaTypes, ['series']);
+    expect(paths.where((p) => p == '/api/v2/requests/discover/studios'), hasLength(1));
+  });
+
+  test('a layout without row_order has title rows only', () async {
+    final client = _clientWith((_) => jsonResponse('{"items":[${_section('b', 'B', [1])}]}', 200));
+    final rows = await fetchDiscoverLayout(client, _session);
+    expect(rows.map((r) => r.key), ['b']);
+    expect(rows.single, isA<DiscoverTitleRow>());
+  });
+
+  test('brand browse pages ask by kind, slug, sort and page', () async {
+    final seen = <Uri>[];
+    final client = _clientWith((o) {
+      seen.add(o.uri);
+      return jsonResponse(
+        '{"kind":"genre","slug":"drama","display_name":"Drama","media_type":"series","sort":"vote_average",'
+        '"page":2,"total_pages":2,"results":[${_title(9, type: 'series')}]}',
+        200,
+      );
+    });
+    const genre = DiscoverBrand(kind: 'genres', slug: 'drama', displayName: 'Drama', seriesSupported: true);
+    expect(genre.mediaTypes, ['movie', 'series']);
+    final page = await browseDiscoverBrand(client, _session, genre, mediaType: 'series', sort: 'vote_average', page: 2);
+    expect(seen.last.path, '/api/v2/requests/discover/browse/genre/drama');
+    expect(seen.last.queryParameters, {'media_type': 'series', 'sort': 'vote_average', 'page': '2'});
+    expect(page.results.single.mediaType, 'series');
+    expect(page.followingPage, isNull);
+
+    await browseDiscoverBrand(client, _session, const DiscoverBrand(kind: 'studios', slug: 'a24', displayName: 'A24'));
+    expect(seen.last.path, '/api/v2/requests/discover/browse/studio/a24');
+    expect(seen.last.queryParameters, {'sort': 'popularity', 'page': '1'});
+    await browseDiscoverBrand(client, _session, const DiscoverBrand(kind: 'networks', slug: 'hbo', displayName: 'HBO'));
+    expect(seen.last.path, '/api/v2/requests/discover/browse/network/hbo');
+    expect(const DiscoverBrand(kind: 'genres', slug: 'x', displayName: 'X').mediaTypes, ['movie']);
+  });
+
+  test('brand colors read as opaque ARGB', () {
+    expect(parseBrandColor('#1a1a2e'), 0xFF1A1A2E);
+    expect(parseBrandColor('16213e'), 0xFF16213E);
+    expect(parseBrandColor('#fff'), isNull);
+    expect(parseBrandColor(null), isNull);
+    expect(parseBrandColor('#zzzzzz'), isNull);
+  });
 }
