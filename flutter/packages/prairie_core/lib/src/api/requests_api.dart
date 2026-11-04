@@ -25,6 +25,9 @@ class RequestsStatus {
     this.allowed = false,
     this.state = '',
     this.discoverRowsSupported = false,
+    this.seasonRequestsSupported = false,
+    this.followSupported = false,
+    this.missingSeasonsRequestable = false,
   });
 
   final bool requestsEnabled;
@@ -36,6 +39,16 @@ class RequestsStatus {
   /// The Discover page follows the admin's row layout (`row_order`).
   final bool discoverRowsSupported;
 
+  /// A series request may name its seasons (`seasons` on create).
+  final bool seasonRequestsSupported;
+
+  /// The server takes follows of someone else's request
+  /// (`PUT`/`DELETE /api/v2/requests/follows/...`).
+  final bool followSupported;
+
+  /// A series in the library may still be requested for its missing seasons.
+  final bool missingSeasonsRequestable;
+
   /// Android's `RequestsFeatureStatus.isEnabled`.
   bool get available => requestsEnabled && allowed && state == 'available';
 
@@ -44,6 +57,9 @@ class RequestsStatus {
     allowed: json['allowed'] == true,
     state: json['state'] as String? ?? '',
     discoverRowsSupported: json['discover_rows_supported'] == true,
+    seasonRequestsSupported: json['season_requests_supported'] == true,
+    followSupported: json['follow_supported'] == true,
+    missingSeasonsRequestable: json['missing_seasons_requestable'] == true,
   );
 }
 
@@ -119,6 +135,7 @@ class RequestTitle {
     this.availability = 'missing',
     this.libraryContentId,
     this.request = const RequestState(),
+    this.seasons = const [],
   });
 
   final int tmdbId;
@@ -140,6 +157,9 @@ class RequestTitle {
   final String? libraryContentId;
   final RequestState request;
 
+  /// A series' seasons, on its request page only (empty elsewhere).
+  final List<RequestSeason> seasons;
+
   bool get inLibrary => availability == 'available';
 
   /// Discover rows and search can hold the same title twice (as a movie
@@ -157,6 +177,10 @@ class RequestTitle {
     availability: json['availability'] as String? ?? 'missing',
     libraryContentId: _text(json['library_content_id']),
     request: RequestState.fromJson(json['request']),
+    seasons: [
+      for (final season in json['seasons'] is List ? json['seasons'] as List : const [])
+        if (season is Map<String, dynamic>) RequestSeason.fromJson(season),
+    ]..sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber)),
   );
 
   RequestTitle withRequest(RequestState next) => RequestTitle(
@@ -170,7 +194,116 @@ class RequestTitle {
     availability: availability,
     libraryContentId: libraryContentId,
     request: next,
+    seasons: seasons,
   );
+}
+
+/// One season of a series on its request page (v2 `RequestMediaSeason`).
+class RequestSeason {
+  const RequestSeason({
+    required this.seasonNumber,
+    this.episodeCount = 0,
+    this.availability = 'missing',
+    this.requested = false,
+    this.name,
+    this.airDate,
+  });
+
+  final int seasonNumber;
+
+  /// Episodes TMDB lists, aired or not.
+  final int episodeCount;
+
+  /// `missing`, `partial` or `available` (every aired episode is in).
+  final String availability;
+
+  /// The title's active request covers this season.
+  final bool requested;
+  final String? name;
+
+  /// `YYYY-MM-DD`.
+  final String? airDate;
+
+  /// A new request can still ask for it: not complete, not already asked
+  /// for, and not specials (the server refuses season 0).
+  bool get requestable => seasonNumber >= 1 && availability != 'available' && !requested;
+
+  /// Has episodes and first aired on or before [now]'s date.
+  bool hasAired(DateTime now) {
+    final date = airDate ?? '';
+    if (episodeCount <= 0 || date.isEmpty) return false;
+    return date.compareTo(now.toIso8601String().substring(0, 10)) <= 0;
+  }
+
+  String get label => name ?? (seasonNumber == 0 ? 'Specials' : 'Season $seasonNumber');
+
+  /// "2022 · 9 episodes", or "Not announced". The web's
+  /// `formatRequestSeasonMeta`.
+  String get metaLabel {
+    final date = airDate ?? '';
+    final parts = [
+      if (date.length >= 4) date.substring(0, 4),
+      if (episodeCount > 0) '$episodeCount ${episodeCount == 1 ? 'episode' : 'episodes'}',
+    ];
+    return parts.isEmpty ? 'Not announced' : parts.join(' · ');
+  }
+
+  /// Where a season stands when that matters to the pick: in the library,
+  /// requested, part in, or not aired; null for an aired missing season.
+  String? statusLabel(DateTime now) {
+    if (availability == 'available') return 'In library';
+    if (requested) return 'Requested';
+    if (availability == 'partial') return 'Partly in library';
+    if (hasAired(now)) return null;
+    return airDate != null && episodeCount > 0 ? 'Not aired yet' : 'Not announced';
+  }
+
+  factory RequestSeason.fromJson(Map<String, dynamic> json) => RequestSeason(
+    seasonNumber: _int(json['season_number']) ?? 0,
+    episodeCount: _int(json['episode_count']) ?? 0,
+    availability: json['availability'] as String? ?? 'missing',
+    requested: json['requested'] == true,
+    name: _text(json['name']),
+    airDate: _text(json['air_date']),
+  );
+}
+
+/// The seasons a series request asks for unless the viewer changes them:
+/// every aired season not yet in the library, as the server picks when
+/// given none. The web's `defaultRequestSeasons`.
+List<int> defaultRequestSeasons(Iterable<RequestSeason> seasons, DateTime now) => [
+  for (final season in seasons)
+    if (season.requestable && season.hasAired(now)) season.seasonNumber,
+];
+
+/// The `seasons` to send for a pick: null leaves the choice to the server,
+/// which it may when the viewer kept the default pick and the server has
+/// something to choose (an aired missing season, or a series outside the
+/// library, requested whole). Season 0 is never sent; the server refuses
+/// it. The web's `RequestSeasonsDialog` submit.
+List<int>? requestSeasonsToSend({
+  required RequestTitle title,
+  required Iterable<int> picked,
+  required bool untouched,
+  required DateTime now,
+}) {
+  final defaults = defaultRequestSeasons(title.seasons, now);
+  if (untouched && (title.seasons.isEmpty || defaults.isNotEmpty || !title.inLibrary)) return null;
+  return [
+    for (final number in picked.toSet().toList()..sort())
+      if (number >= 1) number,
+  ];
+}
+
+/// Someone else's open request the viewer could follow (to hear when the
+/// title lands) instead of requesting it again. Not for the requester, a
+/// title in the library, or one that can be requested. Android's
+/// `RequestDetailUiState.canFollow`.
+bool canFollowRequest(RequestTitle title, {required bool followSupported}) {
+  if (!followSupported) return false;
+  final request = title.request;
+  if (request.requestable || request.requestedByViewer || request.reason != 'already_requested') return false;
+  return !title.inLibrary && request.requestId != null;
 }
 
 List<RequestTitle> _titles(Object? json) => [
@@ -368,8 +501,15 @@ Future<List<MediaRequest>> fetchMyRequests(ApiClient client, PrairieSession sess
   ].where((request) => request.id.isNotEmpty && request.tmdbId > 0).toList();
 }
 
-/// `POST /api/v2/requests`: requests [title] (a whole series for a series).
-Future<MediaRequest> createRequest(ApiClient client, PrairieSession session, RequestTitle title) async {
+/// `POST /api/v2/requests`: requests [title]. For a series, [seasons] names
+/// the seasons; without it the server picks every aired season not yet
+/// complete (the whole series before one has aired).
+Future<MediaRequest> createRequest(
+  ApiClient client,
+  PrairieSession session,
+  RequestTitle title, {
+  List<int>? seasons,
+}) async {
   final json = await client.request<Map<String, dynamic>>(
     _sessionOptions(session),
     '/api/v2/requests',
@@ -382,6 +522,7 @@ Future<MediaRequest> createRequest(ApiClient client, PrairieSession session, Req
       'poster_path': ?title.posterPath,
       'backdrop_path': ?title.backdropPath,
       'overview': ?title.overview,
+      if (title.mediaType == 'series' && seasons != null) 'seasons': seasons,
     },
   );
   return MediaRequest.fromJson(json);
@@ -393,3 +534,23 @@ Future<void> cancelRequest(ApiClient client, PrairieSession session, String requ
   '/api/v2/requests/${Uri.encodeComponent(requestId)}/cancel',
   method: 'POST',
 );
+
+/// `PUT /api/v2/requests/follows/{media_type}/{tmdb_id}`: tell the viewer
+/// when [title] lands. Answers the viewer's new standing with it.
+Future<RequestState> followRequestTitle(ApiClient client, PrairieSession session, RequestTitle title) async {
+  final json = await client.request<dynamic>(
+    _sessionOptions(session),
+    '/api/v2/requests/follows/${Uri.encodeComponent(title.mediaType)}/${title.tmdbId}',
+    method: 'PUT',
+  );
+  return RequestState.fromJson(json);
+}
+
+/// `DELETE /api/v2/requests/follows/{media_type}/{tmdb_id}`: stop telling the
+/// viewer.
+Future<void> unfollowRequestTitle(ApiClient client, PrairieSession session, RequestTitle title) =>
+    client.request<dynamic>(
+      _sessionOptions(session),
+      '/api/v2/requests/follows/${Uri.encodeComponent(title.mediaType)}/${title.tmdbId}',
+      method: 'DELETE',
+    );

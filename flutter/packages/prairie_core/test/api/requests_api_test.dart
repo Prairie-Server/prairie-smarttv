@@ -174,4 +174,116 @@ void main() {
     expect(tmdbImageUrl(null), isNull);
     expect(tmdbImageUrl('  '), isNull);
   });
+
+  test('status reads the season, follow and missing-season flags', () async {
+    var body =
+        '{"requests_enabled":true,"allowed":true,"state":"available","season_requests_supported":true,'
+        '"follow_supported":true,"missing_seasons_requestable":true}';
+    final client = _clientWith((_) => jsonResponse(body, 200));
+    final current = await fetchRequestsStatus(client, _session);
+    expect(current.seasonRequestsSupported, isTrue);
+    expect(current.followSupported, isTrue);
+    expect(current.missingSeasonsRequestable, isTrue);
+    body = '{"requests_enabled":true,"allowed":true,"state":"available"}';
+    final older = await fetchRequestsStatus(client, _session);
+    expect(older.seasonRequestsSupported, isFalse);
+    expect(older.followSupported, isFalse);
+    expect(older.missingSeasonsRequestable, isFalse);
+  });
+
+  test("a series page lists its seasons in order and what each can be", () async {
+    final client = _clientWith(
+      (_) => jsonResponse(
+        '{"tmdb_id":1399,"media_type":"series","title":"Show","availability":"missing",'
+        '"request":{"requestable":true},"seasons":['
+        '{"season_number":2,"episode_count":10,"availability":"partial","requested":false,"air_date":"2012-04-01"},'
+        '{"season_number":0,"episode_count":3,"availability":"missing","requested":false,"name":"Specials"},'
+        '{"season_number":1,"episode_count":1,"availability":"available","requested":false,"air_date":"2011-04-17"},'
+        '{"season_number":3,"episode_count":0,"availability":"missing","requested":false}]}',
+        200,
+      ),
+    );
+    final title = await fetchRequestTitle(client, _session, mediaType: 'series', tmdbId: 1399);
+    final now = DateTime(2026, 11, 3);
+    expect(title.seasons.map((s) => s.seasonNumber), [0, 1, 2, 3]);
+    expect(title.seasons.map((s) => s.requestable), [false, false, true, true]);
+    expect(title.seasons[1].metaLabel, '2011 · 1 episode');
+    expect(title.seasons[3].metaLabel, 'Not announced');
+    expect(title.seasons[3].label, 'Season 3');
+    expect(title.seasons[1].statusLabel(now), 'In library');
+    expect(title.seasons[2].statusLabel(now), 'Partly in library');
+    expect(title.seasons[3].statusLabel(now), 'Not announced');
+    expect(defaultRequestSeasons(title.seasons, now), [2]);
+    expect(title.withRequest(const RequestState()).seasons, hasLength(4));
+  });
+
+  test('an untouched season pick leaves the choice to the server when it has one', () {
+    final now = DateTime(2026, 11, 3);
+    const aired = RequestSeason(seasonNumber: 1, episodeCount: 8, airDate: '2020-01-01');
+    const upcoming = RequestSeason(seasonNumber: 2, episodeCount: 8, airDate: '2027-01-01');
+    const missing = RequestTitle(tmdbId: 1, mediaType: 'series', title: 'S', seasons: [aired, upcoming]);
+    expect(requestSeasonsToSend(title: missing, picked: const [1], untouched: true, now: now), isNull);
+    expect(requestSeasonsToSend(title: missing, picked: const [2, 1, 2], untouched: false, now: now), [1, 2]);
+    // In the library with only an upcoming season left, the viewer has to name it.
+    const inLibrary = RequestTitle(
+      tmdbId: 1,
+      mediaType: 'series',
+      title: 'S',
+      availability: 'available',
+      seasons: [RequestSeason(seasonNumber: 1, episodeCount: 8, airDate: '2020-01-01', availability: 'available'), upcoming],
+    );
+    expect(requestSeasonsToSend(title: inLibrary, picked: const [], untouched: true, now: now), isEmpty);
+    expect(requestSeasonsToSend(title: inLibrary, picked: const [0, 2], untouched: false, now: now), [2]);
+  });
+
+  test('a series request names its picked seasons; a movie never does', () async {
+    final sent = <Object?>[];
+    final client = _clientWith((o) {
+      sent.add(o.data);
+      return jsonResponse('{"id":"r1","media_type":"series","tmdb_id":5,"title":"S","state":"pending"}', 201);
+    });
+    const series = RequestTitle(tmdbId: 5, mediaType: 'series', title: 'S');
+    await createRequest(client, _session, series, seasons: const [2, 3]);
+    await createRequest(client, _session, series);
+    await createRequest(client, _session, const RequestTitle(tmdbId: 6, mediaType: 'movie', title: 'M'), seasons: const [1]);
+    expect((sent[0]! as Map)['seasons'], [2, 3]);
+    expect((sent[1]! as Map).containsKey('seasons'), isFalse);
+    expect((sent[2]! as Map).containsKey('seasons'), isFalse);
+  });
+
+  test("following someone else's request puts and deletes the follow", () async {
+    final seen = <String>[];
+    final client = _clientWith((o) {
+      seen.add('${o.method} ${o.uri.path}');
+      return o.method == 'PUT'
+          ? jsonResponse('{"requestable":false,"reason":"already_requested","request_id":"r9","following":true}', 200)
+          : ResponseBody.fromString('', 204);
+    });
+    const title = RequestTitle(tmdbId: 1399, mediaType: 'series', title: 'S');
+    final state = await followRequestTitle(client, _session, title);
+    expect(state.following, isTrue);
+    await unfollowRequestTitle(client, _session, title);
+    expect(seen, ['PUT /api/v2/requests/follows/series/1399', 'DELETE /api/v2/requests/follows/series/1399']);
+  });
+
+  test("only someone else's open request can be followed", () {
+    RequestTitle title({
+      bool requestable = false,
+      bool mine = false,
+      String? reason = 'already_requested',
+      String availability = 'missing',
+    }) => RequestTitle(
+      tmdbId: 1,
+      mediaType: 'movie',
+      title: 'M',
+      availability: availability,
+      request: RequestState(requestable: requestable, requestedByViewer: mine, reason: reason, requestId: 'r1', state: 'pending'),
+    );
+    expect(canFollowRequest(title(), followSupported: true), isTrue);
+    expect(canFollowRequest(title(), followSupported: false), isFalse);
+    expect(canFollowRequest(title(mine: true), followSupported: true), isFalse);
+    expect(canFollowRequest(title(requestable: true), followSupported: true), isFalse);
+    expect(canFollowRequest(title(reason: 'requests_disabled'), followSupported: true), isFalse);
+    expect(canFollowRequest(title(availability: 'available'), followSupported: true), isFalse);
+  });
 }
