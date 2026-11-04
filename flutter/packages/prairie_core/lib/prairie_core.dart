@@ -29,6 +29,7 @@ export 'src/api/auth_api.dart';
 export 'src/api/box_sets_api.dart';
 export 'src/api/calendar_api.dart';
 export 'src/api/catalog_api.dart';
+export 'src/api/requests_api.dart';
 export 'src/api/theme_music_api.dart';
 export 'src/api/check_server.dart';
 export 'src/api/server_address.dart';
