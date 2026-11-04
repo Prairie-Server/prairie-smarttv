@@ -76,6 +76,9 @@ class BoxSet {
   String get cardCaption =>
       playedCount > 0 ? '$playedCount / $movieCount watched' : yearsLabel ?? boxSetFilmCount(movieCount);
 
+  /// Some of the set's movies are played, but not all.
+  bool get isStarted => playedCount > 0 && playedCount < movieCount;
+
   /// The box set page's facts: film count, years, and watched progress once
   /// started.
   List<String> get heroFacts => [
@@ -84,6 +87,19 @@ class BoxSet {
     if (playedCount > 0) '$playedCount of $movieCount watched',
   ];
 }
+
+/// The movie a box set's Play button starts: the first in release order the
+/// profile hasn't played (one in progress isn't played yet), or the first
+/// once all are played. Null for an empty set. Android's `boxSetNextMovie`.
+CatalogItem? boxSetNextMovie(List<CatalogItem> items) =>
+    items.where((item) => item.userState?.played != true).firstOrNull ?? items.firstOrNull;
+
+/// Whether [item] has a position to resume from, as the Play label sees it.
+bool boxSetMovieInProgress(CatalogItem item) => item.userState?.played != true && (item.positionSeconds ?? 0) > 0;
+
+/// The Play button's label for [next], the movie [boxSetNextMovie] picked.
+String boxSetPlayLabel(BoxSet boxSet, CatalogItem next) =>
+    boxSet.isStarted || boxSetMovieInProgress(next) ? 'Continue · ${next.title}' : 'Play ${next.title}';
 
 /// "8 films", or "1 film".
 String boxSetFilmCount(int count) => count == 1 ? '1 film' : '$count films';

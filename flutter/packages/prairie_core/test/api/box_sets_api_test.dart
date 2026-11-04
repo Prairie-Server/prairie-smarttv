@@ -92,4 +92,26 @@ void main() {
     expect(librariesHaveBoxSets([plain]), isFalse);
     expect(librariesHaveBoxSets([plain, sets]), isTrue);
   });
+
+  test("Play picks the first unplayed film, or the first once all are played", () {
+    CatalogItem film(String id, {bool played = false, double? position}) => CatalogItem(
+      contentId: id,
+      type: 'movie',
+      title: id,
+      positionSeconds: position,
+      userState: MediaItemUserState(played: played),
+    );
+    expect(boxSetNextMovie(const []), isNull);
+    expect(boxSetNextMovie([film('a', played: true), film('b'), film('c')])!.contentId, 'b');
+    expect(boxSetNextMovie([film('a', played: true), film('b', position: 600), film('c')])!.contentId, 'b');
+    expect(boxSetNextMovie([film('a', played: true), film('b', played: true)])!.contentId, 'a');
+
+    const fresh = BoxSet(id: '1', libraryId: '7', title: 'T', movieCount: 3);
+    const started = BoxSet(id: '1', libraryId: '7', title: 'T', movieCount: 3, playedCount: 1);
+    const done = BoxSet(id: '1', libraryId: '7', title: 'T', movieCount: 3, playedCount: 3);
+    expect(boxSetPlayLabel(fresh, film('Alpha')), 'Play Alpha');
+    expect(boxSetPlayLabel(fresh, film('Alpha', position: 120)), 'Continue · Alpha');
+    expect(boxSetPlayLabel(started, film('Beta')), 'Continue · Beta');
+    expect(boxSetPlayLabel(done, film('Alpha', played: true, position: 50)), 'Play Alpha');
+  });
 }

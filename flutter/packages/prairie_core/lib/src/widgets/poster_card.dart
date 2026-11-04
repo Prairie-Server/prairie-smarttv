@@ -219,6 +219,7 @@ class PosterGrid extends StatefulWidget {
     this.restoreContentId,
     this.header,
     this.footer,
+    this.autofocusFirst = true,
   });
 
   final List<CatalogItem> items;
@@ -236,6 +237,10 @@ class PosterGrid extends StatefulWidget {
   /// Scrolls below the grid with it, such as Search's "Available to
   /// request" row.
   final Widget? footer;
+
+  /// Focus the first card when there's no card to restore. Off when the
+  /// [header] holds the page's first action, such as a box set's Play.
+  final bool autofocusFirst;
 
   @override
   State<PosterGrid> createState() => _PosterGridState();
@@ -293,7 +298,7 @@ class _PosterGridState extends State<PosterGrid> {
         watched: item.userState?.played ?? false,
         favorite: item.userState?.isFavorite ?? false,
         progress: item.progress,
-        autofocus: isRestore || (restoreIndex < 0 && index == 0),
+        autofocus: isRestore || (restoreIndex < 0 && index == 0 && widget.autofocusFirst),
         focusNode: isRestore ? _restoreFocus : null,
         onTap: () => widget.onOpen(item),
       );
